@@ -1,13 +1,15 @@
 services:
   scarletx:
-    image: ghcr.io/troyshank/scarletx:main
+    image: ghcr.io/terralayer/scarletx:0.3.6
     container_name: scarletx
     restart: unless-stopped
     pull_policy: always
     ports:
-      - "8690:8690"
+      - "${SCARLETX_PORT:-8690}:${SCARLETX_PORT:-8690}"
     environment:
-      TZ: ${TZ:-America/Los_Angeles}
+      TZ: ${TZ:-Etc/UTC}
+      SCARLETX_HOST: 0.0.0.0
+      SCARLETX_PORT: ${SCARLETX_PORT:-8690}
       SCARLETX_DATABASE_URL: sqlite:////config/scarletx.db
       SCARLETX_USENET_INCOMPLETE_DIR: /downloads/incomplete
       SCARLETX_USENET_COMPLETE_DIR: /downloads/complete
@@ -21,7 +23,11 @@ services:
       - ${SCARLETX_MEDIA_PATH:?Set SCARLETX_MEDIA_PATH}:/media
       - ${SCARLETX_BACKUPS_PATH:?Set SCARLETX_BACKUPS_PATH}:/backups
     healthcheck:
-      test: ["CMD", "python", "-c", "import json,urllib.request; d=json.load(urllib.request.urlopen('http://127.0.0.1:8690/api/health',timeout=3)); raise SystemExit(0 if d.get('app')=='ScarletX' else 1)"]
+      test:
+        - CMD
+        - python
+        - -c
+        - "import json,os,urllib.request; p=os.environ.get('SCARLETX_PORT','8690'); d=json.load(urllib.request.urlopen(f'http://127.0.0.1:{p}/api/health',timeout=3)); raise SystemExit(0 if d.get('app')=='ScarletX' else 1)"
       interval: 30s
       timeout: 5s
       start_period: 30s
