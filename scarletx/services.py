@@ -1,7 +1,7 @@
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
-from .models import AppSetting, BackgroundJob, History, Performer, Scene, Studio, Tag
+from .models import AppSetting, BackgroundJob, History, Performer, Scene, Studio, Tag, scene_performer
 from .schemas import RemotePerson, RemoteScene, RemoteStudio
 from .studio_policy import is_allowed_remote_scene
 
@@ -60,24 +60,12 @@ def sync_adult_scene_entities_to_library(db: Session) -> dict[str, int]:
     upgraded database immediately consistent without requiring every scene to be
     refreshed manually.
     """
-    scenes = db.scalars(
-        select(Scene)
-        .where(Scene.content_type == "scene")
-        .options(selectinload(Scene.studio), selectinload(Scene.performers))
-    ).unique().all()
-    performers_added = 0
-    studios_added = 0
-    for scene in scenes:
-        if scene.studio is not None:
-            if not scene.studio.is_library:
-                studios_added += 1
-            scene.studio.is_library = True
-        for performer in scene.performers:
-            if not performer.is_library:
-                performers_added += 1
-            performer.is_library = True
+    performer_ids = select(scene_performer.c.performer_id).join(Scene, Scene.id == scene_performer.c.scene_id).where(Scene.content_type == "scene")
+    studio_ids = select(Scene.studio_id).where(Scene.content_type == "scene", Scene.studio_id.is_not(None))
+    performer_result = db.execute(update(Performer).where(Performer.is_library.is_(False), Performer.id.in_(performer_ids)).values(is_library=True))
+    studio_result = db.execute(update(Studio).where(Studio.is_library.is_(False), Studio.id.in_(studio_ids)).values(is_library=True))
     db.commit()
-    return {"performers": performers_added, "studios": studios_added}
+    return {"performers": performer_result.rowcount or 0, "studios": studio_result.rowcount or 0}
 
 
 def repair_legacy_auto_monitored_adult_entities(db: Session) -> dict[str, int]:

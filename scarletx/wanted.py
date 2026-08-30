@@ -1,25 +1,36 @@
 from __future__ import annotations
 import shutil
 from pathlib import Path
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from .library_management import QUALITY_ORDER,default_quality_profile,detect_quality,ensure_library_config
-from .models import MediaFile,QualityProfile,RootFolder,Scene
+from .models import LibraryItemConfig,MediaFile,QualityProfile,RootFolder,Scene
 
 def _profile_for(db,scene):
     cfg=ensure_library_config(db,scene);return db.get(QualityProfile,cfg.quality_profile_id) if cfg.quality_profile_id else default_quality_profile(db,"scene")
 def missing_items(db,content_type=None,limit=500):
-    rows=[]
-    for scene in db.scalars(select(Scene).where(Scene.monitored.is_(True),Scene.content_type=="scene").order_by(Scene.release_date,Scene.title)).all():
-        if db.scalar(select(MediaFile.id).where(MediaFile.scene_id==scene.id).limit(1)):continue
-        rows.append({"kind":"scene","library_item_id":scene.id,"title":scene.title,"release_date":scene.release_date,"metadata_id":scene.tpdb_id})
-        if len(rows)>=limit:break
-    return rows
+    scenes=db.scalars(
+        select(Scene).where(
+            Scene.monitored.is_(True),Scene.content_type=="scene",
+            ~exists(select(MediaFile.id).where(MediaFile.scene_id==Scene.id)),
+        ).order_by(Scene.release_date,Scene.title).limit(limit)
+    ).all()
+    return [{"kind":"scene","library_item_id":scene.id,"title":scene.title,"release_date":scene.release_date,"metadata_id":scene.tpdb_id} for scene in scenes]
 def cutoff_unmet(db,content_type=None,limit=500):
+    scenes=db.scalars(select(Scene).where(Scene.monitored.is_(True),Scene.content_type=="scene")).all()
+    if not scenes:return []
+    scene_ids=[scene.id for scene in scenes]
+    configs={item.scene_id:item for item in db.scalars(select(LibraryItemConfig).where(LibraryItemConfig.scene_id.in_(scene_ids))).all()}
+    profiles={item.id:item for item in db.scalars(select(QualityProfile)).all()}
+    default=default_quality_profile(db,"scene")
+    files_by_scene={}
+    for media in db.scalars(select(MediaFile).where(MediaFile.scene_id.in_(scene_ids))).all():
+        files_by_scene.setdefault(media.scene_id,[]).append(media)
     rows=[]
-    for scene in db.scalars(select(Scene).where(Scene.monitored.is_(True),Scene.content_type=="scene")).all():
-        profile=_profile_for(db,scene)
+    for scene in scenes:
+        config=configs.get(scene.id)
+        profile=profiles.get(config.quality_profile_id) if config and config.quality_profile_id else default
         if not profile:continue
-        files=db.scalars(select(MediaFile).where(MediaFile.scene_id==scene.id)).all()
+        files=files_by_scene.get(scene.id,[])
         if not files:continue
         best=max(files,key=lambda x:QUALITY_ORDER.get(detect_quality(x.quality or x.release_title or "").resolution,0))
         current=detect_quality(best.quality or best.release_title or "").resolution

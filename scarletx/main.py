@@ -3,6 +3,7 @@ import base64
 import json
 import os
 import shutil
+import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
@@ -229,9 +230,13 @@ def migrate_to_scarletx(db: Session) -> None:
                 CREATE TRIGGER IF NOT EXISTS studio_search_ai AFTER INSERT ON studios BEGIN INSERT INTO studio_search(rowid,name) VALUES(new.id,new.name); END;
                 CREATE TRIGGER IF NOT EXISTS studio_search_ad AFTER DELETE ON studios BEGIN DELETE FROM studio_search WHERE rowid=old.id; END;
                 CREATE TRIGGER IF NOT EXISTS studio_search_au AFTER UPDATE OF name ON studios BEGIN DELETE FROM studio_search WHERE rowid=old.id; INSERT INTO studio_search(rowid,name) VALUES(new.id,new.name); END;
-                DELETE FROM scene_search; INSERT INTO scene_search(rowid,title) SELECT id,title FROM scenes;
-                DELETE FROM performer_search; INSERT INTO performer_search(rowid,name,aliases) SELECT id,name,coalesce(aliases,'') FROM performers;
-                DELETE FROM studio_search; INSERT INTO studio_search(rowid,name) SELECT id,name FROM studios;
+                """)
+                # Existing triggers keep FTS synchronized. Backfill only missing
+                # rows so normal startup does not rewrite every search record.
+                cur.executescript("""
+                INSERT INTO scene_search(rowid,title) SELECT id,title FROM scenes WHERE id NOT IN (SELECT rowid FROM scene_search);
+                INSERT INTO performer_search(rowid,name,aliases) SELECT id,name,coalesce(aliases,'') FROM performers WHERE id NOT IN (SELECT rowid FROM performer_search);
+                INSERT INTO studio_search(rowid,name) SELECT id,name FROM studios WHERE id NOT IN (SELECT rowid FROM studio_search);
                 """)
             except Exception:
                 # Some custom SQLite builds omit FTS5; LIKE remains the fallback.
@@ -2220,10 +2225,12 @@ def application_history(limit: int = Query(200, ge=1, le=5000), event_type: str 
     stmt = select(History)
     if event_type: stmt = stmt.where(History.event_type == event_type)
     rows = db.scalars(stmt.order_by(History.created_at.desc()).limit(limit)).all(); result=[]
+    scene_ids={row.scene_id for row in rows if row.scene_id}
+    scene_types={item.id:item.content_type for item in db.scalars(select(Scene).where(Scene.id.in_(scene_ids))).all()} if scene_ids else {}
     for row in rows:
-        scene = db.get(Scene, row.scene_id) if row.scene_id else None
-        if scene is not None and scene.content_type != "scene": continue
-        result.append({"id":row.id,"event_type":row.event_type,"scene_id":row.scene_id,"message":row.message,"created_at":row.created_at,"content_type":"scene" if scene else None})
+        scene_type=scene_types.get(row.scene_id)
+        if scene_type is not None and scene_type != "scene": continue
+        result.append({"id":row.id,"event_type":row.event_type,"scene_id":row.scene_id,"message":row.message,"created_at":row.created_at,"content_type":"scene" if scene_type else None})
     return result
 
 
@@ -2241,9 +2248,30 @@ def _activity_queue_data(db: Session) -> dict:
     return {"tracked": _tracked_download_rows(db, items), "clients": {"scarletx": native_queue_rows(db)}}
 
 
+_ACTIVITY_CACHE_LOCK = threading.Lock()
+_ACTIVITY_CACHE: tuple[float, dict] | None = None
+
+
+def _cached_activity_queue_data(db: Session, max_age: float = 0.65) -> dict:
+    """Share one live queue snapshot across polling and SSE clients."""
+    global _ACTIVITY_CACHE
+    now = time.monotonic()
+    with _ACTIVITY_CACHE_LOCK:
+        if _ACTIVITY_CACHE and now - _ACTIVITY_CACHE[0] <= max_age:
+            return _ACTIVITY_CACHE[1]
+        payload = _activity_queue_data(db)
+        _ACTIVITY_CACHE = (now, payload)
+        return payload
+
+
+def _load_cached_activity_queue_data() -> dict:
+    with SessionLocal() as db:
+        return _cached_activity_queue_data(db)
+
+
 @app.get("/api/activity/queue")
 def activity_queue(db: Session = Depends(get_session)):
-    return _activity_queue_data(db)
+    return _cached_activity_queue_data(db)
 
 
 @app.get("/api/activity/stream")
@@ -2253,8 +2281,7 @@ async def activity_stream(request: Request):
         last_heartbeat = 0.0
         while not await request.is_disconnected():
             try:
-                with SessionLocal() as live_db:
-                    payload = _activity_queue_data(live_db)
+                payload = await asyncio.to_thread(_load_cached_activity_queue_data)
                 body = json.dumps(payload, default=str, separators=(",", ":"))
                 now = asyncio.get_running_loop().time()
                 if body != last_payload:
