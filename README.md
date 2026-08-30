@@ -1,6 +1,7 @@
 # ScarletX 0.3.6 Local
 
 [![Tests](https://github.com/troyshank/ScarletX/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/troyshank/ScarletX/actions/workflows/tests.yml)
+[![Container](https://github.com/troyshank/ScarletX/actions/workflows/container.yml/badge.svg?branch=main)](https://github.com/troyshank/ScarletX/actions/workflows/container.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 
 ScarletX is a private local development build for managing TPDB-verified adult production-studio scenes.
@@ -38,6 +39,19 @@ Persistent mounts:
 - `/backups` — backups
 
 The container binds ScarletX to `0.0.0.0:8690`; local/macOS launch remains bound to localhost unless changed.
+
+### TrueNAS SCALE
+
+TrueNAS SCALE 24.10 or newer can deploy ScarletX as a Custom App using Docker Compose YAML. The private image is published to `ghcr.io/troyshank/scarletx:main` after tests pass.
+
+Use `docker-compose.truenas.yml` for SSH/CLI deployments. Set these host paths to existing TrueNAS datasets before starting it:
+
+- `SCARLETX_CONFIG_PATH` — application database, cache, and generated artwork
+- `SCARLETX_DOWNLOADS_PATH` — incomplete, completed, and failed downloads
+- `SCARLETX_MEDIA_PATH` — permanent scene library
+- `SCARLETX_BACKUPS_PATH` — database backups
+
+Because the image is private, authenticate TrueNAS to GHCR with a GitHub token that has `read:packages` access before deploying. Keep `/config` and `/backups` on separate persistent datasets or snapshot schedules.
 
 
 ## Built-in media library and player
