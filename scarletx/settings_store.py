@@ -91,7 +91,7 @@ def seed_database_settings(db):
     # Local-dev seed: ensure NZBGeek is available once with the requested
     # development key. After this marker exists, user changes/removal in Settings win.
     marker=db.get(AppSetting,"dev_nzbgeek_083_applied")
-    if marker is None:
+    if marker is None and DEV_NZBGEEK_API_KEY:
         item=db.get(AppSetting,"newznab_indexers_json")
         try: rows=json.loads(item.value if item else "[]")
         except Exception: rows=[]
@@ -120,7 +120,7 @@ def seed_database_settings(db):
     # Local-dev seed: ensure Treasure Maps is available once with the
     # requested development key. Explicit user edits/removal win afterward.
     tm_marker=db.get(AppSetting,"dev_treasure_maps_084_applied")
-    if tm_marker is None:
+    if tm_marker is None and DEV_TREASURE_MAPS_API_KEY:
         item=db.get(AppSetting,"newznab_indexers_json")
         try: rows=json.loads(item.value if item else "[]")
         except Exception: rows=[]
@@ -150,7 +150,7 @@ def seed_database_settings(db):
     # Local-dev seed: ensure NZB.life is available once with the
     # requested development key. Explicit user edits/removal win afterward.
     nl_marker=db.get(AppSetting,"dev_nzblife_085_applied")
-    if nl_marker is None:
+    if nl_marker is None and DEV_NZBLIFE_API_KEY:
         item=db.get(AppSetting,"newznab_indexers_json")
         try: rows=json.loads(item.value if item else "[]")
         except Exception: rows=[]
@@ -180,7 +180,7 @@ def seed_database_settings(db):
     # Local-dev seed: ensure Usenet-Crawler is available once with the
     # requested development key. Explicit user edits/removal win afterward.
     uc_marker=db.get(AppSetting,"dev_usenet_crawler_085_applied")
-    if uc_marker is None:
+    if uc_marker is None and DEV_USENET_CRAWLER_API_KEY:
         item=db.get(AppSetting,"newznab_indexers_json")
         try: rows=json.loads(item.value if item else "[]")
         except Exception: rows=[]
@@ -210,7 +210,7 @@ def seed_database_settings(db):
     # Local-dev seed: configure Astraweb once for the native ScarletX downloader.
     # After the marker exists, explicit provider edits/removal in Settings win.
     aw_marker=db.get(AppSetting,"dev_astraweb_091_applied")
-    if aw_marker is None:
+    if aw_marker is None and DEV_ASTRAWEB_USERNAME and DEV_ASTRAWEB_PASSWORD:
         item=db.get(AppSetting,"native_usenet_providers_json")
         try: providers=json.loads(item.value if item else "[]")
         except Exception: providers=[]
@@ -250,7 +250,7 @@ def seed_database_settings(db):
     # Local-dev seed: configure Newshosting once for the native downloader.
     # Explicit edits/removal win after the marker is created.
     nh_marker=db.get(AppSetting,"dev_newshosting_091_applied")
-    if nh_marker is None:
+    if nh_marker is None and DEV_NEWSHOSTING_USERNAME and DEV_NEWSHOSTING_PASSWORD:
         item=db.get(AppSetting,"native_usenet_providers_json")
         try: providers=json.loads(item.value if item else "[]")
         except Exception: providers=[]
