@@ -1,0 +1,28 @@
+services:
+  scarletx:
+    image: ghcr.io/troyshank/scarletx:main
+    container_name: scarletx
+    restart: unless-stopped
+    pull_policy: always
+    ports:
+      - "8690:8690"
+    environment:
+      TZ: ${TZ:-America/Los_Angeles}
+      SCARLETX_DATABASE_URL: sqlite:////config/scarletx.db
+      SCARLETX_USENET_INCOMPLETE_DIR: /downloads/incomplete
+      SCARLETX_USENET_COMPLETE_DIR: /downloads/complete
+      SCARLETX_GENERATED_DIR: /config/generated
+      SCARLETX_CACHE_DIR: /config/cache
+      SCARLETX_DEFAULT_MEDIA_ROOT: /media
+      SCARLETX_NO_BROWSER: "1"
+    volumes:
+      - ${SCARLETX_CONFIG_PATH:?Set SCARLETX_CONFIG_PATH}:/config
+      - ${SCARLETX_DOWNLOADS_PATH:?Set SCARLETX_DOWNLOADS_PATH}:/downloads
+      - ${SCARLETX_MEDIA_PATH:?Set SCARLETX_MEDIA_PATH}:/media
+      - ${SCARLETX_BACKUPS_PATH:?Set SCARLETX_BACKUPS_PATH}:/backups
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request; d=json.load(urllib.request.urlopen('http://127.0.0.1:8690/api/health',timeout=3)); raise SystemExit(0 if d.get('app')=='ScarletX' else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
