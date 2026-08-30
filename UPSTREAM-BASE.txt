@@ -1,0 +1,3 @@
+ScarletX 0.3.0 was derived from the SceneCore 0.7.16 adult feature baseline.
+Mainstream Movie/TV/TMDB and torrent functionality are removed.
+ScarletX is production-studio adult scenes only and uses its own built-in Usenet downloader.
