@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">ScarletX</title>
+  <desc id="desc">Scarlet red X on a dark charcoal rounded square.</desc>
+  <rect width="512" height="512" rx="96" fill="#111216"/>
+  <path d="M126 92h88l42 67 42-67h88L304 222l105 198h-92l-61-111-61 111h-92l105-198L126 92z" fill="#e61d3f"/>
+</svg>
