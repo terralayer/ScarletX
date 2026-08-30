@@ -37,13 +37,20 @@ def _match(db,r,context=None):
 def _match_context(db):
     scenes=db.scalars(select(Scene).where(Scene.content_type=="scene",Scene.monitored.is_(True)).options(selectinload(Scene.studio))).all()
     if not scenes:return ([],{}, {})
-    ids=[scene.id for scene in scenes]
-    configs={item.scene_id:item for item in db.scalars(select(LibraryItemConfig).where(LibraryItemConfig.scene_id.in_(ids))).all()}
+    configs={item.scene_id:item for item in db.scalars(
+        select(LibraryItemConfig).join(Scene,Scene.id==LibraryItemConfig.scene_id).where(
+            Scene.monitored.is_(True),Scene.content_type=="scene"
+        )
+    ).all()}
     profiles_by_id={item.id:item for item in db.scalars(select(QualityProfile)).all()}
     default=default_quality_profile(db,"scene")
     profiles={scene.id:(profiles_by_id.get(configs[scene.id].quality_profile_id) if scene.id in configs and configs[scene.id].quality_profile_id else default) for scene in scenes}
     current={}
-    for media in db.scalars(select(MediaFile).where(MediaFile.scene_id.in_(ids)).order_by(MediaFile.imported_at.desc())).all():
+    for media in db.scalars(
+        select(MediaFile).join(Scene,Scene.id==MediaFile.scene_id).where(
+            Scene.monitored.is_(True),Scene.content_type=="scene"
+        ).order_by(MediaFile.imported_at.desc())
+    ).all():
         current.setdefault(media.scene_id,media)
     return scenes,profiles,current
 async def rss_sync_cycle(session_factory,settings,*,force=False):

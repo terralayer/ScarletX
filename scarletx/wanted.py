@@ -18,12 +18,19 @@ def missing_items(db,content_type=None,limit=500):
 def cutoff_unmet(db,content_type=None,limit=500):
     scenes=db.scalars(select(Scene).where(Scene.monitored.is_(True),Scene.content_type=="scene")).all()
     if not scenes:return []
-    scene_ids=[scene.id for scene in scenes]
-    configs={item.scene_id:item for item in db.scalars(select(LibraryItemConfig).where(LibraryItemConfig.scene_id.in_(scene_ids))).all()}
+    configs={item.scene_id:item for item in db.scalars(
+        select(LibraryItemConfig).join(Scene,Scene.id==LibraryItemConfig.scene_id).where(
+            Scene.monitored.is_(True),Scene.content_type=="scene"
+        )
+    ).all()}
     profiles={item.id:item for item in db.scalars(select(QualityProfile)).all()}
     default=default_quality_profile(db,"scene")
     files_by_scene={}
-    for media in db.scalars(select(MediaFile).where(MediaFile.scene_id.in_(scene_ids))).all():
+    for media in db.scalars(
+        select(MediaFile).join(Scene,Scene.id==MediaFile.scene_id).where(
+            Scene.monitored.is_(True),Scene.content_type=="scene"
+        )
+    ).all():
         files_by_scene.setdefault(media.scene_id,[]).append(media)
     rows=[]
     for scene in scenes:
