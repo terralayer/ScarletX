@@ -424,12 +424,18 @@ def duplicate_rows(db: Session) -> list[dict[str, Any]]:
         .group_by(MediaProbe.fingerprint)
         .having(func.count(MediaProbe.media_file_id) > 1)
     ).scalars().all()
-    result = []
-    for fingerprint in groups:
-        probes = db.scalars(select(MediaProbe).where(MediaProbe.fingerprint == fingerprint, MediaProbe.missing.is_(False))).all()
-        files = [media_row(db, db.get(MediaFile, p.media_file_id)) for p in probes if db.get(MediaFile, p.media_file_id)]
-        result.append({"fingerprint": fingerprint, "files": files})
-    return result
+    if not groups:
+        return []
+    probes = db.scalars(select(MediaProbe).where(MediaProbe.fingerprint.in_(groups), MediaProbe.missing.is_(False))).all()
+    fingerprint_by_media = {probe.media_file_id: probe.fingerprint for probe in probes}
+    files = db.scalars(select(MediaFile).where(MediaFile.id.in_(fingerprint_by_media))).all()
+    rows_by_media = {row["id"]: row for row in media_rows(db, files)}
+    files_by_fingerprint: dict[str, list[dict[str, Any]]] = {fingerprint: [] for fingerprint in groups}
+    for media_id, fingerprint in fingerprint_by_media.items():
+        row = rows_by_media.get(media_id)
+        if row is not None and fingerprint is not None:
+            files_by_fingerprint[fingerprint].append(row)
+    return [{"fingerprint": fingerprint, "files": files_by_fingerprint[fingerprint]} for fingerprint in groups]
 
 
 def update_playback(db: Session, media_id: int, *, position_seconds: float | None = None, favorite: bool | None = None, played: bool = False) -> PlaybackState:

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-import os
+import re
 from pathlib import Path
 from typing import Callable
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from .media_library import VIDEO_EXTENSIONS, _match_local_scene, index_media_file_by_id, quick_fingerprint
 from .models import History, MediaFile, MediaProbe, RootFolder, Scene, UnmatchedMediaFile, utcnow
@@ -37,7 +37,13 @@ def _index_changed_path(session_factory, raw_path: str) -> None:
                     media = candidate
                     break
         if media is None:
-            scenes = db.scalars(select(Scene).where(Scene.content_type == "scene")).all()
+            # A valid title match must share at least one meaningful filename
+            # token. Narrow candidates in SQL instead of loading the full library.
+            tokens = sorted({token for token in re.findall(r"[a-z0-9]+", path.stem.casefold()) if len(token) >= 4}, key=len, reverse=True)[:12]
+            conditions = [Scene.title.ilike(f"%{token}%") for token in tokens]
+            scenes = db.scalars(
+                select(Scene).where(Scene.content_type == "scene", or_(*conditions)).limit(1000)
+            ).all() if conditions else []
             scene = _match_local_scene(path, scenes)
             if scene is None:
                 unmatched = db.scalar(select(UnmatchedMediaFile).where(UnmatchedMediaFile.path == absolute).limit(1))
