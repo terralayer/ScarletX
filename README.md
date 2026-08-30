@@ -1,5 +1,8 @@
 # ScarletX 0.3.6 Local
 
+[![Tests](https://github.com/troyshank/ScarletX/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/troyshank/ScarletX/actions/workflows/tests.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
+
 ScarletX is a private local development build for managing TPDB-verified adult production-studio scenes.
 
 ## Start on macOS
