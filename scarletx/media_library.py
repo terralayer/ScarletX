@@ -200,6 +200,9 @@ def index_media_file_by_id(session_factory, media_id: int, *, generate_art: bool
 def _norm(value: str) -> str:
     value = Path(value).stem.casefold()
     value = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", value)
+    # Apostrophes commonly disappear from release filenames. Removing them
+    # before separator normalization makes "Don't" and "Dont" equivalent.
+    value = re.sub(r"['’ʼ]", "", value)
     value = re.sub(r"[^a-z0-9]+", " ", value)
     return " ".join(value.split())
 

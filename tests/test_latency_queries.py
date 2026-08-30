@@ -1,11 +1,15 @@
 from datetime import date
+from pathlib import Path
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from scarletx.db import Base
+from scarletx.media_library import _match_local_scene, _norm
+from scarletx.media_watch import _scene_candidates
 from scarletx.models import LibraryItemConfig, MediaFile, QualityProfile, Scene
+from scarletx.rss import _match_context
 from scarletx.wanted import cutoff_unmet, missing_items
 
 
@@ -56,10 +60,11 @@ def populated_session(scene_count: int = 200):
 
 
 def count_queries(engine):
-    state = {"count": 0}
+    state = {"count": 0, "statements": []}
 
-    def increment(*_args):
+    def increment(_connection, _cursor, statement, *_args):
         state["count"] += 1
+        state["statements"].append(statement)
 
     event.listen(engine, "before_cursor_execute", increment)
     return state
@@ -85,3 +90,31 @@ def test_cutoff_unmet_uses_bulk_queries():
 
     assert len(rows) == 50
     assert queries["count"] <= 5
+    assert not any("scene_id IN" in statement for statement in queries["statements"])
+
+
+def test_rss_context_does_not_expand_scene_ids_into_sql_parameters():
+    engine, session_factory = populated_session()
+    queries = count_queries(engine)
+
+    with session_factory() as db:
+        scenes, profiles, current = _match_context(db)
+
+    assert len(scenes) == 200
+    assert len(profiles) == 200
+    assert len(current) == 100
+    assert not any("scene_id IN" in statement for statement in queries["statements"])
+
+
+def test_watcher_matches_titles_when_apostrophes_are_removed_from_filename():
+    _engine, session_factory = populated_session(scene_count=0)
+    with session_factory() as db:
+        scene = Scene(tpdb_id="apostrophe", title="Don't Go", content_type="scene", monitored=True)
+        db.add(scene)
+        db.commit()
+
+        path = Path("Dont.Go.1080p.mp4")
+        candidates = _scene_candidates(db, path)
+
+    assert _norm("Don't Go") == "dont go"
+    assert _match_local_scene(path, candidates).id == scene.id

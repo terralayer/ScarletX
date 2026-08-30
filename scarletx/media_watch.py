@@ -22,6 +22,27 @@ def _normalized(path: str | Path) -> str:
     return str(Path(path).expanduser().resolve(strict=False))
 
 
+def _scene_candidates(db, path: Path) -> list[Scene]:
+    """Find a bounded candidate set while tolerating stripped punctuation."""
+    tokens = sorted(
+        {token for token in re.findall(r"[a-z0-9]+", path.stem.casefold()) if len(token) >= 2},
+        key=len,
+        reverse=True,
+    )[:12]
+    conditions = []
+    for token in tokens:
+        conditions.append(Scene.title.ilike(f"%{token}%"))
+        if len(token) >= 4:
+            # SQL '_' matches one character, covering apostrophes/dashes that
+            # indexer filenames often omit. Python normalization rejects noise.
+            conditions.extend(Scene.title.ilike(f"%{token[:index]}_{token[index:]}%") for index in range(1,len(token)))
+    if not conditions:
+        return []
+    return db.scalars(
+        select(Scene).where(Scene.content_type == "scene", or_(*conditions)).limit(1000)
+    ).all()
+
+
 def _index_changed_path(session_factory, raw_path: str) -> None:
     path = Path(raw_path).expanduser()
     if path.suffix.casefold() not in VIDEO_EXTENSIONS or not path.exists() or not path.is_file():
@@ -39,11 +60,7 @@ def _index_changed_path(session_factory, raw_path: str) -> None:
         if media is None:
             # A valid title match must share at least one meaningful filename
             # token. Narrow candidates in SQL instead of loading the full library.
-            tokens = sorted({token for token in re.findall(r"[a-z0-9]+", path.stem.casefold()) if len(token) >= 4}, key=len, reverse=True)[:12]
-            conditions = [Scene.title.ilike(f"%{token}%") for token in tokens]
-            scenes = db.scalars(
-                select(Scene).where(Scene.content_type == "scene", or_(*conditions)).limit(1000)
-            ).all() if conditions else []
+            scenes = _scene_candidates(db, path)
             scene = _match_local_scene(path, scenes)
             if scene is None:
                 unmatched = db.scalar(select(UnmatchedMediaFile).where(UnmatchedMediaFile.path == absolute).limit(1))
