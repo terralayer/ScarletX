@@ -1,0 +1,11 @@
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.db
+.git
+.DS_Store
+data/
+downloads/
+backups/
+docker-data/

@@ -1,0 +1,2 @@
+# Optional ScarletX high-throughput Usenet acceleration
+sabctools>=9.6,<10

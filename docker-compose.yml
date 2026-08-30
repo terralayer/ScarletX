@@ -1,0 +1,21 @@
+services:
+  scarletx:
+    build: .
+    container_name: scarletx
+    restart: unless-stopped
+    ports:
+      - "8690:8690"
+    environment:
+      TZ: America/Los_Angeles
+      SCARLETX_DATABASE_URL: sqlite:////config/scarletx.db
+      SCARLETX_USENET_INCOMPLETE_DIR: /downloads/incomplete
+      SCARLETX_USENET_COMPLETE_DIR: /downloads/complete
+      SCARLETX_GENERATED_DIR: /config/generated
+      SCARLETX_CACHE_DIR: /config/cache
+      SCARLETX_DEFAULT_MEDIA_ROOT: /tmp
+      SCARLETX_NO_BROWSER: "1"
+    volumes:
+      - ./docker-data/config:/config
+      - ./docker-data/downloads:/downloads
+      - ./docker-data/media:/media
+      - ./docker-data/backups:/backups
