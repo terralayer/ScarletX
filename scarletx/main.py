@@ -251,6 +251,17 @@ def migrate_to_scarletx(db: Session) -> None:
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(engine)
     with SessionLocal() as db:
+        # In-process background tasks cannot survive a container restart. Leaving
+        # them marked active makes later Monitor All requests look like duplicates.
+        interrupted = db.scalars(
+            select(BackgroundJob).where(BackgroundJob.status.in_(("queued", "running")))
+        ).all()
+        for job in interrupted:
+            job.status = "failed"
+            job.error = "Interrupted by application restart"
+            job.finished_at = utcnow()
+        if interrupted:
+            db.commit()
         seed_database_settings(db)
         migrate_to_scarletx(db)
         seed_quality_profiles(db)
@@ -1510,7 +1521,12 @@ async def monitor_library_scene(
 
 
 
-async def _all_adult_entity_scenes(entity_type: str, identifier: str, settings: Settings) -> list[RemoteScene]:
+ENTITY_PAGE_TIMEOUT_SECONDS = 25
+
+
+async def _all_adult_entity_scenes(
+    entity_type: str, identifier: str, settings: Settings
+) -> tuple[list[RemoteScene], str | None]:
     """Fetch every TPDB scene credited to one performer or studio."""
     collected: list[RemoteScene] = []
     seen: set[str] = set()
@@ -1534,8 +1550,16 @@ async def _all_adult_entity_scenes(entity_type: str, identifier: str, settings: 
         else:
             raise ValueError("Unsupported Adult entity type")
 
+        warning = None
         while True:
-            response = await fetch(page)
+            try:
+                response = await asyncio.wait_for(fetch(page), timeout=ENTITY_PAGE_TIMEOUT_SECONDS)
+            except TimeoutError:
+                warning = f"TPDB page {page} timed out after {ENTITY_PAGE_TIMEOUT_SECONDS} seconds"
+                break
+            except MetadataProviderError as exc:
+                warning = f"TPDB page {page} failed: {exc}"
+                break
             new_items = 0
             for remote in response.items:
                 if remote.id in seen:
@@ -1550,7 +1574,7 @@ async def _all_adult_entity_scenes(entity_type: str, identifier: str, settings: 
             page += 1
             if page > 1000:
                 break
-    return collected
+    return collected, warning
 
 
 async def run_adult_entity_monitor_search(job_id: int, entity_type: str, identifier: str, settings: Settings):
@@ -1563,7 +1587,9 @@ async def run_adult_entity_monitor_search(job_id: int, entity_type: str, identif
         db.commit()
 
     try:
-        remote_scenes = await _all_adult_entity_scenes(entity_type, identifier, settings)
+        remote_scenes, metadata_warning = await _all_adult_entity_scenes(entity_type, identifier, settings)
+        if not remote_scenes and metadata_warning:
+            raise MetadataProviderError(metadata_warning)
         scene_ids: list[int] = []
         with SessionLocal() as db:
             for remote in remote_scenes:
@@ -1573,12 +1599,23 @@ async def run_adult_entity_monitor_search(job_id: int, entity_type: str, identif
             db.commit()
 
         results = []
-        for scene_id in scene_ids:
+        for position, scene_id in enumerate(scene_ids, start=1):
             # This path searches every enabled indexer and routes the best acceptable
             # NZB through the selected ScarletX download client. Existing files and
             # active downloads are respected by the normal grab logic.
             result = await search_and_grab_scene(SessionLocal, scene_id, settings)
             results.append(result.as_dict())
+            with SessionLocal() as db:
+                job = db.get(BackgroundJob, job_id)
+                if job:
+                    job.payload = json.dumps({
+                        "entity_type": entity_type,
+                        "identifier": identifier,
+                        "scenes_found": len(remote_scenes),
+                        "scenes_searched": position,
+                        "metadata_warning": metadata_warning,
+                    })
+                    db.commit()
 
         counts: dict[str, int] = {}
         for result in results:
@@ -1592,6 +1629,7 @@ async def run_adult_entity_monitor_search(job_id: int, entity_type: str, identif
                     "identifier": identifier,
                     "scenes_found": len(remote_scenes),
                     "results": counts,
+                    "metadata_warning": metadata_warning,
                 })
                 job.status = "completed"
                 job.finished_at = utcnow()
@@ -1617,8 +1655,20 @@ def _queue_adult_entity_monitor_search(
     identifier: str,
     settings: Settings,
 ) -> int:
+    kind = f"{entity_type}_monitor_search"
+    for active in db.scalars(
+        select(BackgroundJob).where(
+            BackgroundJob.kind == kind,
+            BackgroundJob.status.in_(("queued", "running")),
+        ).order_by(BackgroundJob.created_at.desc())
+    ).all():
+        try:
+            if json.loads(active.payload or "{}").get("identifier") == identifier:
+                return active.id
+        except (TypeError, json.JSONDecodeError):
+            continue
     job = BackgroundJob(
-        kind=f"{entity_type}_monitor_search",
+        kind=kind,
         payload=json.dumps({"entity_type": entity_type, "identifier": identifier}),
     )
     db.add(job)
