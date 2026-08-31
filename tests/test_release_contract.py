@@ -2,7 +2,7 @@ from pathlib import Path
 import re
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.3.7"
+VERSION = "0.3.8"
 
 
 def text(path: str) -> str:
@@ -10,36 +10,36 @@ def text(path: str) -> str:
 
 
 def test_release_version_is_consistent():
-    assert 'version = "0.3.7"' in text("pyproject.toml")
+    assert 'version = "0.3.8"' in text("pyproject.toml")
     app = text("packaging/truenas/scarletx/app.yaml")
     values = text("packaging/truenas/scarletx/ix_values.yaml")
-    assert "app_version: 0.3.7" in app
+    assert "app_version: 0.3.8" in app
     assert "version: 1.0.2" in app
-    assert "RELEASE-NOTES-0.3.7.md" in app
-    assert re.search(r"(?m)^\s+tag: 0\.3\.7$", values)
+    assert "RELEASE-NOTES-0.3.8.md" in app
+    assert re.search(r"(?m)^\s+tag: 0\.3\.8$", values)
     assert "ghcr.io/terralayer/scarletx-web" in values
-    assert (ROOT / "RELEASE-NOTES-0.3.7.md").exists()
+    assert (ROOT / "RELEASE-NOTES-0.3.8.md").exists()
 
 
 def test_shipped_application_metadata_reports_current_version():
     expected_by_file = {
-        "scarletx/__init__.py": '__version__ = "0.3.7"',
-        "scarletx/main.py": 'version="0.3.7"',
-        "README.md": "Current application version: **0.3.7**.",
-        "BUILD-INFO.txt": "ScarletX 0.3.7",
-        "start-scarletx.sh": 'ScarletX 0.3.7',
-        "Start-ScarletX.ps1": 'ScarletX 0.3.7',
-        "docker-compose.truenas.yml": "image: ghcr.io/terralayer/scarletx:0.3.7",
+        "scarletx/__init__.py": '__version__ = "0.3.8"',
+        "scarletx/main.py": 'version="0.3.8"',
+        "README.md": "Current application version: **0.3.8**.",
+        "BUILD-INFO.txt": "ScarletX 0.3.8",
+        "start-scarletx.sh": 'ScarletX 0.3.8',
+        "Start-ScarletX.ps1": 'ScarletX 0.3.8',
+        "docker-compose.truenas.yml": "image: ghcr.io/terralayer/scarletx:0.3.8",
     }
     for path, expected in expected_by_file.items():
         assert expected in text(path), f"{path} does not report {VERSION}"
 
     truenas_compose = text("docker-compose.truenas.yml")
-    assert "image: ghcr.io/terralayer/scarletx-web:0.3.7" in truenas_compose
+    assert "image: ghcr.io/terralayer/scarletx-web:0.3.8" in truenas_compose
     assert 'SCARLETX_PORT: "8000"' in truenas_compose
     assert 'SCARLETX_WEB_PORT: ${SCARLETX_PORT:-8690}' in truenas_compose
-    assert '"version": "0.3.7"' in text("scarletx/main.py")
-    assert "RELEASE-NOTES-0.3.7.md" in text("README.md")
+    assert '"version": "0.3.8"' in text("scarletx/main.py")
+    assert "RELEASE-NOTES-0.3.8.md" in text("README.md")
 
 
 def test_outbound_user_agents_report_current_version():
@@ -49,7 +49,7 @@ def test_outbound_user_agents_report_current_version():
         "scarletx/newznab.py",
         "scarletx/native_usenet.py",
     ):
-        assert "ScarletX/0.3.7" in text(path), f"{path} has a stale User-Agent"
+        assert "ScarletX/0.3.8" in text(path), f"{path} has a stale User-Agent"
 
 
 def test_release_declares_agplv3_license():
@@ -62,7 +62,7 @@ def test_release_declares_agplv3_license():
 
 def test_main_does_not_publish_a_numeric_stable_tag():
     workflow = text(".github/workflows/container.yml")
-    assert "type=raw,value=0.3.7,enable={{is_default_branch}}" not in workflow
+    assert "type=raw,value=0.3.8,enable={{is_default_branch}}" not in workflow
     assert "type=semver,pattern={{version}}" in workflow
 
 

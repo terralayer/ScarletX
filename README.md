@@ -130,9 +130,9 @@ python -m pytest -q
 
 GitHub Actions runs the test suite and source-compilation check on Python 3.11, 3.12, and 3.13.
 
-Current application version: **0.3.7**.
+Current application version: **0.3.8**.
 
-See `RELEASE-NOTES-0.3.7.md` for the current release summary.
+See `RELEASE-NOTES-0.3.8.md` for the current release summary.
 
 ## License
 

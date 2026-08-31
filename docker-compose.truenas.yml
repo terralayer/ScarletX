@@ -1,6 +1,6 @@
 services:
   scarletx-backend:
-    image: ghcr.io/terralayer/scarletx:0.3.7
+    image: ghcr.io/terralayer/scarletx:0.3.8
     container_name: scarletx-backend
     restart: unless-stopped
     pull_policy: always
@@ -33,7 +33,7 @@ services:
       retries: 3
 
   scarletx-web:
-    image: ghcr.io/terralayer/scarletx-web:0.3.7
+    image: ghcr.io/terralayer/scarletx-web:0.3.8
     container_name: scarletx-web
     restart: unless-stopped
     pull_policy: always
