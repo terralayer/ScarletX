@@ -13,7 +13,7 @@ from scarletx.http_security import install_authentication
 from scarletx.models import AuthUser
 
 
-def make_app(*, api_key_enabled=False, api_key=""):
+def make_app(*, api_key_enabled=False, api_key="", raise_server_exceptions=True):
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -31,12 +31,16 @@ def make_app(*, api_key_enabled=False, api_key=""):
     def private():
         return {"private": True}
 
+    @app.get("/api/crash")
+    def crash():
+        raise RuntimeError("downstream failure")
+
     settings = SimpleNamespace(
         api_key_enabled=api_key_enabled,
         api_key=SecretStr(api_key),
     )
     install_authentication(app, session_factory=factory, settings_loader=lambda _db: settings)
-    return TestClient(app), factory
+    return TestClient(app, raise_server_exceptions=raise_server_exceptions), factory
 
 
 def create_admin(factory):
@@ -86,6 +90,24 @@ def test_non_api_spa_shell_remains_public():
     client, _factory = make_app()
     response = client.get("/")
     assert response.status_code == 404
+
+
+def test_framework_docs_and_openapi_are_not_anonymous():
+    client, _factory = make_app()
+    assert client.get("/docs").status_code == 401
+    assert client.get("/redoc").status_code == 401
+    assert client.get("/openapi.json").status_code == 401
+
+
+def test_authenticated_downstream_failure_is_not_misreported_as_auth_outage():
+    client, factory = make_app(raise_server_exceptions=False)
+    token = create_admin(factory)
+    client.cookies.set("scarletx_session", token)
+
+    response = client.get("/api/crash")
+
+    assert response.status_code == 500
+    assert response.text == "Internal Server Error"
 
 
 def test_production_bootstrap_registers_auth_routes_and_removes_legacy_api_key_middleware():
