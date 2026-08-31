@@ -1,0 +1,23 @@
+FROM nginx:alpine
+
+RUN rm -f /etc/nginx/conf.d/default.conf
+
+COPY nginx/scarletx.conf /etc/nginx/conf.d/default.conf
+COPY scarletx/web/index.html /usr/share/nginx/html/index.html
+COPY frontend/auth.css /usr/share/nginx/html/auth.css
+COPY frontend/auth.js /usr/share/nginx/html/auth.js
+
+# Bake the authentication assets into the static HTML at image-build time.
+# Nginx serves the finished page directly; Python never renders or rewrites UI.
+RUN set -eux; \
+    sed -i 's#</head>#<link rel="stylesheet" href="/auth.css"></head>#' /usr/share/nginx/html/index.html; \
+    sed -i 's#<body>#<body><script src="/auth.js"></script>#' /usr/share/nginx/html/index.html; \
+    sed -i 's/^[[:space:]]*boot();[[:space:]]*$/authGateBoot(boot);/' /usr/share/nginx/html/index.html; \
+    grep -q '/auth.css' /usr/share/nginx/html/index.html; \
+    grep -q '/auth.js' /usr/share/nginx/html/index.html; \
+    grep -q 'authGateBoot(boot);' /usr/share/nginx/html/index.html
+
+EXPOSE 8690
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8690/api/health | grep -q '"app":"ScarletX"'
