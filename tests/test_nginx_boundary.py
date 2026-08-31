@@ -65,6 +65,7 @@ def test_web_image_builds_finished_static_frontend():
     assert "/auth.css" in web_dockerfile
     assert "/auth.js" in web_dockerfile
     assert "EXPOSE 8690" in web_dockerfile
+    assert "USER 568:568" in web_dockerfile
     assert "127.0.0.1:${SCARLETX_WEB_PORT}/api/health" in web_dockerfile
 
 
@@ -74,6 +75,7 @@ def test_compose_publishes_only_nginx_web_port():
     assert "scarletx-web:" in compose
     backend_block, web_block = compose.split("  scarletx-web:", 1)
     assert "ports:" not in backend_block
+    assert 'SCARLETX_TRUST_PROXY_HEADERS: "1"' in backend_block
     assert '"8690:8690"' in web_block
     assert 'SCARLETX_WEB_PORT: "8690"' in web_block
     assert "scarletx-backend" in web_block
@@ -95,6 +97,7 @@ def test_truenas_template_routes_public_port_through_nginx():
     assert "scarletx_web_container_name: scarletx-web" in values
     assert 'tpl.add_container(values.consts.scarletx_backend_container_name, "backend_image")' in template
     assert 'tpl.add_container(values.consts.scarletx_web_container_name, "web_image")' in template
+    assert 'backend.environment.add_env("SCARLETX_TRUST_PROXY_HEADERS", "1")' in template
     assert 'web.environment.add_env("SCARLETX_WEB_PORT", values.network.web_port.port_number)' in template
     assert 'web.depends.add_dependency(values.consts.scarletx_backend_container_name, "service_healthy")' in template
     assert "backend.add_storage" in template
