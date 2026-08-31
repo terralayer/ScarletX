@@ -1,0 +1,45 @@
+from pathlib import Path
+import re
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def text(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
+
+
+def test_release_version_is_consistent():
+    assert 'version = "0.3.7"' in text("pyproject.toml")
+    app = text("packaging/truenas/scarletx/app.yaml")
+    values = text("packaging/truenas/scarletx/ix_values.yaml")
+    assert "app_version: 0.3.7" in app
+    assert "version: 1.0.1" in app
+    assert "RELEASE-NOTES-0.3.7.md" in app
+    assert re.search(r"(?m)^\s+tag: 0\.3\.7$", values)
+    assert (ROOT / "RELEASE-NOTES-0.3.7.md").exists()
+
+
+def test_main_does_not_publish_a_numeric_stable_tag():
+    workflow = text(".github/workflows/container.yml")
+    assert "type=raw,value=0.3.7,enable={{is_default_branch}}" not in workflow
+    assert "type=semver,pattern={{version}}" in workflow
+
+
+def test_truenas_validation_covers_application_changes():
+    workflow = text(".github/workflows/truenas-validation.yml")
+    for required in (
+        '"scarletx/**"',
+        '"pyproject.toml"',
+        '"requirements*.txt"',
+        '"Dockerfile"',
+        '"packaging/truenas/**"',
+    ):
+        assert required in workflow
+
+
+def test_actions_use_current_node24_generations():
+    tests = text(".github/workflows/tests.yml")
+    assert "actions/checkout@v5" in tests
+    assert "actions/setup-python@v6" in tests
+    assert "actions/checkout@v4" not in tests
+    assert "actions/setup-python@v5" not in tests
