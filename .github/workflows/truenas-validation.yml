@@ -1,0 +1,59 @@
+name: TrueNAS App Validation
+
+on:
+  pull_request:
+    paths:
+      - "packaging/truenas/**"
+      - "Dockerfile"
+      - ".github/workflows/container.yml"
+      - ".github/workflows/truenas-validation.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packaging/truenas/**"
+      - "Dockerfile"
+      - ".github/workflows/container.yml"
+      - ".github/workflows/truenas-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out ScarletX
+        uses: actions/checkout@v5
+
+      - name: Check out TrueNAS Apps
+        run: git clone --depth 1 https://github.com/truenas/apps.git /tmp/truenas-apps
+
+      - name: Install TrueNAS validation dependencies
+        run: python -m pip install pyyaml psutil pytest pytest-cov bcrypt pydantic
+
+      - name: Overlay ScarletX app definition
+        run: |
+          rm -rf /tmp/truenas-apps/ix-dev/community/scarletx
+          cp -a packaging/truenas/scarletx /tmp/truenas-apps/ix-dev/community/scarletx
+
+      - name: Render and validate ScarletX app
+        working-directory: /tmp/truenas-apps
+        run: ./.github/scripts/ci.py --app scarletx --train community --test-file basic-values.yaml --render-only=true
+
+      - name: Wait for anonymous versioned image pull
+        if: github.event_name != 'pull_request'
+        run: |
+          for attempt in $(seq 1 36); do
+            if docker pull ghcr.io/terralayer/scarletx:0.3.6; then
+              exit 0
+            fi
+            echo "Image not anonymously pullable yet; retrying in 10 seconds ($attempt/36)"
+            sleep 10
+          done
+          exit 1
+
+      - name: Deploy and health-check ScarletX through TrueNAS CI
+        if: github.event_name != 'pull_request'
+        working-directory: /tmp/truenas-apps
+        run: ./.github/scripts/ci.py --app scarletx --train community --test-file basic-values.yaml
