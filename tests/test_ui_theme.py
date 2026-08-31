@@ -1,7 +1,7 @@
 from pathlib import Path
 
 
-INDEX = Path(__file__).parents[1] / "scarletx" / "web" / "index.html"
+INDEX = Path(__file__).parents[1] / "frontend" / "index.html"
 
 
 def html() -> str:
