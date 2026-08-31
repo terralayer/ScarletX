@@ -8,6 +8,11 @@ def text(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
+def test_static_frontend_is_outside_backend_package():
+    assert (ROOT / "frontend/index.html").exists()
+    assert not (ROOT / "scarletx/web/index.html").exists()
+
+
 def test_static_auth_assets_contain_gate_and_account_controls():
     script = text("frontend/auth.js")
     styles = text("frontend/auth.css")
@@ -38,13 +43,14 @@ def test_static_auth_script_uses_same_origin_api_and_gates_app_boot():
 
 def test_web_image_injects_static_auth_assets_and_delays_legacy_boot():
     web_dockerfile = text("Dockerfile.web")
+    assert "COPY frontend/index.html /usr/share/nginx/html/index.html" in web_dockerfile
     assert "/auth.css" in web_dockerfile
     assert "/auth.js" in web_dockerfile
     assert "authGateBoot(boot);" in web_dockerfile
 
 
 def test_frontend_does_not_persist_scarletx_credentials_in_browser_storage():
-    combined = text("scarletx/web/index.html") + text("frontend/auth.js")
+    combined = text("frontend/index.html") + text("frontend/auth.js")
     assert 'localStorage.setItem("scarletx' not in combined
     assert "localStorage.setItem('scarletx" not in combined
     assert 'sessionStorage.setItem("scarletx' not in combined
@@ -52,7 +58,7 @@ def test_frontend_does_not_persist_scarletx_credentials_in_browser_storage():
 
 
 def test_frontend_has_no_direct_backend_address():
-    combined = text("scarletx/web/index.html") + text("frontend/auth.js")
+    combined = text("frontend/index.html") + text("frontend/auth.js")
     assert "scarletx-backend" not in combined
     assert "localhost:8000" not in combined
     assert "127.0.0.1:8000" not in combined
