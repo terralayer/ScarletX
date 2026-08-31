@@ -32,7 +32,7 @@ RUN python -m pip install --no-cache-dir --disable-pip-version-check -r requirem
         || echo "SABCTools acceleration unavailable; using built-in yEnc decoder")
 
 COPY scarletx ./scarletx
-COPY README.md RELEASE-NOTES-0.3.6.md BUILD-INFO.txt ./
+COPY README.md RELEASE-NOTES-*.md BUILD-INFO.txt ./
 
 RUN mkdir -p /config /config/generated /config/cache /downloads/incomplete /downloads/complete /downloads/failed /media /backups
 
