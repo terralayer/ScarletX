@@ -1,15 +1,13 @@
 services:
-  scarletx:
+  scarletx-backend:
     image: ghcr.io/terralayer/scarletx:0.3.7
-    container_name: scarletx
+    container_name: scarletx-backend
     restart: unless-stopped
     pull_policy: always
-    ports:
-      - "${SCARLETX_PORT:-8690}:${SCARLETX_PORT:-8690}"
     environment:
       TZ: ${TZ:-Etc/UTC}
       SCARLETX_HOST: 0.0.0.0
-      SCARLETX_PORT: ${SCARLETX_PORT:-8690}
+      SCARLETX_PORT: "8000"
       SCARLETX_DATABASE_URL: sqlite:////config/scarletx.db
       SCARLETX_USENET_INCOMPLETE_DIR: /downloads/incomplete
       SCARLETX_USENET_COMPLETE_DIR: /downloads/complete
@@ -27,8 +25,21 @@ services:
         - CMD
         - python
         - -c
-        - "import json,os,urllib.request; p=os.environ.get('SCARLETX_PORT','8690'); d=json.load(urllib.request.urlopen(f'http://127.0.0.1:{p}/api/health',timeout=3)); raise SystemExit(0 if d.get('app')=='ScarletX' else 1)"
+        - "import json,urllib.request; d=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/health',timeout=3)); raise SystemExit(0 if d.get('app')=='ScarletX' else 1)"
       interval: 30s
       timeout: 5s
       start_period: 30s
       retries: 3
+
+  scarletx-web:
+    image: ghcr.io/terralayer/scarletx-web:0.3.7
+    container_name: scarletx-web
+    restart: unless-stopped
+    pull_policy: always
+    environment:
+      SCARLETX_WEB_PORT: ${SCARLETX_PORT:-8690}
+    depends_on:
+      scarletx-backend:
+        condition: service_healthy
+    ports:
+      - "${SCARLETX_PORT:-8690}:${SCARLETX_PORT:-8690}"
