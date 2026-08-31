@@ -89,14 +89,24 @@ def test_non_api_spa_shell_remains_public():
 
 
 def test_production_bootstrap_registers_auth_routes_and_removes_legacy_api_key_middleware():
-    from scarletx.app import app as production_app
+    import scarletx.app as application
+    from scarletx import main
 
+    production_app = application.app
     paths = {getattr(route, "path", None) for route in production_app.routes}
-    assert "/api/auth/status" in paths
-    assert "/api/setup/admin" in paths
+    auth_router_paths = {getattr(route, "path", None) for route in application.auth_router.routes}
+    diagnostic = {
+        "module": application.__file__,
+        "same_as_main": production_app is main.app,
+        "auth_router_paths": sorted(str(path) for path in auth_router_paths),
+        "production_has_auth_status": "/api/auth/status" in paths,
+        "production_route_count": len(paths),
+    }
+    assert "/api/auth/status" in paths, diagnostic
+    assert "/api/setup/admin" in paths, diagnostic
 
     dispatch_names = {
         getattr(getattr(item, "kwargs", {}).get("dispatch"), "__name__", "")
         for item in production_app.user_middleware
     }
-    assert "optional_api_key_auth" not in dispatch_names
+    assert "optional_api_key_auth" not in dispatch_names, diagnostic
