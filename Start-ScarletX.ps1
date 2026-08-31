@@ -34,7 +34,7 @@ if (!$env:SCARLETX_PORT) {
 }
 $url = "http://${hostAddress}:$port"
 Write-Host ''
-Write-Host 'ScarletX 0.3.7'
+Write-Host 'ScarletX 0.3.8'
 Write-Host 'Based on SceneCore 0.7.16 adult functionality'
 Write-Host "Opening: $url"
 Write-Host ''

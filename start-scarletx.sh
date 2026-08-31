@@ -145,7 +145,7 @@ fi
 
 URL="http://$HOST:$PORT"
 echo ""
-echo "ScarletX 0.3.7"
+echo "ScarletX 0.3.8"
 echo "Root folder: ${SCARLETX_DEFAULT_MEDIA_ROOT}"
 echo "Opening: $URL"
 echo "Press Ctrl+C to stop ScarletX."
