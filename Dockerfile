@@ -42,4 +42,4 @@ EXPOSE 8690
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD python -c "import json,urllib.request; d=json.load(urllib.request.urlopen('http://127.0.0.1:8690/api/health', timeout=3)); raise SystemExit(0 if d.get('app')=='ScarletX' else 1)"
 
-CMD ["python", "-m", "uvicorn", "scarletx.main:app", "--host", "0.0.0.0", "--port", "8690"]
+CMD ["python", "-m", "scarletx"]
