@@ -25,6 +25,7 @@ ScarletX 0.3.7 is a privacy, responsiveness, and release-hardening update for se
 - Expands TrueNAS validation triggers to application code and dependency metadata changes.
 - Runs full anonymous image-pull and TrueNAS deployment/health validation for release tags against the exact released container.
 - Updates the test workflow to Node-24-compatible `actions/checkout@v5` and `actions/setup-python@v6` generations.
+- Updates the container workflow to Node-24-compatible Docker actions: Buildx v4, Login v4, Metadata v6, and Build/Push v7.
 
 ## Upgrade notes
 - Existing ScarletX databases are preserved. The authentication tables are created through the existing startup schema initialization.
