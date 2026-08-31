@@ -36,7 +36,7 @@ def test_backend_defaults_to_internal_port_8000():
 
 def test_nginx_is_the_public_http_entrypoint():
     config = text("nginx/scarletx.conf")
-    assert "listen 8690;" in config
+    assert "listen ${SCARLETX_WEB_PORT};" in config
     assert "root /usr/share/nginx/html;" in config
     assert "location /api/" in config
     assert "proxy_pass http://scarletx-backend:8000;" in config
@@ -56,7 +56,8 @@ def test_nginx_is_the_public_http_entrypoint():
 def test_web_image_builds_finished_static_frontend():
     web_dockerfile = text("Dockerfile.web")
     assert "FROM nginx:" in web_dockerfile
-    assert "COPY nginx/scarletx.conf" in web_dockerfile
+    assert "SCARLETX_WEB_PORT=8690" in web_dockerfile
+    assert "COPY nginx/scarletx.conf /etc/nginx/templates/default.conf.template" in web_dockerfile
     assert "COPY scarletx/web/index.html /usr/share/nginx/html/index.html" in web_dockerfile
     assert "COPY frontend/auth.css /usr/share/nginx/html/auth.css" in web_dockerfile
     assert "COPY frontend/auth.js /usr/share/nginx/html/auth.js" in web_dockerfile
@@ -64,7 +65,7 @@ def test_web_image_builds_finished_static_frontend():
     assert "/auth.css" in web_dockerfile
     assert "/auth.js" in web_dockerfile
     assert "EXPOSE 8690" in web_dockerfile
-    assert "127.0.0.1:8690/api/health" in web_dockerfile
+    assert "127.0.0.1:${SCARLETX_WEB_PORT}/api/health" in web_dockerfile
 
 
 def test_compose_publishes_only_nginx_web_port():
@@ -74,6 +75,7 @@ def test_compose_publishes_only_nginx_web_port():
     backend_block, web_block = compose.split("  scarletx-web:", 1)
     assert "ports:" not in backend_block
     assert '"8690:8690"' in web_block
+    assert 'SCARLETX_WEB_PORT: "8690"' in web_block
     assert "scarletx-backend" in web_block
 
 
@@ -93,6 +95,8 @@ def test_truenas_template_routes_public_port_through_nginx():
     assert "scarletx_web_container_name: scarletx-web" in values
     assert 'tpl.add_container(values.consts.scarletx_backend_container_name, "backend_image")' in template
     assert 'tpl.add_container(values.consts.scarletx_web_container_name, "web_image")' in template
+    assert 'web.environment.add_env("SCARLETX_WEB_PORT", values.network.web_port.port_number)' in template
+    assert 'web.depends.add_dependency(values.consts.scarletx_backend_container_name, "service_healthy")' in template
     assert "backend.add_storage" in template
     assert "web.add_port(values.network.web_port)" in template
     assert "backend.add_port(values.network.web_port)" not in template
