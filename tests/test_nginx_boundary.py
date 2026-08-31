@@ -23,6 +23,7 @@ def test_backend_composition_has_no_runtime_ui_injection():
     assert "auth_ui" not in application
     assert "install_auth_ui" not in application
     assert not (ROOT / "scarletx/auth_ui.py").exists()
+    assert not (ROOT / "scarletx/web/index.html").exists()
 
 
 def test_backend_defaults_to_internal_port_8000():
@@ -32,6 +33,7 @@ def test_backend_defaults_to_internal_port_8000():
     assert "SCARLETX_PORT=8000" in dockerfile
     assert "EXPOSE 8000" in dockerfile
     assert "127.0.0.1:8000/api/health" in dockerfile
+    assert "COPY frontend" not in dockerfile
 
 
 def test_nginx_is_the_public_http_entrypoint():
@@ -58,7 +60,7 @@ def test_web_image_builds_finished_static_frontend():
     assert "FROM nginx:" in web_dockerfile
     assert "SCARLETX_WEB_PORT=8690" in web_dockerfile
     assert "COPY nginx/scarletx.conf /etc/nginx/templates/default.conf.template" in web_dockerfile
-    assert "COPY scarletx/web/index.html /usr/share/nginx/html/index.html" in web_dockerfile
+    assert "COPY frontend/index.html /usr/share/nginx/html/index.html" in web_dockerfile
     assert "COPY frontend/auth.css /usr/share/nginx/html/auth.css" in web_dockerfile
     assert "COPY frontend/auth.js /usr/share/nginx/html/auth.js" in web_dockerfile
     assert "authGateBoot(boot);" in web_dockerfile
