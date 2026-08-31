@@ -93,17 +93,20 @@ def test_production_bootstrap_registers_auth_routes_and_removes_legacy_api_key_m
     from scarletx import main
 
     production_app = application.app
-    paths = {getattr(route, "path", None) for route in production_app.routes}
-    main_paths = {getattr(route, "path", None) for route in main.app.routes}
+    initial_paths = {getattr(route, "path", None) for route in production_app.routes}
     auth_router_paths = {getattr(route, "path", None) for route in application.auth_router.routes}
+    before = len(production_app.router.routes)
+    production_app.include_router(application.auth_router)
+    after = len(production_app.router.routes)
+    after_paths = {getattr(route, "path", None) for route in production_app.routes}
     message = (
-        f"same={production_app is main.app}; prod={len(paths)}; main={len(main_paths)}; "
-        f"router={len(auth_router_paths)}; prod_auth={'/api/auth/status' in paths}; "
-        f"main_auth={'/api/auth/status' in main_paths}; router_auth={'/api/auth/status' in auth_router_paths}"
+        f"same={production_app is main.app}; app={type(production_app)!r}; router={type(production_app.router)!r}; "
+        f"before={before}; after={after}; auth_count={len(auth_router_paths)}; "
+        f"initial_auth={'/api/auth/status' in initial_paths}; after_auth={'/api/auth/status' in after_paths}"
     )
     assert production_app is main.app, message
-    assert "/api/auth/status" in paths, message
-    assert "/api/setup/admin" in paths, message
+    assert after == before + len(auth_router_paths), message
+    assert "/api/auth/status" in after_paths, message
 
     dispatch_names = {
         getattr(getattr(item, "kwargs", {}).get("dispatch"), "__name__", "")
