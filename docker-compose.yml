@@ -1,12 +1,15 @@
 services:
-  scarletx:
-    build: .
-    container_name: scarletx
+  scarletx-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: scarletx-backend
     restart: unless-stopped
-    ports:
-      - "8690:8690"
     environment:
       TZ: America/Los_Angeles
+      SCARLETX_HOST: 0.0.0.0
+      SCARLETX_PORT: "8000"
+      SCARLETX_TRUST_PROXY_HEADERS: "1"
       SCARLETX_DATABASE_URL: sqlite:////config/scarletx.db
       SCARLETX_USENET_INCOMPLETE_DIR: /downloads/incomplete
       SCARLETX_USENET_COMPLETE_DIR: /downloads/complete
@@ -19,3 +22,17 @@ services:
       - ./docker-data/downloads:/downloads
       - ./docker-data/media:/media
       - ./docker-data/backups:/backups
+
+  scarletx-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: scarletx-web
+    restart: unless-stopped
+    environment:
+      SCARLETX_WEB_PORT: "8690"
+    depends_on:
+      scarletx-backend:
+        condition: service_healthy
+    ports:
+      - "8690:8690"

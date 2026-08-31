@@ -4,7 +4,7 @@ import uvicorn
 
 def main() -> None:
     host = os.getenv("SCARLETX_HOST", "127.0.0.1")
-    port = int(os.getenv("SCARLETX_PORT", "8690"))
+    port = int(os.getenv("SCARLETX_PORT", "8000"))
     uvicorn.run("scarletx.app:app", host=host, port=port)
 
 
