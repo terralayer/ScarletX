@@ -2,6 +2,7 @@ from pathlib import Path
 import re
 
 ROOT = Path(__file__).resolve().parents[1]
+VERSION = "0.3.7"
 
 
 def text(path: str) -> str:
@@ -17,6 +18,41 @@ def test_release_version_is_consistent():
     assert "RELEASE-NOTES-0.3.7.md" in app
     assert re.search(r"(?m)^\s+tag: 0\.3\.7$", values)
     assert (ROOT / "RELEASE-NOTES-0.3.7.md").exists()
+
+
+def test_shipped_application_metadata_reports_current_version():
+    expected_by_file = {
+        "scarletx/__init__.py": '__version__ = "0.3.7"',
+        "scarletx/main.py": 'version="0.3.7"',
+        "README.md": "Current application version: **0.3.7**.",
+        "BUILD-INFO.txt": "ScarletX 0.3.7",
+        "start-scarletx.sh": 'ScarletX 0.3.7',
+        "Start-ScarletX.ps1": 'ScarletX 0.3.7',
+        "docker-compose.truenas.yml": "image: ghcr.io/terralayer/scarletx:0.3.7",
+    }
+    for path, expected in expected_by_file.items():
+        assert expected in text(path), f"{path} does not report {VERSION}"
+
+    assert '"version": "0.3.7"' in text("scarletx/main.py")
+    assert "RELEASE-NOTES-0.3.7.md" in text("README.md")
+
+
+def test_outbound_user_agents_report_current_version():
+    for path in (
+        "scarletx/tpdb.py",
+        "scarletx/remote_art.py",
+        "scarletx/newznab.py",
+        "scarletx/native_usenet.py",
+    ):
+        assert "ScarletX/0.3.7" in text(path), f"{path} has a stale User-Agent"
+
+
+def test_release_declares_agplv3_license():
+    assert 'license = "AGPL-3.0-only"' in text("pyproject.toml")
+    license_text = text("LICENSE")
+    assert "GNU AFFERO GENERAL PUBLIC LICENSE" in license_text
+    assert "Version 3, 19 November 2007" in license_text
+    assert "AGPL-3.0-only" in text("README.md")
 
 
 def test_main_does_not_publish_a_numeric_stable_tag():

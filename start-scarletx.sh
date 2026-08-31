@@ -145,7 +145,7 @@ fi
 
 URL="http://$HOST:$PORT"
 echo ""
-echo "ScarletX 0.3.6"
+echo "ScarletX 0.3.7"
 echo "Root folder: ${SCARLETX_DEFAULT_MEDIA_ROOT}"
 echo "Opening: $URL"
 echo "Press Ctrl+C to stop ScarletX."
@@ -155,7 +155,7 @@ if [[ "${SCARLETX_NO_BROWSER:-0}" != "1" ]]; then
   (
     for _ in $(seq 1 120); do
       HEALTH="$(curl -fsS "$URL/api/health" 2>/dev/null || true)"
-      if printf '%s' "$HEALTH" | grep -q '"app":"ScarletX"' && printf '%s' "$HEALTH" | grep -q '"version":"0.3.6"'; then
+      if printf '%s' "$HEALTH" | grep -q '"app":"ScarletX"' && printf '%s' "$HEALTH" | grep -q '"version":"0.3.7"'; then
         if command -v open >/dev/null 2>&1; then
           open "$URL" >/dev/null 2>&1 || true
         elif command -v xdg-open >/dev/null 2>&1; then

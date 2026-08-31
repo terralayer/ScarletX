@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "scarletx"
 version = "0.3.7"
 description = "Self-hosted adult scene management and automation"
+license = "AGPL-3.0-only"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115,<1",

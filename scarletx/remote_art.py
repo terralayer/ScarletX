@@ -19,7 +19,7 @@ def _art_client() -> httpx.AsyncClient:
     if _ART_CLIENT is None or _ART_CLIENT.is_closed:
         _ART_CLIENT = httpx.AsyncClient(
             timeout=12, follow_redirects=True, trust_env=False,
-            headers={"User-Agent": "ScarletX/0.3.6"},
+            headers={"User-Agent": "ScarletX/0.3.7"},
             limits=httpx.Limits(max_connections=30, max_keepalive_connections=15, keepalive_expiry=45),
         )
     return _ART_CLIENT
