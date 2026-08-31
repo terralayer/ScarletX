@@ -94,18 +94,21 @@ def test_production_bootstrap_registers_auth_routes_and_removes_legacy_api_key_m
 
     production_app = application.app
     initial_paths = {getattr(route, "path", None) for route in production_app.routes}
-    auth_router_paths = {getattr(route, "path", None) for route in application.auth_router.routes}
+    source_routes = list(application.auth_router.routes)
     before = len(production_app.router.routes)
     production_app.include_router(application.auth_router)
-    after = len(production_app.router.routes)
+    added = production_app.router.routes[before:]
     after_paths = {getattr(route, "path", None) for route in production_app.routes}
+    source_summary = [f"{type(route).__module__}.{type(route).__name__}:{getattr(route, 'path', None)}" for route in source_routes]
+    added_summary = [f"{type(route).__module__}.{type(route).__name__}:{getattr(route, 'path', None)}" for route in added]
     message = (
-        f"same={production_app is main.app}; app={type(production_app)!r}; router={type(production_app.router)!r}; "
-        f"before={before}; after={after}; auth_count={len(auth_router_paths)}; "
+        f"same={production_app is main.app}; source={source_summary!r}; added={added_summary!r}; "
+        f"app_include={production_app.include_router.__func__.__module__}.{production_app.include_router.__func__.__qualname__}; "
+        f"router_include={production_app.router.include_router.__func__.__module__}.{production_app.router.include_router.__func__.__qualname__}; "
         f"initial_auth={'/api/auth/status' in initial_paths}; after_auth={'/api/auth/status' in after_paths}"
     )
     assert production_app is main.app, message
-    assert after == before + len(auth_router_paths), message
+    assert len(added) == len(source_routes), message
     assert "/api/auth/status" in after_paths, message
 
     dispatch_names = {
