@@ -1,6 +1,6 @@
 services:
   scarletx:
-    image: ghcr.io/terralayer/scarletx:0.3.6
+    image: ghcr.io/terralayer/scarletx:0.3.7
     container_name: scarletx
     restart: unless-stopped
     pull_policy: always

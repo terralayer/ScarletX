@@ -130,9 +130,13 @@ python -m pytest -q
 
 GitHub Actions runs the test suite and source-compilation check on Python 3.11, 3.12, and 3.13.
 
-Current application version: **0.3.6**.
+Current application version: **0.3.7**.
 
-See `RELEASE-NOTES-0.3.6.md` for the current release summary.
+See `RELEASE-NOTES-0.3.7.md` for the current release summary.
+
+## License
+
+ScarletX is licensed under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`). See `LICENSE` for the full license text.
 
 ## Project status
 
