@@ -8,17 +8,18 @@ def text(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_static_frontend_contains_auth_gate_and_account_controls():
-    html = text("frontend/index.html")
-    assert 'id="authGate"' in html
-    assert 'id="authUsername"' in html
-    assert 'id="authPassword"' in html
-    assert 'id="authPasswordConfirm"' in html
-    assert 'id="authAccountButton"' in html
-    assert 'id="authLogoutButton"' in html
-    assert 'id="authAccountDialog"' in html
-    assert '<link rel="stylesheet" href="/auth.css">' in html
-    assert '<script src="/auth.js"></script>' in html
+def test_static_auth_assets_contain_gate_and_account_controls():
+    script = text("frontend/auth.js")
+    styles = text("frontend/auth.css")
+    assert 'id="authGate"' in script
+    assert 'id="authUsername"' in script
+    assert 'id="authPassword"' in script
+    assert 'id="authPasswordConfirm"' in script
+    assert 'id="authAccountButton"' in script
+    assert 'id="authLogoutButton"' in script
+    assert 'id="authAccountDialog"' in script
+    assert ".sx-auth-gate" in styles
+    assert ".sx-auth-account" in styles
 
 
 def test_static_auth_script_uses_same_origin_api_and_gates_app_boot():
@@ -34,13 +35,16 @@ def test_static_auth_script_uses_same_origin_api_and_gates_app_boot():
     assert "credentials:'same-origin'" in script or 'credentials: "same-origin"' in script
     assert "window.authGateBoot" in script
 
-    html = text("frontend/index.html")
-    assert "authGateBoot(boot);" in html
-    assert "\nboot();\n" not in html
+
+def test_web_image_injects_static_auth_assets_and_delays_legacy_boot():
+    web_dockerfile = text("Dockerfile.web")
+    assert "/auth.css" in web_dockerfile
+    assert "/auth.js" in web_dockerfile
+    assert "authGateBoot(boot);" in web_dockerfile
 
 
 def test_frontend_does_not_persist_scarletx_credentials_in_browser_storage():
-    combined = text("frontend/index.html") + text("frontend/auth.js")
+    combined = text("scarletx/web/index.html") + text("frontend/auth.js")
     assert 'localStorage.setItem("scarletx' not in combined
     assert "localStorage.setItem('scarletx" not in combined
     assert 'sessionStorage.setItem("scarletx' not in combined
@@ -48,7 +52,7 @@ def test_frontend_does_not_persist_scarletx_credentials_in_browser_storage():
 
 
 def test_frontend_has_no_direct_backend_address():
-    combined = text("frontend/index.html") + text("frontend/auth.js")
+    combined = text("scarletx/web/index.html") + text("frontend/auth.js")
     assert "scarletx-backend" not in combined
     assert "localhost:8000" not in combined
     assert "127.0.0.1:8000" not in combined
