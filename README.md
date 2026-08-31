@@ -36,7 +36,7 @@ The current ScarletX interface uses a permanent dark charcoal theme with scarlet
 
 ## Requirements
 
-ScarletX requires Python 3.11 or newer when run directly. The container image currently uses Python 3.12.
+ScarletX requires Python 3.11 or newer when run directly. The backend container currently uses Python 3.12.
 
 System media/post-processing tools used by ScarletX include FFmpeg/FFprobe, PAR2, 7-Zip, and UnRAR-compatible extraction support. SABCTools is used when available to accelerate yEnc processing and falls back to the built-in decoder when unavailable.
 
@@ -55,6 +55,11 @@ When Homebrew is available, the launcher can install missing media/post-processi
 
 ## Docker / Linux
 
+Container deployments use two services:
+
+- `scarletx-backend` runs FastAPI on internal port `8000`. It is not published directly to the host.
+- `scarletx-web` runs Nginx, serves the static frontend, and is the only public HTTP entrypoint. Nginx proxies `/api/*`, `/docs`, `/redoc`, and `/openapi.json` to the backend.
+
 Build and start ScarletX locally:
 
 ```bash
@@ -67,7 +72,9 @@ Open:
 http://localhost:8690
 ```
 
-The container exposes port `8690` and uses these persistent locations:
+Only the Nginx/WebUI port should be published. Do not publish backend port `8000` directly.
+
+Persistent storage is attached to `scarletx-backend`:
 
 | Container path | Purpose |
 | --- | --- |
@@ -76,10 +83,18 @@ The container exposes port `8690` and uses these persistent locations:
 | `/media` | Permanent scene library |
 | `/backups` | Database backups |
 
-The GitHub Actions container workflow publishes the current main-branch image as:
+The GitHub Actions container workflow publishes current main-branch images as:
 
 ```text
 ghcr.io/terralayer/scarletx:main
+ghcr.io/terralayer/scarletx-web:main
+```
+
+Stable container releases always use matching versions for both images, for example ScarletX 0.3.8:
+
+```text
+ghcr.io/terralayer/scarletx:0.3.8
+ghcr.io/terralayer/scarletx-web:0.3.8
 ```
 
 Runtime settings and credentials are configured by the user. ScarletX does not require development credentials to be committed to the repository.
@@ -88,7 +103,7 @@ Runtime settings and credentials are configured by the user. ScarletX does not r
 
 TrueNAS SCALE is a primary deployment target for ScarletX.
 
-A TrueNAS deployment should map persistent datasets to `/config`, `/downloads`, `/media`, and `/backups`, expose the ScarletX web port, and keep configuration/backups on storage that can be snapshotted or backed up normally.
+The TrueNAS app uses the same two-container boundary as Docker Compose: `scarletx-backend` remains private on port `8000`, while `scarletx-web`/Nginx owns the configurable WebUI port. Persistent datasets for `/config`, `/downloads`, `/media`, and `/backups` are mounted on the backend container so application state remains separate from the stateless web container.
 
 The TrueNAS Community Apps submission package is maintained separately from the application runtime so catalog metadata can follow the TrueNAS contribution requirements without changing ScarletX application behavior.
 
@@ -129,6 +144,8 @@ python -m pytest -q
 ```
 
 GitHub Actions runs the test suite and source-compilation check on Python 3.11, 3.12, and 3.13.
+
+Stable releases are created with the manual `Release ScarletX` GitHub Actions workflow. The release helper enforces the `0.3.x` series and increments only the third component (`0.3.8` → `0.3.9` → `0.3.10`). Adding or changing the workflow does not create a release; a release occurs only when the workflow is manually dispatched with release notes.
 
 Current application version: **0.3.8**.
 
