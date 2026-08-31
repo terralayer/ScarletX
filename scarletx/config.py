@@ -1,6 +1,6 @@
 import json
 import os
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, SecretStr, field_validator
 
 DEFAULT_ADULT_INDEXER_CATEGORIES = [6000, 6010, 6020, 6040]
 DEV_NZBGEEK_API_KEY = os.getenv("SCARLETX_NZBGEEK_API_KEY", "")
@@ -21,6 +21,42 @@ DEV_NEWSHOSTING_PORT = int(os.getenv("SCARLETX_NEWSHOSTING_PORT", "563"))
 DEV_NEWSHOSTING_USERNAME = os.getenv("SCARLETX_NEWSHOSTING_USERNAME", "")
 DEV_NEWSHOSTING_PASSWORD = os.getenv("SCARLETX_NEWSHOSTING_PASSWORD", "")
 DEV_NEWSHOSTING_CONNECTIONS = int(os.getenv("SCARLETX_NEWSHOSTING_CONNECTIONS", "100"))
+
+
+def _effective_cpu_count() -> int:
+    """Return the CPU capacity visible to ScarletX, honoring container quotas."""
+    logical = max(1, int(os.cpu_count() or 1))
+
+    try:
+        with open("/sys/fs/cgroup/cpu.max", "r", encoding="utf-8") as handle:
+            quota_raw, period_raw = handle.read().strip().split()[:2]
+        if quota_raw != "max":
+            quota = int(quota_raw)
+            period = int(period_raw)
+            if quota > 0 and period > 0:
+                quota_cpus = max(1, (quota + period - 1) // period)
+                logical = min(logical, quota_cpus)
+    except (OSError, ValueError, IndexError):
+        try:
+            with open("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", "r", encoding="utf-8") as handle:
+                quota = int(handle.read().strip())
+            with open("/sys/fs/cgroup/cpu/cpu.cfs_period_us", "r", encoding="utf-8") as handle:
+                period = int(handle.read().strip())
+            if quota > 0 and period > 0:
+                quota_cpus = max(1, (quota + period - 1) // period)
+                logical = min(logical, quota_cpus)
+        except (OSError, ValueError):
+            pass
+
+    return logical
+
+
+def _interactive_connection_cap(requested: int, *, effective_cpus: int | None = None) -> int:
+    """Limit NNTP oversubscription so the web/API thread keeps CPU headroom."""
+    requested = max(1, int(requested))
+    cpus = max(1, int(effective_cpus if effective_cpus is not None else _effective_cpu_count()))
+    return min(requested, max(8, cpus * 8))
+
 
 def _default_indexers() -> str:
     raw = os.getenv("SCARLETX_NEWZNAB_INDEXERS_JSON", "")
@@ -65,6 +101,7 @@ def _default_indexers() -> str:
         }
     ])
 
+
 class Settings(BaseModel):
     app_name: str = "ScarletX"
     theporndb_api_key: SecretStr = SecretStr(os.getenv("SCARLETX_TPDB_API_KEY", ""))
@@ -74,7 +111,7 @@ class Settings(BaseModel):
     native_usenet_providers_json: SecretStr = SecretStr(os.getenv("SCARLETX_USENET_PROVIDERS_JSON", "[]"))
     native_usenet_incomplete_dir: str = os.getenv("SCARLETX_USENET_INCOMPLETE_DIR", "./downloads/incomplete")
     native_usenet_complete_dir: str = os.getenv("SCARLETX_USENET_COMPLETE_DIR", "./downloads/complete")
-    native_usenet_max_connections: int = int(os.getenv("SCARLETX_USENET_MAX_CONNECTIONS", "120"))
+    native_usenet_max_connections: int = _interactive_connection_cap(int(os.getenv("SCARLETX_USENET_MAX_CONNECTIONS", "120")))
     native_usenet_max_retries: int = int(os.getenv("SCARLETX_USENET_MAX_RETRIES", "2"))
     native_usenet_speed_limit_mb_s: float = float(os.getenv("SCARLETX_USENET_SPEED_LIMIT_MB_S", "0"))
     native_usenet_repair_enabled: bool = os.getenv("SCARLETX_USENET_REPAIR", "true").strip().lower() not in {"0","false","no","off"}
@@ -100,6 +137,11 @@ class Settings(BaseModel):
     api_key_enabled: bool = False
     api_key: SecretStr = SecretStr("")
     scarletx_log_level: str = "INFO"
+
+    @field_validator("native_usenet_max_connections")
+    @classmethod
+    def _limit_native_usenet_connections(cls, value: int) -> int:
+        return _interactive_connection_cap(value)
 
     def native_usenet_providers(self):
         from .native_usenet import UsenetProviderConfig
