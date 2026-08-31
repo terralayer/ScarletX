@@ -14,7 +14,7 @@ RUN set -eux; \
 # The official Nginx image envsubst entrypoint renders templates at startup,
 # allowing TrueNAS to select the WebUI port without changing the image.
 COPY nginx/scarletx.conf /etc/nginx/templates/default.conf.template
-COPY scarletx/web/index.html /usr/share/nginx/html/index.html
+COPY frontend/index.html /usr/share/nginx/html/index.html
 COPY frontend/auth.css /usr/share/nginx/html/auth.css
 COPY frontend/auth.js /usr/share/nginx/html/auth.js
 
