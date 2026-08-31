@@ -37,6 +37,14 @@ def test_truenas_validation_covers_application_changes():
         assert required in workflow
 
 
+def test_truenas_full_deploy_is_release_tag_only():
+    workflow = text(".github/workflows/truenas-validation.yml")
+    assert 'tags: ["v*"]' in workflow
+    assert "startsWith(github.ref, 'refs/tags/v')" in workflow
+    assert 'RELEASE_VERSION="${GITHUB_REF_NAME#v}"' in workflow
+    assert "ghcr.io/terralayer/scarletx:${RELEASE_VERSION}" in workflow
+
+
 def test_actions_use_current_node24_generations():
     tests = text(".github/workflows/tests.yml")
     assert "actions/checkout@v5" in tests
