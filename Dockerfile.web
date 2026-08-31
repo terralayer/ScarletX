@@ -1,8 +1,12 @@
 FROM nginx:alpine
 
+ENV SCARLETX_WEB_PORT=8690
+
 RUN rm -f /etc/nginx/conf.d/default.conf
 
-COPY nginx/scarletx.conf /etc/nginx/conf.d/default.conf
+# The official Nginx image envsubst entrypoint renders templates at startup,
+# allowing TrueNAS to select the WebUI port without changing the image.
+COPY nginx/scarletx.conf /etc/nginx/templates/default.conf.template
 COPY scarletx/web/index.html /usr/share/nginx/html/index.html
 COPY frontend/auth.css /usr/share/nginx/html/auth.css
 COPY frontend/auth.js /usr/share/nginx/html/auth.js
@@ -20,4 +24,4 @@ RUN set -eux; \
 EXPOSE 8690
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:8690/api/health | grep -q '"app":"ScarletX"'
+  CMD wget -qO- "http://127.0.0.1:${SCARLETX_WEB_PORT}/api/health" | grep -q '"app":"ScarletX"'
