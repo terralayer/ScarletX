@@ -69,7 +69,10 @@ jobs:
                   ('RELEASE-NOTES-0.3.7.md', 'RELEASE-NOTES-0.3.8.md'),
               ],
               "packaging/truenas/scarletx/ix_values.yaml": [('tag: 0.3.7', 'tag: 0.3.8')],
-              "tests/test_release_contract.py": [('0.3.7', '0.3.8')],
+              "tests/test_release_contract.py": [
+                  ('0.3.7', '0.3.8'),
+                  (r'0\.3\.7', r'0\.3\.8'),
+              ],
           }
 
           for filename, edits in replacements.items():
