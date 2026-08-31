@@ -8,6 +8,7 @@ services:
       TZ: ${TZ:-Etc/UTC}
       SCARLETX_HOST: 0.0.0.0
       SCARLETX_PORT: "8000"
+      SCARLETX_TRUST_PROXY_HEADERS: "1"
       SCARLETX_DATABASE_URL: sqlite:////config/scarletx.db
       SCARLETX_USENET_INCOMPLETE_DIR: /downloads/incomplete
       SCARLETX_USENET_COMPLETE_DIR: /downloads/complete
