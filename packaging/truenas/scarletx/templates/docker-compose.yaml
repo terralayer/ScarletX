@@ -11,6 +11,7 @@
 
 {% do backend.environment.add_env("SCARLETX_HOST", "0.0.0.0") %}
 {% do backend.environment.add_env("SCARLETX_PORT", 8000) %}
+{% do backend.environment.add_env("SCARLETX_TRUST_PROXY_HEADERS", "1") %}
 {% do backend.environment.add_env("SCARLETX_NO_BROWSER", "1") %}
 {% do backend.environment.add_env("SCARLETX_DATABASE_URL", "sqlite:////config/scarletx.db") %}
 {% do backend.environment.add_env("SCARLETX_USENET_INCOMPLETE_DIR", "/downloads/incomplete") %}
