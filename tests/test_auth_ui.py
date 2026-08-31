@@ -62,3 +62,17 @@ def test_auth_ui_middleware_only_replaces_root_html(tmp_path: Path):
     plain = client.get("/plain")
     assert plain.status_code == 200
     assert plain.text == "plain"
+
+
+def test_production_root_uses_auth_shell_and_security_headers():
+    from scarletx.app import app as production_app
+
+    client = TestClient(production_app)
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "authGate" in response.text
+    assert "authGateBoot(boot);" in response.text
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
