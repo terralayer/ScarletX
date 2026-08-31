@@ -3,8 +3,14 @@ from starlette.requests import Request
 from scarletx.auth_routes import _client_address, _request_is_secure
 
 
-def make_request(*, forwarded_for="203.0.113.42", forwarded_proto="https") -> Request:
+def make_request(
+    *,
+    real_ip="203.0.113.42",
+    forwarded_for="198.51.100.99, 203.0.113.42",
+    forwarded_proto="https",
+) -> Request:
     headers = [
+        (b"x-real-ip", real_ip.encode()),
         (b"x-forwarded-for", forwarded_for.encode()),
         (b"x-forwarded-proto", forwarded_proto.encode()),
     ]
@@ -31,10 +37,10 @@ def test_forwarded_headers_are_ignored_without_explicit_proxy_trust(monkeypatch)
     assert _request_is_secure(request) is False
 
 
-def test_nginx_forwarded_identity_is_used_when_proxy_trust_is_enabled(monkeypatch):
+def test_nginx_real_ip_is_used_when_proxy_trust_is_enabled(monkeypatch):
     monkeypatch.setenv("SCARLETX_TRUST_PROXY_HEADERS", "1")
-    request = make_request(forwarded_for="198.51.100.17, 172.18.0.4")
-    assert _client_address(request) == "198.51.100.17"
+    request = make_request(real_ip="203.0.113.42", forwarded_for="1.2.3.4, 203.0.113.42")
+    assert _client_address(request) == "203.0.113.42"
     assert _request_is_secure(request) is True
 
 
