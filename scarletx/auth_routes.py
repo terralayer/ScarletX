@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -24,8 +26,34 @@ from .schemas import AdminCredentialsWrite, AdminSetupWrite, LoginWrite
 router = APIRouter()
 
 
+def _trust_proxy_headers() -> bool:
+    return os.getenv("SCARLETX_TRUST_PROXY_HEADERS", "").strip().casefold() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def _client_address(request: Request) -> str:
+    if _trust_proxy_headers():
+        # Nginx overwrites X-Real-IP with the connection peer address, so it is
+        # not affected by a client-supplied X-Forwarded-For value.
+        real_ip = (request.headers.get("X-Real-IP") or "").strip()
+        if real_ip:
+            return real_ip
+        forwarded = (request.headers.get("X-Forwarded-For") or "").strip()
+        if forwarded:
+            return forwarded.split(",")[-1].strip()
     return request.client.host if request.client else "unknown"
+
+
+def _request_is_secure(request: Request) -> bool:
+    if _trust_proxy_headers():
+        forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",", 1)[0].strip().casefold()
+        if forwarded_proto:
+            return forwarded_proto == "https"
+    return request.url.scheme == "https"
 
 
 def _set_session_cookie(response: Response, request: Request, token: str) -> None:
@@ -34,7 +62,7 @@ def _set_session_cookie(response: Response, request: Request, token: str) -> Non
         token,
         max_age=SESSION_MAX_AGE_SECONDS,
         httponly=True,
-        secure=request.url.scheme == "https",
+        secure=_request_is_secure(request),
         samesite="lax",
         path="/",
     )
@@ -44,7 +72,7 @@ def _clear_session_cookie(response: Response, request: Request) -> None:
     response.delete_cookie(
         SESSION_COOKIE_NAME,
         path="/",
-        secure=request.url.scheme == "https",
+        secure=_request_is_secure(request),
         httponly=True,
         samesite="lax",
     )

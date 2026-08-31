@@ -3,7 +3,7 @@ FROM python:3.12-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     SCARLETX_HOST=0.0.0.0 \
-    SCARLETX_PORT=8690 \
+    SCARLETX_PORT=8000 \
     SCARLETX_NO_BROWSER=1 \
     SCARLETX_DATABASE_URL=sqlite:////config/scarletx.db \
     SCARLETX_USENET_INCOMPLETE_DIR=/downloads/incomplete \
@@ -37,9 +37,9 @@ COPY README.md RELEASE-NOTES-*.md BUILD-INFO.txt ./
 RUN mkdir -p /config /config/generated /config/cache /downloads/incomplete /downloads/complete /downloads/failed /media /backups
 
 VOLUME ["/config", "/downloads", "/media", "/backups"]
-EXPOSE 8690
+EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD python -c "import json,urllib.request; d=json.load(urllib.request.urlopen('http://127.0.0.1:8690/api/health', timeout=3)); raise SystemExit(0 if d.get('app')=='ScarletX' else 1)"
+  CMD python -c "import json,urllib.request; d=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)); raise SystemExit(0 if d.get('app')=='ScarletX' else 1)"
 
 CMD ["python", "-m", "scarletx"]

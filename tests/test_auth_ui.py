@@ -1,78 +1,64 @@
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
-from fastapi.testclient import TestClient
 
-from scarletx.auth_ui import install_auth_ui, render_auth_shell
+ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_auth_shell_delays_legacy_boot_and_exposes_setup_login_logout_controls():
-    legacy = "<html><body><div id='legacy'>legacy</div><script>function boot(){}\nboot();\n</script></body></html>"
-
-    rendered = render_auth_shell(legacy)
-
-    assert "authGate" in rendered
-    assert "authUsername" in rendered
-    assert "authPassword" in rendered
-    assert "authPasswordConfirm" in rendered
-    assert "authAccountButton" in rendered
-    assert "authLogoutButton" in rendered
-    assert "authAccountDialog" in rendered
-    assert "/api/auth/status" in rendered
-    assert "/api/setup/admin" in rendered
-    assert "/api/auth/login" in rendered
-    assert "/api/auth/logout" in rendered
-    assert "/api/auth/admin" in rendered
-    assert "authGateBoot(boot);" in rendered
-    assert "\nboot();\n" not in rendered
+def text(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_auth_shell_rendering_is_idempotent():
-    legacy = "<html><body><script>function boot(){}\nboot();\n</script></body></html>"
-    once = render_auth_shell(legacy)
-    twice = render_auth_shell(once)
-    assert twice == once
+def test_static_frontend_is_outside_backend_package():
+    assert (ROOT / "frontend/index.html").exists()
+    assert not (ROOT / "scarletx/web/index.html").exists()
 
 
-def test_auth_ui_middleware_only_replaces_root_html(tmp_path: Path):
-    html_path = tmp_path / "index.html"
-    html_path.write_text(
-        "<html><body><script>function boot(){}\nboot();\n</script></body></html>",
-        encoding="utf-8",
-    )
-    app = FastAPI()
-
-    @app.get("/")
-    def root():
-        return HTMLResponse("legacy root")
-
-    @app.get("/plain")
-    def plain():
-        return HTMLResponse("plain")
-
-    install_auth_ui(app, html_path=html_path)
-    client = TestClient(app)
-
-    root = client.get("/")
-    assert root.status_code == 200
-    assert "authGate" in root.text
-    assert root.headers["cache-control"] == "no-store"
-
-    plain = client.get("/plain")
-    assert plain.status_code == 200
-    assert plain.text == "plain"
+def test_static_auth_assets_contain_gate_and_account_controls():
+    script = text("frontend/auth.js")
+    styles = text("frontend/auth.css")
+    assert 'id="authGate"' in script
+    assert 'id="authUsername"' in script
+    assert 'id="authPassword"' in script
+    assert 'id="authPasswordConfirm"' in script
+    assert 'id="authAccountButton"' in script
+    assert 'id="authLogoutButton"' in script
+    assert 'id="authAccountDialog"' in script
+    assert ".sx-auth-gate" in styles
+    assert ".sx-auth-account" in styles
 
 
-def test_production_root_uses_auth_shell_and_security_headers():
-    from scarletx.app import app as production_app
+def test_static_auth_script_uses_same_origin_api_and_gates_app_boot():
+    script = text("frontend/auth.js")
+    for endpoint in (
+        "/api/auth/status",
+        "/api/setup/admin",
+        "/api/auth/login",
+        "/api/auth/logout",
+        "/api/auth/admin",
+    ):
+        assert endpoint in script
+    assert "credentials:'same-origin'" in script or 'credentials: "same-origin"' in script
+    assert "window.authGateBoot" in script
 
-    client = TestClient(production_app)
-    response = client.get("/")
 
-    assert response.status_code == 200
-    assert "authGate" in response.text
-    assert "authGateBoot(boot);" in response.text
-    assert response.headers["cache-control"] == "no-store"
-    assert response.headers["x-content-type-options"] == "nosniff"
-    assert response.headers["x-frame-options"] == "DENY"
+def test_web_image_injects_static_auth_assets_and_delays_legacy_boot():
+    web_dockerfile = text("Dockerfile.web")
+    assert "COPY frontend/index.html /usr/share/nginx/html/index.html" in web_dockerfile
+    assert "/auth.css" in web_dockerfile
+    assert "/auth.js" in web_dockerfile
+    assert "authGateBoot(boot);" in web_dockerfile
+
+
+def test_frontend_does_not_persist_scarletx_credentials_in_browser_storage():
+    combined = text("frontend/index.html") + text("frontend/auth.js")
+    assert 'localStorage.setItem("scarletx' not in combined
+    assert "localStorage.setItem('scarletx" not in combined
+    assert 'sessionStorage.setItem("scarletx' not in combined
+    assert "sessionStorage.setItem('scarletx" not in combined
+
+
+def test_frontend_has_no_direct_backend_address():
+    combined = text("frontend/index.html") + text("frontend/auth.js")
+    assert "scarletx-backend" not in combined
+    assert "localhost:8000" not in combined
+    assert "127.0.0.1:8000" not in combined

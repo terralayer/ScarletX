@@ -14,9 +14,10 @@ def test_release_version_is_consistent():
     app = text("packaging/truenas/scarletx/app.yaml")
     values = text("packaging/truenas/scarletx/ix_values.yaml")
     assert "app_version: 0.3.7" in app
-    assert "version: 1.0.1" in app
+    assert "version: 1.0.2" in app
     assert "RELEASE-NOTES-0.3.7.md" in app
     assert re.search(r"(?m)^\s+tag: 0\.3\.7$", values)
+    assert "ghcr.io/terralayer/scarletx-web" in values
     assert (ROOT / "RELEASE-NOTES-0.3.7.md").exists()
 
 
@@ -33,6 +34,10 @@ def test_shipped_application_metadata_reports_current_version():
     for path, expected in expected_by_file.items():
         assert expected in text(path), f"{path} does not report {VERSION}"
 
+    truenas_compose = text("docker-compose.truenas.yml")
+    assert "image: ghcr.io/terralayer/scarletx-web:0.3.7" in truenas_compose
+    assert 'SCARLETX_PORT: "8000"' in truenas_compose
+    assert 'SCARLETX_WEB_PORT: ${SCARLETX_PORT:-8690}' in truenas_compose
     assert '"version": "0.3.7"' in text("scarletx/main.py")
     assert "RELEASE-NOTES-0.3.7.md" in text("README.md")
 
@@ -65,9 +70,12 @@ def test_truenas_validation_covers_application_changes():
     workflow = text(".github/workflows/truenas-validation.yml")
     for required in (
         '"scarletx/**"',
+        '"frontend/**"',
+        '"nginx/**"',
         '"pyproject.toml"',
         '"requirements*.txt"',
         '"Dockerfile"',
+        '"Dockerfile.web"',
         '"packaging/truenas/**"',
     ):
         assert required in workflow
@@ -79,6 +87,7 @@ def test_truenas_full_deploy_is_release_tag_only():
     assert "startsWith(github.ref, 'refs/tags/v')" in workflow
     assert 'RELEASE_VERSION="${GITHUB_REF_NAME#v}"' in workflow
     assert "ghcr.io/terralayer/scarletx:${RELEASE_VERSION}" in workflow
+    assert "ghcr.io/terralayer/scarletx-web:${RELEASE_VERSION}" in workflow
 
 
 def test_actions_use_current_node24_generations():
