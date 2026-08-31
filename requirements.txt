@@ -5,4 +5,5 @@ uvicorn[standard]>=0.32,<1
 pillow>=10,<13
 watchdog>=4,<7
 orjson>=3.10,<4
+pwdlib[argon2]>=0.2,<1
 
