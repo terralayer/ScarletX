@@ -51,3 +51,27 @@ def test_actions_use_current_node24_generations():
     assert "actions/setup-python@v6" in tests
     assert "actions/checkout@v4" not in tests
     assert "actions/setup-python@v5" not in tests
+
+
+def test_container_actions_use_node24_generations():
+    workflow = text(".github/workflows/container.yml")
+    for required in (
+        "docker/setup-buildx-action@v4",
+        "docker/login-action@v4",
+        "docker/metadata-action@v6",
+        "docker/build-push-action@v7",
+    ):
+        assert required in workflow
+    for deprecated in (
+        "docker/setup-buildx-action@v3",
+        "docker/login-action@v3",
+        "docker/metadata-action@v5",
+        "docker/build-push-action@v6",
+    ):
+        assert deprecated not in workflow
+
+
+def test_container_includes_current_release_notes():
+    dockerfile = text("Dockerfile")
+    assert "RELEASE-NOTES-*.md" in dockerfile
+    assert "RELEASE-NOTES-0.3.6.md" not in dockerfile
