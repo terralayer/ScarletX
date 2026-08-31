@@ -1,5 +1,8 @@
 from pathlib import Path
+import importlib.util
 import re
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.3.8"
@@ -7,6 +10,16 @@ VERSION = "0.3.8"
 
 def text(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
+
+
+def load_release_version_module():
+    path = ROOT / "tools" / "release_version.py"
+    assert path.exists(), "tools/release_version.py is required for the permanent release workflow"
+    spec = importlib.util.spec_from_file_location("scarletx_release_version", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_release_version_is_consistent():
@@ -120,3 +133,39 @@ def test_container_includes_current_release_notes():
     dockerfile = text("Dockerfile")
     assert "RELEASE-NOTES-*.md" in dockerfile
     assert "RELEASE-NOTES-0.3.6.md" not in dockerfile
+
+
+def test_release_version_calculator_only_increments_third_component():
+    module = load_release_version_module()
+    assert module.next_patch_version("0.3.8") == "0.3.9"
+    assert module.next_patch_version("0.3.9") == "0.3.10"
+    assert module.next_patch_version("0.3.99") == "0.3.100"
+
+    for invalid in ("0.4.0", "1.3.8", "0.3", "0.3.8.1", "v0.3.8"):
+        with pytest.raises(ValueError):
+            module.next_patch_version(invalid)
+
+
+def test_permanent_release_workflow_is_manual_and_uses_patch_calculator():
+    workflow = text(".github/workflows/release.yml")
+    assert "workflow_dispatch:" in workflow
+    assert "\n  push:" not in workflow
+    assert "tools/release_version.py" in workflow
+    assert "NEXT_VERSION" in workflow
+    assert "ghcr.io/terralayer/scarletx:${NEXT_VERSION}" in workflow
+    assert "ghcr.io/terralayer/scarletx-web:${NEXT_VERSION}" in workflow
+    assert "RELEASE-NOTES-${NEXT_VERSION}.md" in workflow
+
+
+def test_readme_documents_two_container_nginx_deployment():
+    readme = text("README.md")
+    for required in (
+        "scarletx-backend",
+        "scarletx-web",
+        "ghcr.io/terralayer/scarletx:main",
+        "ghcr.io/terralayer/scarletx-web:main",
+        "port `8000`",
+        "Nginx",
+    ):
+        assert required in readme
+    assert "Current application version: **0.3.8**." in readme
