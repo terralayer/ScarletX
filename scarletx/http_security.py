@@ -18,6 +18,7 @@ PUBLIC_API_PATHS = {
     "/api/setup/status",
     "/api/setup/admin",
 }
+AUTH_CACHE_BYPASS_PREFIXES = ("/api/auth/", "/api/setup/")
 
 
 def remove_legacy_api_key_middleware(app: FastAPI) -> bool:
@@ -88,3 +89,18 @@ def install_authentication(
             )
 
         return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+
+def install_security_headers(app: FastAPI) -> None:
+    """Apply browser hardening headers to every ScarletX HTTP response."""
+
+    @app.middleware("http")
+    async def scarletx_security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if request.url.path.startswith(AUTH_CACHE_BYPASS_PREFIXES):
+            response.headers["Cache-Control"] = "no-store"
+        return response
