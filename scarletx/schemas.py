@@ -1,7 +1,7 @@
 from typing import Literal
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class RemotePerson(BaseModel):
@@ -128,7 +128,6 @@ class GeneralSettingsWrite(BaseModel):
     log_level: str = "INFO"
 
 
-
 class ThePornDBSettingsWrite(BaseModel):
     api_key: str | None = None
     base_url: str = "https://api.theporndb.net"
@@ -147,7 +146,6 @@ class AutomationSettingsWrite(BaseModel):
     enabled: bool = False
     interval_minutes: int = Field(60, ge=5, le=10080)
     batch_size: int = Field(10, ge=1, le=100)
-
 
 
 class UsenetProviderWrite(BaseModel):
@@ -187,7 +185,6 @@ class UsenetProviderTestWrite(UsenetProviderWrite):
 
 class NativeDownloadPasswordWrite(BaseModel):
     password: str = Field(default="", max_length=1000)
-
 
 
 class GrabReleaseRequest(BaseModel):
@@ -296,7 +293,6 @@ class FileManagementAdvancedWrite(BaseModel):
     minimum_free_space_gb: float = Field(default=1.0, ge=0, le=100000)
 
 
-
 class BackupSettingsWrite(BaseModel):
     enabled: bool = True
     directory: str = "./backups"
@@ -307,3 +303,40 @@ class BackupSettingsWrite(BaseModel):
 class SecuritySettingsWrite(BaseModel):
     api_key_enabled: bool = False
     api_key: str | None = None
+
+
+class AdminSetupWrite(BaseModel):
+    username: str = Field(default="admin", min_length=1, max_length=100)
+    password: str = Field(min_length=12, max_length=1024)
+    password_confirm: str = Field(min_length=12, max_length=1024)
+
+    @field_validator("username")
+    @classmethod
+    def strip_username(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Username is required")
+        return value
+
+    @model_validator(mode="after")
+    def passwords_match(self):
+        if self.password != self.password_confirm:
+            raise ValueError("Passwords do not match")
+        return self
+
+
+class LoginWrite(BaseModel):
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=1, max_length=1024)
+
+    @field_validator("username")
+    @classmethod
+    def strip_login_username(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Username is required")
+        return value
+
+
+class AdminCredentialsWrite(AdminSetupWrite):
+    pass
