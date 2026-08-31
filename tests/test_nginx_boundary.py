@@ -20,11 +20,8 @@ def test_fastapi_backend_does_not_serve_frontend_root():
 
 def test_backend_composition_has_no_runtime_ui_injection():
     application = text("scarletx/app.py")
-    main = text("scarletx/main.py")
     assert "auth_ui" not in application
     assert "install_auth_ui" not in application
-    assert 'WEB = Path(__file__).parent / "web" / "index.html"' not in main
-    assert '@app.get("/", include_in_schema=False)' not in main
     assert not (ROOT / "scarletx/auth_ui.py").exists()
 
 
@@ -56,11 +53,16 @@ def test_nginx_is_the_public_http_entrypoint():
     assert "try_files $uri $uri/ /index.html;" in config
 
 
-def test_web_image_serves_static_frontend():
+def test_web_image_builds_finished_static_frontend():
     web_dockerfile = text("Dockerfile.web")
     assert "FROM nginx:" in web_dockerfile
     assert "COPY nginx/scarletx.conf" in web_dockerfile
-    assert "COPY frontend/ /usr/share/nginx/html/" in web_dockerfile
+    assert "COPY scarletx/web/index.html /usr/share/nginx/html/index.html" in web_dockerfile
+    assert "COPY frontend/auth.css /usr/share/nginx/html/auth.css" in web_dockerfile
+    assert "COPY frontend/auth.js /usr/share/nginx/html/auth.js" in web_dockerfile
+    assert "authGateBoot(boot);" in web_dockerfile
+    assert "/auth.css" in web_dockerfile
+    assert "/auth.js" in web_dockerfile
     assert "EXPOSE 8690" in web_dockerfile
     assert "127.0.0.1:8690/api/health" in web_dockerfile
 
@@ -73,6 +75,13 @@ def test_compose_publishes_only_nginx_web_port():
     assert "ports:" not in backend_block
     assert '"8690:8690"' in web_block
     assert "scarletx-backend" in web_block
+
+
+def test_container_workflow_publishes_backend_and_web_images():
+    workflow = text(".github/workflows/container.yml")
+    assert "ghcr.io/${{ github.repository }}" in workflow
+    assert "ghcr.io/terralayer/scarletx-web" in workflow
+    assert "file: Dockerfile.web" in workflow
 
 
 def test_truenas_template_routes_public_port_through_nginx():
