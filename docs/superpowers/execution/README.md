@@ -1,1 +1,0 @@
-ScarletX hardening work uses draft pull requests as CI harnesses when changes are made through the GitHub connector. Draft status is preserved until the complete implementation plan passes the Python test matrix and review verification.
