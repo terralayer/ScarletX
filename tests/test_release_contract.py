@@ -1,15 +1,23 @@
 from pathlib import Path
 import importlib.util
 import re
+import tomllib
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.3.8"
 
 
 def text(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
+
+
+def project_version(root: Path = ROOT) -> str:
+    with (root / "pyproject.toml").open("rb") as handle:
+        return tomllib.load(handle)["project"]["version"]
+
+
+VERSION = project_version()
 
 
 def load_release_version_module():
@@ -23,36 +31,37 @@ def load_release_version_module():
 
 
 def test_release_version_is_consistent():
-    assert 'version = "0.3.8"' in text("pyproject.toml")
+    assert VERSION.startswith("0.3.")
+    assert f'version = "{VERSION}"' in text("pyproject.toml")
     app = text("packaging/truenas/scarletx/app.yaml")
     values = text("packaging/truenas/scarletx/ix_values.yaml")
-    assert "app_version: 0.3.8" in app
+    assert f"app_version: {VERSION}" in app
     assert "version: 1.0.2" in app
-    assert "RELEASE-NOTES-0.3.8.md" in app
-    assert re.search(r"(?m)^\s+tag: 0\.3\.8$", values)
+    assert f"RELEASE-NOTES-{VERSION}.md" in app
+    assert re.search(rf"(?m)^\s+tag: {re.escape(VERSION)}$", values)
     assert "ghcr.io/terralayer/scarletx-web" in values
-    assert (ROOT / "RELEASE-NOTES-0.3.8.md").exists()
+    assert (ROOT / f"RELEASE-NOTES-{VERSION}.md").exists()
 
 
 def test_shipped_application_metadata_reports_current_version():
     expected_by_file = {
-        "scarletx/__init__.py": '__version__ = "0.3.8"',
-        "scarletx/main.py": 'version="0.3.8"',
-        "README.md": "Current application version: **0.3.8**.",
-        "BUILD-INFO.txt": "ScarletX 0.3.8",
-        "start-scarletx.sh": 'ScarletX 0.3.8',
-        "Start-ScarletX.ps1": 'ScarletX 0.3.8',
-        "docker-compose.truenas.yml": "image: ghcr.io/terralayer/scarletx:0.3.8",
+        "scarletx/__init__.py": f'__version__ = "{VERSION}"',
+        "scarletx/main.py": f'version="{VERSION}"',
+        "README.md": f"Current application version: **{VERSION}**.",
+        "BUILD-INFO.txt": f"ScarletX {VERSION}",
+        "start-scarletx.sh": f"ScarletX {VERSION}",
+        "Start-ScarletX.ps1": f"ScarletX {VERSION}",
+        "docker-compose.truenas.yml": f"image: ghcr.io/terralayer/scarletx:{VERSION}",
     }
     for path, expected in expected_by_file.items():
         assert expected in text(path), f"{path} does not report {VERSION}"
 
     truenas_compose = text("docker-compose.truenas.yml")
-    assert "image: ghcr.io/terralayer/scarletx-web:0.3.8" in truenas_compose
+    assert f"image: ghcr.io/terralayer/scarletx-web:{VERSION}" in truenas_compose
     assert 'SCARLETX_PORT: "8000"' in truenas_compose
     assert 'SCARLETX_WEB_PORT: ${SCARLETX_PORT:-8690}' in truenas_compose
-    assert '"version": "0.3.8"' in text("scarletx/main.py")
-    assert "RELEASE-NOTES-0.3.8.md" in text("README.md")
+    assert f'"version": "{VERSION}"' in text("scarletx/main.py")
+    assert f"RELEASE-NOTES-{VERSION}.md" in text("README.md")
 
 
 def test_outbound_user_agents_report_current_version():
@@ -62,7 +71,7 @@ def test_outbound_user_agents_report_current_version():
         "scarletx/newznab.py",
         "scarletx/native_usenet.py",
     ):
-        assert "ScarletX/0.3.8" in text(path), f"{path} has a stale User-Agent"
+        assert f"ScarletX/{VERSION}" in text(path), f"{path} has a stale User-Agent"
 
 
 def test_release_declares_agplv3_license():
@@ -75,7 +84,7 @@ def test_release_declares_agplv3_license():
 
 def test_main_does_not_publish_a_numeric_stable_tag():
     workflow = text(".github/workflows/container.yml")
-    assert "type=raw,value=0.3.8,enable={{is_default_branch}}" not in workflow
+    assert f"type=raw,value={VERSION},enable={{{{is_default_branch}}}}" not in workflow
     assert "type=semver,pattern={{version}}" in workflow
 
 
@@ -146,6 +155,34 @@ def test_release_version_calculator_only_increments_third_component():
             module.next_patch_version(invalid)
 
 
+def test_release_apply_updates_versioned_files_and_creates_notes(tmp_path):
+    module = load_release_version_module()
+    current = "0.3.8"
+    expected = "0.3.9"
+
+    for relative_path in module.VERSIONED_FILES:
+        path = tmp_path / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if relative_path == "pyproject.toml":
+            path.write_text(
+                f'[project]\nname = "scarletx"\nversion = "{current}"\n',
+                encoding="utf-8",
+            )
+        else:
+            path.write_text(f"release marker {current}\n", encoding="utf-8")
+
+    next_version = module.apply_release(tmp_path, "Maintenance release notes.")
+    assert next_version == expected
+    for relative_path in module.VERSIONED_FILES:
+        updated = (tmp_path / relative_path).read_text(encoding="utf-8")
+        assert current not in updated
+        assert expected in updated
+
+    notes = (tmp_path / f"RELEASE-NOTES-{expected}.md").read_text(encoding="utf-8")
+    assert notes.startswith(f"# ScarletX {expected}\n")
+    assert "Maintenance release notes." in notes
+
+
 def test_permanent_release_workflow_is_manual_and_uses_patch_calculator():
     workflow = text(".github/workflows/release.yml")
     assert "workflow_dispatch:" in workflow
@@ -168,4 +205,4 @@ def test_readme_documents_two_container_nginx_deployment():
         "Nginx",
     ):
         assert required in readme
-    assert "Current application version: **0.3.8**." in readme
+    assert f"Current application version: **{VERSION}**." in readme
