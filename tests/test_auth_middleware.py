@@ -86,3 +86,17 @@ def test_non_api_spa_shell_remains_public():
     client, _factory = make_app()
     response = client.get("/")
     assert response.status_code == 404
+
+
+def test_production_bootstrap_registers_auth_routes_and_removes_legacy_api_key_middleware():
+    from scarletx.app import app as production_app
+
+    paths = {getattr(route, "path", None) for route in production_app.routes}
+    assert "/api/auth/status" in paths
+    assert "/api/setup/admin" in paths
+
+    dispatch_names = {
+        getattr(getattr(item, "kwargs", {}).get("dispatch"), "__name__", "")
+        for item in production_app.user_middleware
+    }
+    assert "optional_api_key_auth" not in dispatch_names
