@@ -41,7 +41,8 @@ def test_nginx_is_the_public_http_entrypoint():
     assert "listen ${SCARLETX_WEB_PORT};" in config
     assert "root /usr/share/nginx/html;" in config
     assert "location /api/" in config
-    assert "proxy_pass http://scarletx-backend:8000;" in config
+    assert "proxy_pass http://${SCARLETX_BACKEND_HOST}:8000;" in config
+    assert "http://scarletx-backend:8000" not in config
     assert "location = /docs" in config
     assert "location = /redoc" in config
     assert "location = /openapi.json" in config
@@ -59,6 +60,7 @@ def test_web_image_builds_finished_static_frontend():
     web_dockerfile = text("Dockerfile.web")
     assert "FROM nginx:" in web_dockerfile
     assert "SCARLETX_WEB_PORT=8690" in web_dockerfile
+    assert "SCARLETX_BACKEND_HOST=scarletx-backend" in web_dockerfile
     assert "COPY nginx/scarletx.conf /etc/nginx/templates/default.conf.template" in web_dockerfile
     assert "COPY frontend/index.html /usr/share/nginx/html/index.html" in web_dockerfile
     assert "COPY frontend/auth.css /usr/share/nginx/html/auth.css" in web_dockerfile
@@ -95,6 +97,19 @@ def test_truenas_template_routes_public_port_through_nginx():
     template = text("packaging/truenas/scarletx/templates/docker-compose.yaml")
     assert "backend_image:" in values
     assert "web_image:" in values
-    assert "scarletx_backend_container_name: scarletx-backend" in values
-    assert "scarletx_web_container_name: scarletx-web" in values
+    assert "scarletx_backend_container_name: backend" in values
+    assert "scarletx_web_container_name: web" in values
     assert 'tpl.add_container(values.consts.scarletx_backend_container_name, "backend_image")' in template
+    assert 'web.environment.add_env("SCARLETX_BACKEND_HOST", values.consts.scarletx_backend_container_name)' in template
+
+
+def test_truenas_metadata_uses_rendered_service_names():
+    app = text("packaging/truenas/scarletx/app.yaml")
+    questions = text("packaging/truenas/scarletx/questions.yaml")
+    assert "Container [backend]" in app
+    assert "Container [web]" in app
+    assert "Container [scarletx-backend]" not in app
+    assert "Container [scarletx-web]" not in app
+    assert "- value: backend" in questions
+    assert "- value: web" in questions
+    assert "- value: scarletx" not in questions

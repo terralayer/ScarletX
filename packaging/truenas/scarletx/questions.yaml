@@ -439,8 +439,10 @@ questions:
                         type: string
                         required: true
                         enum:
-                          - value: scarletx
-                            description: scarletx
+                          - value: backend
+                            description: backend
+                          - value: web
+                            description: web
 
   - variable: resources
     label: ""
