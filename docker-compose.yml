@@ -38,7 +38,6 @@ services:
       SCARLETX_GENERATED_DIR: /config/generated
       SCARLETX_CACHE_DIR: /config/cache
       SCARLETX_DEFAULT_MEDIA_ROOT: /tmp
-      SCARLETX_NO_BROWSER: "1"
     volumes:
       - ./docker-data/config:/config
       - ./docker-data/downloads:/downloads
