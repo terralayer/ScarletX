@@ -110,6 +110,20 @@ def test_truenas_test_values_do_not_inject_undocumented_environment_variables():
         assert "SCARLETX_TEST_MODE" not in contents, f"{path.name} injects an undocumented environment variable"
 
 
+def test_truenas_basic_values_follow_community_block_order():
+    contents = text("packaging/truenas/scarletx/templates/test_values/basic-values.yaml")
+    top_level_keys = re.findall(r"(?m)^([a-z][a-z0-9_]*):", contents)
+    assert top_level_keys == [
+        "resources",
+        "scarletx",
+        "network",
+        "run_as",
+        "ix_volumes",
+        "storage",
+        "labels",
+    ]
+
+
 def test_truenas_full_deploy_is_release_tag_only():
     workflow = text(".github/workflows/truenas-validation.yml")
     assert 'tags: ["v*"]' in workflow
