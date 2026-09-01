@@ -13,7 +13,7 @@ scarletx:
 network:
   web_port:
     bind_mode: published
-    port_number: 30970
+    port_number: 8690
     host_ips: []
 
 labels: []
