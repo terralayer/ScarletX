@@ -29,10 +29,10 @@
 **Interfaces:**
 - Produces: `StatusRow`, `StatusGroup`, `render_dashboard(...)`, `emit_status(...)`, `sanitize_console_text(...)`.
 
-- [ ] Write failing tests for required ASCII wordmark/groups, ANSI enable/disable, severity symbols, alignment, and control-character sanitization.
-- [ ] Run CI via a draft PR and confirm the tests fail because `scarletx.status_console` does not exist.
-- [ ] Implement the renderer and emitter with no database dependencies.
-- [ ] Re-run CI and confirm renderer tests pass.
+- [x] Write failing tests for required ASCII wordmark/groups, ANSI enable/disable, severity symbols, alignment, and control-character sanitization.
+- [x] Run CI via a draft PR and confirm the tests fail because `scarletx.status_console` does not exist.
+- [x] Implement the renderer and emitter with no database dependencies.
+- [x] Re-run CI and confirm renderer tests pass.
 
 ### Task 2: Real startup snapshot
 
@@ -43,9 +43,9 @@
 **Interfaces:**
 - Produces: `collect_startup_status(db, settings) -> list[StatusGroup]`.
 
-- [ ] Add failing tests using an in-memory SQLAlchemy session/settings fixture for subsystem groups, counts, path/tool degradation, redaction, and no network probes.
-- [ ] Implement best-effort collectors for SYSTEM, METADATA, SEARCH, USENET, POST-PROCESSING, LIBRARY, STORAGE, and SECURITY.
-- [ ] Verify all collector tests pass.
+- [x] Add failing tests using an in-memory SQLAlchemy session/settings fixture for subsystem groups, counts, path/tool degradation, redaction, and no network probes.
+- [x] Implement best-effort collectors for SYSTEM, METADATA, SEARCH, USENET, POST-PROCESSING, LIBRARY, STORAGE, and SECURITY.
+- [x] Verify all collector tests pass.
 
 ### Task 3: Lifespan integration
 
@@ -56,10 +56,10 @@
 **Interfaces:**
 - Consumes: `collect_startup_status`, `render_dashboard`, `emit_status`.
 
-- [ ] Add a failing source/integration test asserting lifespan invokes the status dashboard after settings are loaded and the FastAPI version remains 0.3.9.
-- [ ] Integrate dashboard printing into lifespan without changing worker ordering or version metadata.
-- [ ] Emit lifecycle ACTIVE/READY/STOPPED events around background worker startup/shutdown.
-- [ ] Verify integration tests pass.
+- [x] Add a failing source/integration test asserting lifespan invokes the status dashboard after settings are loaded and the FastAPI version remains 0.3.9.
+- [x] Integrate dashboard printing into lifespan without changing worker ordering or version metadata.
+- [x] Emit lifecycle ACTIVE/READY/STOPPED events around background worker startup/shutdown.
+- [x] Verify integration tests pass.
 
 ### Task 4: High-value live worker events
 
@@ -73,17 +73,21 @@
 **Interfaces:**
 - Consumes: `emit_status(component, state, detail="", severity=None)`.
 
-- [ ] Add failing source/behavior tests requiring native Usenet provider connect/retry/failure, download/post-processing transitions, imports, backups, and library scans to emit structured status lines.
-- [ ] Wire `emit_status()` only at existing state-transition/error boundaries; do not alter operational behavior.
-- [ ] Ensure sensitive exception text is sanitized before output.
-- [ ] Verify worker tests pass.
+- [x] Add failing source/behavior tests requiring native Usenet provider connect/retry/failure, download/post-processing transitions, imports, backups, and library scans to emit structured status lines.
+- [x] Wire `emit_status()` only at existing state-transition/error boundaries; do not alter operational behavior.
+- [x] Ensure sensitive exception text is sanitized before output.
+- [x] Verify worker tests pass.
 
 ### Task 5: Full verification
 
 **Files:**
 - Verify: `pyproject.toml`, `scarletx/main.py`, all tests.
 
-- [ ] Confirm `version = "0.3.9"` and FastAPI `version="0.3.9"` remain unchanged.
-- [ ] Run the complete pytest matrix, compileall, dependency audit, and both container builds through the draft PR CI.
-- [ ] Review the branch diff for secret leakage, accidental network probes, unrelated changes, or version bumping.
-- [ ] Leave the PR draft/unmerged and report the branch/CI status.
+- [x] Confirm `version = "0.3.9"` and FastAPI `version="0.3.9"` remain unchanged.
+- [ ] Run the complete pytest matrix, compileall, dependency audit, and both container builds through the draft PR CI on the final branch head.
+- [x] Review the branch diff for secret leakage, accidental network probes, unrelated changes, or version bumping.
+- [x] Leave the PR draft/unmerged and report the branch/CI status.
+
+## Final visual checkpoint
+
+The ANSI-aware border regression test exposed a real visible-width bug in colored output. The renderer now strips ANSI escapes for width calculations, dynamically sizes each status group to its longest visible row, and preserves long status details without breaking the box border. Final CI is being rerun from this checkpoint commit while production code remains unchanged from the alignment fix.
