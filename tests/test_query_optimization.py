@@ -166,6 +166,25 @@ def _index_names(engine) -> set[str]:
         return {str(row[0]) for row in rows}
 
 
+def test_039_schema_requires_one_time_performance_index_migration(tmp_path):
+    from scarletx.migrations import (
+        ensure_performance_indexes,
+        performance_index_migration_required,
+    )
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'guard-039.db'}")
+    _create_039_worker_schema(engine)
+
+    with engine.connect() as connection:
+        assert performance_index_migration_required(connection) is True
+
+    with engine.begin() as connection:
+        ensure_performance_indexes(connection)
+
+    with engine.connect() as connection:
+        assert performance_index_migration_required(connection) is False
+
+
 def test_039_database_upgrade_adds_worker_indexes_without_data_loss(tmp_path):
     from scarletx.migrations import ensure_performance_indexes
 
