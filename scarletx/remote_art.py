@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
 from io import BytesIO
 from pathlib import Path
+from urllib.parse import urljoin
 
 import httpx
 from PIL import Image, ImageOps
 
+from .network_security import validate_public_https_url
+
 CACHE_ROOT = Path(os.getenv("SCARLETX_CACHE_DIR", "./cache")).expanduser() / "tpdb" / "images"
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
+MAX_REDIRECTS = 5
 _ART_CLIENT: httpx.AsyncClient | None = None
 
 
@@ -18,7 +23,9 @@ def _art_client() -> httpx.AsyncClient:
     global _ART_CLIENT
     if _ART_CLIENT is None or _ART_CLIENT.is_closed:
         _ART_CLIENT = httpx.AsyncClient(
-            timeout=12, follow_redirects=True, trust_env=False,
+            timeout=12,
+            follow_redirects=False,
+            trust_env=False,
             headers={"User-Agent": "ScarletX/0.3.8"},
             limits=httpx.Limits(max_connections=30, max_keepalive_connections=15, keepalive_expiry=45),
         )
@@ -46,6 +53,44 @@ def _thumb_path(key: str, size: tuple[int, int]) -> Path:
     return CACHE_ROOT / "thumbs" / f"{digest}.webp"
 
 
+async def _download_public_image(client: httpx.AsyncClient, url: str) -> tuple[bytes, str, str]:
+    current = str(url or "").strip()
+    for _redirect in range(MAX_REDIRECTS + 1):
+        try:
+            await asyncio.to_thread(validate_public_https_url, current)
+        except ValueError as exc:
+            raise RemoteArtworkError(str(exc)) from exc
+
+        async with client.stream("GET", current) as response:
+            if response.status_code in {301, 302, 303, 307, 308}:
+                location = (response.headers.get("location") or "").strip()
+                if not location:
+                    raise RemoteArtworkError("Remote artwork redirect had no destination")
+                current = urljoin(str(response.url), location)
+                continue
+
+            response.raise_for_status()
+            ctype = (response.headers.get("content-type") or "image/jpeg").split(";", 1)[0].strip().casefold()
+            if not ctype.startswith("image/"):
+                raise RemoteArtworkError("Remote artwork was not an image")
+            content_length = response.headers.get("content-length")
+            if content_length:
+                try:
+                    if int(content_length) > MAX_IMAGE_BYTES:
+                        raise RemoteArtworkError("Remote artwork is too large")
+                except ValueError:
+                    pass
+
+            content = bytearray()
+            async for chunk in response.aiter_bytes():
+                if len(content) + len(chunk) > MAX_IMAGE_BYTES:
+                    raise RemoteArtworkError("Remote artwork is too large")
+                content.extend(chunk)
+            return bytes(content), ctype, str(response.url)
+
+    raise RemoteArtworkError("Remote artwork exceeded the redirect limit")
+
+
 async def cached_remote_image(key: str, urls: list[str]) -> tuple[bytes, str]:
     data_path, meta_path = _paths(key)
     if data_path.exists():
@@ -57,21 +102,15 @@ async def cached_remote_image(key: str, urls: list[str]) -> tuple[bytes, str]:
     last_error = None
     client = _art_client()
     for url in urls:
-        if not url or not str(url).lower().startswith("https://"):
+        if not url:
             continue
         try:
-            response = await client.get(str(url))
-            response.raise_for_status()
-            content = response.content
-            ctype = (response.headers.get("content-type") or "image/jpeg").split(";", 1)[0]
-            if not ctype.startswith("image/"):
-                raise RemoteArtworkError("Remote artwork was not an image")
-            if len(content) > MAX_IMAGE_BYTES:
-                raise RemoteArtworkError("Remote artwork is too large")
+            content, ctype, final_url = await _download_public_image(client, str(url))
             data_path.parent.mkdir(parents=True, exist_ok=True)
             temp = data_path.with_suffix(".tmp")
-            temp.write_bytes(content); temp.replace(data_path)
-            meta_path.write_text(json.dumps({"content_type": ctype, "url": str(response.url)}))
+            temp.write_bytes(content)
+            temp.replace(data_path)
+            meta_path.write_text(json.dumps({"content_type": ctype, "url": final_url}))
             return content, ctype
         except (httpx.HTTPError, OSError, RemoteArtworkError) as exc:
             last_error = exc

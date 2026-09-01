@@ -16,6 +16,7 @@ import threading
 import time
 import uuid
 import zipfile
+from tempfile import TemporaryDirectory
 import zlib
 from collections import deque
 from dataclasses import dataclass
@@ -32,6 +33,7 @@ try:
 except Exception:  # The pure-Python/C-stdlib path remains a safe fallback.
     sabctools = None
 
+from .archive_security import parse_7z_listing, validate_archive_member_path, validate_extracted_tree
 from .models import History, NativeUsenetJob, TrackedDownload, utcnow
 
 
@@ -1418,7 +1420,11 @@ def unpack_payload(payload_dir: Path, enabled: bool, password: str = "", *, job_
                         raise asyncio.CancelledError
                     if time.monotonic() > deadline:
                         raise NativeUsenetError(f"Extracting {archive.name} timed out after 10 minutes")
-                    target = (archive.parent / member.filename).resolve()
+                    try:
+                        safe_member = validate_archive_member_path(member.filename)
+                    except ValueError as exc:
+                        raise NativeUsenetError(f"Unsafe path in ZIP archive {archive.name}") from exc
+                    target = (archive.parent / Path(*safe_member.parts)).resolve()
                     try:
                         target.relative_to(root)
                     except ValueError as exc:
@@ -1444,22 +1450,42 @@ def unpack_payload(payload_dir: Path, enabled: bool, password: str = "", *, job_
     if not rars and not sevens:
         return notes
     tools = _tool_status()
+    archive_tool = tools["7z"]
+    if not archive_tool:
+        raise NativeUsenetError("Secure RAR/7z extraction requires 7z")
     for archive in [*rars, *sevens]:
         if _postprocess_cancelled(job_id):
             raise asyncio.CancelledError
-        if archive.suffix.casefold() == ".rar" and tools["unrar"] and Path(tools["unrar"]).name == "unrar":
-            password_arg = f"-p{password}" if password else "-p-"
-            command = [tools["unrar"], "x", "-o+", "-y", password_arg, str(archive), str(archive.parent) + "/"]
-        elif tools["7z"]:
-            command = [tools["7z"], "x", "-y"]
+        listing = [archive_tool, "l", "-slt"]
+        if password:
+            listing.append(f"-p{password}")
+        listing.append(str(archive))
+        listed = _run_tool(listing, archive.parent, 120, job_id=job_id, label=f"Listing {archive.name}")
+        if listed.returncode != 0:
+            raise NativeUsenetError(f"Could not inspect {archive.name}: {(listed.stdout or '')[-1200:]}")
+        try:
+            members = parse_7z_listing(listed.stdout or "")
+        except ValueError as exc:
+            raise NativeUsenetError(f"Unsafe path in archive {archive.name}: {exc}") from exc
+        if not members:
+            raise NativeUsenetError(f"Archive {archive.name} contains no safely listable members")
+        with TemporaryDirectory(prefix=".scarletx-extract-", dir=archive.parent) as temp_dir:
+            quarantine = Path(temp_dir)
+            command = [archive_tool, "x", "-y"]
             if password:
                 command.append(f"-p{password}")
-            command.extend([f"-o{archive.parent}", str(archive)])
-        else:
-            raise NativeUsenetError("RAR/7z archive downloaded but neither unrar nor 7z is installed")
-        result = _run_tool(command, archive.parent, 600, job_id=job_id, label=f"Extracting {archive.name}")
-        if result.returncode != 0:
-            raise NativeUsenetError(f"Could not unpack {archive.name}: {(result.stdout or '')[-1200:]}")
+            command.extend([f"-o{quarantine}", str(archive)])
+            result = _run_tool(command, archive.parent, 600, job_id=job_id, label=f"Extracting {archive.name}")
+            if result.returncode != 0:
+                raise NativeUsenetError(f"Could not unpack {archive.name}: {(result.stdout or '')[-1200:]}")
+            try:
+                validate_extracted_tree(quarantine)
+            except ValueError as exc:
+                raise NativeUsenetError(f"Unsafe extracted content in {archive.name}: {exc}") from exc
+            for child in quarantine.iterdir():
+                target = archive.parent / child.name
+                target = _unique_directory(target) if child.is_dir() else _unique_file_path(target)
+                shutil.move(str(child), str(target))
         notes.append(f"Extracted {archive.name}")
     return notes
 
@@ -1607,6 +1633,7 @@ async def reprocess_completed_job(session_factory, settings, job_id: str) -> dic
         session_factory, job_id, status="completed", error=None,
         postprocess_note="; ".join(notes)[:2000] if notes else f"Primary scene: {primary.name}",
         completed_at=utcnow(),
+        unpack_password=None,
     )
     with session_factory() as db:
         refreshed = db.get(NativeUsenetJob, job_id)
@@ -1686,7 +1713,7 @@ async def process_job(session_factory, settings, job_id: str) -> None:
 
     providers = [p for p in settings.native_usenet_providers() if p.enabled and p.host]
     if not providers:
-        _set_job(session_factory, job_id, status="failed", error="No enabled Usenet provider is configured", completed_at=utcnow())
+        _set_job(session_factory, job_id, status="failed", error="No enabled Usenet provider is configured", completed_at=utcnow(), unpack_password=None)
         return
 
     incomplete_root = Path(settings.native_usenet_incomplete_dir).expanduser().resolve()
@@ -2069,6 +2096,7 @@ async def process_job(session_factory, settings, job_id: str) -> None:
                 output_path=str(final_dir),
                 postprocess_note="; ".join(dict.fromkeys(notes))[:2000] if notes else "Download complete",
                 completed_at=utcnow(),
+                unpack_password=None,
             )
             _clear_live_progress(job_id)
             with _CANCELLED_JOBS_LOCK:
@@ -2086,7 +2114,7 @@ async def process_job(session_factory, settings, job_id: str) -> None:
 
     except asyncio.CancelledError:
         shutil.rmtree(work, ignore_errors=True)
-        _set_job(session_factory, job_id, status="cancelled", speed_bps=0.0, eta_seconds=0, output_path=None, error=None, completed_at=utcnow())
+        _set_job(session_factory, job_id, status="cancelled", speed_bps=0.0, eta_seconds=0, output_path=None, error=None, completed_at=utcnow(), unpack_password=None)
         _clear_live_progress(job_id)
         with _CANCELLED_JOBS_LOCK:
             _CANCELLED_JOBS.discard(job_id)
@@ -2110,7 +2138,7 @@ async def process_job(session_factory, settings, job_id: str) -> None:
                 failed_path = str(failed_dir)
         except Exception:
             failed_path = str(work) if work.exists() else None
-        _set_job(session_factory, job_id, status="failed", error=message, speed_bps=0.0, eta_seconds=0, output_path=failed_path, completed_at=utcnow())
+        _set_job(session_factory, job_id, status="failed", error=message, speed_bps=0.0, eta_seconds=0, output_path=failed_path, completed_at=utcnow(), unpack_password=None)
         _clear_live_progress(job_id)
         with _CANCELLED_JOBS_LOCK:
             _CANCELLED_JOBS.discard(job_id)

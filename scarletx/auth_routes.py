@@ -21,6 +21,7 @@ from .auth import (
 )
 from .db import get_session
 from .models import AuthUser
+from .setup_security import consume_setup_token, verify_setup_token
 from .schemas import AdminCredentialsWrite, AdminSetupWrite, LoginWrite
 
 router = APIRouter()
@@ -101,6 +102,8 @@ def setup_admin(
 ):
     if _admin_exists(db):
         raise HTTPException(409, "Administrator already configured")
+    if not verify_setup_token(payload.setup_token):
+        raise HTTPException(403, "Invalid or expired first-run setup token")
 
     user = AuthUser(
         id=1,
@@ -117,6 +120,7 @@ def setup_admin(
         raise HTTPException(409, "Administrator already configured") from exc
 
     token = create_session(db, user.id)
+    consume_setup_token()
     _set_session_cookie(response, request, token)
     return {"username": user.username}
 
