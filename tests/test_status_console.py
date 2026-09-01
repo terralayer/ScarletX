@@ -1,11 +1,18 @@
 from __future__ import annotations
 
-import os
+import json
 from pathlib import Path
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from scarletx.config import Settings
+from scarletx.db import Base
+from scarletx.models import NativeUsenetJob, Performer, RootFolder, Scene, Studio
 from scarletx.status_console import (
     StatusGroup,
     StatusRow,
+    collect_startup_status,
     emit_status,
     render_dashboard,
     sanitize_console_text,
@@ -86,12 +93,81 @@ def test_emit_status_formats_one_safe_aligned_line(capsys):
     assert "\x1b[" not in output
 
 
-def test_dashboard_never_echoes_secret_like_detail_values():
-    groups = [
-        StatusGroup("SECURITY", [
-            StatusRow("Secrets At Rest", "ENCRYPTED", "configured", "ok"),
+def test_startup_snapshot_reports_real_groups_counts_paths_and_never_secrets(tmp_path, monkeypatch):
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    media_root = tmp_path / "media"
+    incomplete = tmp_path / "incomplete"
+    complete = tmp_path / "complete"
+    backups = tmp_path / "backups"
+    for path in (media_root, incomplete, complete, backups):
+        path.mkdir()
+
+    settings = Settings(
+        theporndb_api_key="tpdb-super-secret",
+        newznab_indexers_json=json.dumps([
+            {"name": "One", "url": "https://indexer.example/api", "api_key": "indexer-super-secret", "enabled": True},
+            {"name": "Two", "url": "https://indexer2.example/api", "api_key": "another-secret", "enabled": False},
+        ]),
+        native_usenet_enabled=True,
+        native_usenet_providers_json=json.dumps([
+            {"name": "Astraweb", "host": "news.example", "port": 563, "username": "user", "password": "usenet-super-secret", "use_ssl": True, "connections": 8, "enabled": True},
+        ]),
+        native_usenet_incomplete_dir=str(incomplete),
+        native_usenet_complete_dir=str(complete),
+        backup_directory=str(backups),
+        automatic_search_enabled=True,
+    )
+    monkeypatch.setenv("SCARLETX_SECRET_KEY_FILE", str(tmp_path / ".scarletx-secret.key"))
+    monkeypatch.setenv("SCARLETX_CONFIG_DIR", str(tmp_path / "config"))
+
+    with Session() as db:
+        db.add_all([
+            Scene(tpdb_id="s1", title="Scene One", monitored=True),
+            Performer(tpdb_id="p1", name="Performer One", is_library=True),
+            Studio(tpdb_id="st1", name="Studio One", is_library=True),
+            RootFolder(name="Scenes", content_type="scene", path=str(media_root), is_default=True),
+            NativeUsenetJob(id="job1", title="Failed Job", nzb_url="https://example.invalid/x.nzb", status="failed"),
         ])
-    ]
+        db.commit()
+        groups = collect_startup_status(db, settings)
+
+    rendered = render_dashboard(groups, version="0.3.9", color=False)
+    for heading in ("SYSTEM", "METADATA", "SEARCH", "USENET", "POST-PROCESSING", "LIBRARY", "STORAGE", "SECURITY"):
+        assert heading in rendered
+    assert "1 scenes" in rendered
+    assert "1 performers" in rendered
+    assert "1 studios" in rendered
+    assert "1 / 2 enabled" in rendered
+    assert "Astraweb" in rendered
+    assert "TLS :563" in rendered
+    assert "1 failed" in rendered
+    assert str(media_root) in rendered
+    assert "tpdb-super-secret" not in rendered
+    assert "indexer-super-secret" not in rendered
+    assert "another-secret" not in rendered
+    assert "usenet-super-secret" not in rendered
+
+
+def test_startup_snapshot_degrades_missing_paths_without_raising(tmp_path):
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    missing = tmp_path / "does-not-exist"
+    settings = Settings(
+        native_usenet_incomplete_dir=str(missing / "incomplete"),
+        native_usenet_complete_dir=str(missing / "complete"),
+        backup_directory=str(missing / "backups"),
+    )
+    with Session() as db:
+        groups = collect_startup_status(db, settings)
+    rendered = render_dashboard(groups, version="0.3.9", color=False)
+    assert "MISSING" in rendered or "WARNING" in rendered or "DEGRADED" in rendered
+
+
+def test_dashboard_never_echoes_secret_like_detail_values():
+    groups = [StatusGroup("SECURITY", [StatusRow("Secrets At Rest", "ENCRYPTED", "configured", "ok")])]
     rendered = render_dashboard(groups, version="0.3.9", color=False)
     assert "password=" not in rendered.casefold()
     assert "api_key=" not in rendered.casefold()
