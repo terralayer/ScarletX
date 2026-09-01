@@ -1,0 +1,39 @@
+name: Repair 0.3.9 hardening generator
+
+on:
+  push:
+    branches: [hardening-0.3.9]
+    paths:
+      - .github/workflows/patch-039-generator.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: hardening-0.3.9
+          fetch-depth: 0
+      - name: Fix generated newline literal
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("tools/apply_039_hardening.py")
+          text = path.read_text(encoding="utf-8")
+          old = r'handle.write(key + b"\n")'
+          new = r'handle.write(key + b"\\n")'
+          if old not in text:
+              raise SystemExit("secret-key newline marker not found")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          Path(".github/workflows/patch-039-generator.yml").unlink()
+      - name: Commit generator repair
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix 0.3.9 hardening generator"
+          git push origin HEAD:hardening-0.3.9
