@@ -23,7 +23,7 @@ def _shared_http_client(indexer: "NewznabIndexer") -> httpx.AsyncClient:
         if client is None or client.is_closed:
             client = httpx.AsyncClient(
                 base_url=indexer.url.rstrip("/"), timeout=30, trust_env=False,
-                headers={"Accept": "application/xml", "User-Agent": "ScarletX/0.3.8"},
+                headers={"Accept": "application/xml", "User-Agent": "ScarletX/0.3.9"},
                 limits=httpx.Limits(max_connections=40, max_keepalive_connections=20, keepalive_expiry=45),
             )
             _SHARED_HTTP_CLIENTS[key] = client
@@ -117,7 +117,7 @@ class NewznabClient:
         if self._owns_client:
             self.client = httpx.AsyncClient(
                 base_url=indexer.url.rstrip("/"), timeout=30, transport=transport, trust_env=False,
-                headers={"Accept": "application/xml", "User-Agent": "ScarletX/0.3.8"},
+                headers={"Accept": "application/xml", "User-Agent": "ScarletX/0.3.9"},
             )
         else:
             self.client = _shared_http_client(indexer)
