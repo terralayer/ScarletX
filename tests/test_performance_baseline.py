@@ -61,7 +61,30 @@ def test_cli_all_writes_every_scenario(tmp_path):
     assert completed.returncode == 0, completed.stderr
     payload = json.loads(target.read_text())
     assert payload["scenario"] == "all"
-    assert {item["scenario"] for item in payload["results"]} == EXPECTED_SCENARIOS
+    assert payload["iterations"] == 1
+    results = {item["scenario"]: item for item in payload["results"]}
+    assert set(results) == EXPECTED_SCENARIOS
+
+    assert results["list_api"]["operations"] == 100
+    assert results["list_api"]["metadata"]["fixture_scenes"] == 1_000
+    assert results["list_api"]["metadata"]["page_size"] == 100
+    assert len(results["list_api"]["metadata"]["samples_seconds"]) == 1
+
+    assert results["library_scan"]["operations"] == 10_000
+    assert results["library_scan"]["metadata"]["fixture_files"] == 10_000
+    assert results["library_scan"]["metadata"]["fixture_directories"] == 100
+    assert results["library_scan"]["metadata"]["warmup"]["files"] == 10_000
+    assert results["library_scan"]["metadata"]["last_scan"]["files"] == 10_000
+    assert len(results["library_scan"]["metadata"]["samples_seconds"]) == 1
+
+    assert results["queue_reads"]["operations"] == 200
+    assert results["queue_reads"]["metadata"]["fixture_jobs"] == 200
+    assert len(results["queue_reads"]["metadata"]["samples_seconds"]) == 1
+
+    assert results["tpdb_coalescing"]["operations"] == 100
+    assert results["tpdb_coalescing"]["metadata"]["concurrent_reads"] == 100
+    assert results["tpdb_coalescing"]["metadata"]["network_calls"] == [100]
+    assert len(results["tpdb_coalescing"]["metadata"]["samples_seconds"]) == 1
 
 
 def _run_ruff(*targets: Path | str):
@@ -96,3 +119,23 @@ def test_ruff_baseline_rejects_undefined_names(tmp_path):
 
     assert completed.returncode == 1
     assert "F821" in completed.stdout
+
+
+def test_ruff_baseline_rejects_unused_imports_in_new_files(tmp_path):
+    target = tmp_path / "unused_import.py"
+    target.write_text("import os\n")
+
+    completed = _run_ruff(target)
+
+    assert completed.returncode == 1
+    assert "F401" in completed.stdout
+
+
+def test_ruff_baseline_rejects_multiple_statements_in_new_files(tmp_path):
+    target = tmp_path / "multiple_statements.py"
+    target.write_text("value = 1; result = value + 1\n")
+
+    completed = _run_ruff(target)
+
+    assert completed.returncode == 1
+    assert "E702" in completed.stdout
