@@ -29,6 +29,24 @@ packages = ["scarletx"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 110
+extend-exclude = ["scarletx/settings_store.py"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+"scarletx/automation.py" = ["E401", "E701", "E702", "F401"]
+"scarletx/main.py" = ["E701", "E702", "F401"]
+"scarletx/media_library.py" = ["E701", "E702"]
+"scarletx/metadata.py" = ["E701"]
+"scarletx/native_usenet.py" = ["F401"]
+"scarletx/rss.py" = ["E701", "E702"]
+"scarletx/services.py" = ["E701", "E702"]
+"scarletx/studio_art.py" = ["E702", "F841"]
+"scarletx/tpdb.py" = ["E702"]
+"scarletx/wanted.py" = ["E701", "E702"]
+"tests/test_hardening_039.py" = ["F401"]
