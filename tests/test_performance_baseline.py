@@ -13,7 +13,7 @@ def _benchmark_module():
     return importlib.import_module("tools.benchmark_0310")
 
 
-def run_benchmark_cli(scenario: str, target: Path):
+def run_benchmark_cli(scenario: str, target: Path, iterations: int = 1):
     return subprocess.run(
         [
             sys.executable,
@@ -21,7 +21,7 @@ def run_benchmark_cli(scenario: str, target: Path):
             "--scenario",
             scenario,
             "--iterations",
-            "1",
+            str(iterations),
             "--json",
             str(target),
         ],
@@ -83,8 +83,19 @@ def test_cli_all_writes_every_scenario(tmp_path):
 
     assert results["tpdb_coalescing"]["operations"] == 100
     assert results["tpdb_coalescing"]["metadata"]["concurrent_reads"] == 100
-    assert results["tpdb_coalescing"]["metadata"]["network_calls"] == [100]
+    assert results["tpdb_coalescing"]["metadata"]["network_calls"] == [1]
     assert len(results["tpdb_coalescing"]["metadata"]["samples_seconds"]) == 1
+
+
+def test_tpdb_benchmark_isolates_each_cold_coalescing_sample(tmp_path):
+    target = tmp_path / "tpdb.json"
+    completed = run_benchmark_cli("tpdb_coalescing", target, iterations=5)
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(target.read_text())
+    assert payload["iterations"] == 5
+    assert payload["metadata"]["network_calls"] == [1, 1, 1, 1, 1]
+    assert len(payload["metadata"]["samples_seconds"]) == 5
 
 
 def _run_ruff(*targets: Path | str):
