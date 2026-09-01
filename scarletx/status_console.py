@@ -32,6 +32,7 @@ _STYLE = {
 }
 
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]+")
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 _WORDMARK = r"""
 ███████╗ ██████╗ █████╗ ██████╗ ██╗     ███████╗████████╗██╗  ██╗
@@ -101,9 +102,17 @@ def _row_line(row: StatusRow, *, color: bool, width: int = 66) -> str:
     return line.rstrip()
 
 
+def _visible_width(text: str) -> int:
+    return len(_ANSI_RE.sub("", text))
+
+
+def _pad_visible(text: str, width: int) -> str:
+    return text + (" " * max(0, width - _visible_width(text)))
+
+
 def _header(title: str, *, color: bool, width: int = 66) -> str:
     title = f" {sanitize_console_text(title, limit=40)} "
-    remaining = max(2, width - len(title) - 2)
+    remaining = max(0, width - len(title))
     left = remaining // 2
     right = remaining - left
     raw = f"┌{'─' * left}{title}{'─' * right}┐"
@@ -136,11 +145,13 @@ def render_dashboard(
     ]
     severities: list[Severity] = []
     for group in groups:
-        lines.append(_header(group.name, color=use_color))
-        for row in group.rows:
+        row_lines = [_row_line(row, color=use_color) for row in group.rows]
+        inner_width = max([66, *(_visible_width(line) + 2 for line in row_lines)])
+        lines.append(_header(group.name, color=use_color, width=inner_width))
+        for row, row_line in zip(group.rows, row_lines, strict=True):
             severities.append(row.severity)
-            lines.append("│ " + _row_line(row, color=use_color).ljust(64) + " │")
-        lines.append(_footer(color=use_color))
+            lines.append("│ " + _pad_visible(row_line, inner_width - 2) + " │")
+        lines.append(_footer(color=use_color, width=inner_width))
         lines.append("")
 
     if "error" in severities:
