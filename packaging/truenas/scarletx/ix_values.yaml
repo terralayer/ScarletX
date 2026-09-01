@@ -10,8 +10,8 @@ images:
     tag: 1.0.2
 
 consts:
-  scarletx_backend_container_name: scarletx-backend
-  scarletx_web_container_name: scarletx-web
+  scarletx_backend_container_name: backend
+  scarletx_web_container_name: web
   perms_container_name: permissions
   config_path: /config
   downloads_path: /downloads
