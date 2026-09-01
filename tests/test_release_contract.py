@@ -37,10 +37,16 @@ def test_release_version_is_consistent():
     values = text("packaging/truenas/scarletx/ix_values.yaml")
     assert f"app_version: {VERSION}" in app
     assert "version: 1.0.2" in app
-    assert f"RELEASE-NOTES-{VERSION}.md" in app
+    assert "changelog_url: https://github.com/terralayer/ScarletX/releases" in app
     assert re.search(rf"(?m)^\s+tag: {re.escape(VERSION)}$", values)
     assert "ghcr.io/terralayer/scarletx-web" in values
     assert (ROOT / f"RELEASE-NOTES-{VERSION}.md").exists()
+
+
+def test_truenas_changelog_url_is_not_version_pinned():
+    app = text("packaging/truenas/scarletx/app.yaml")
+    assert "changelog_url: https://github.com/terralayer/ScarletX/releases" in app
+    assert "RELEASE-NOTES-" not in re.search(r"(?m)^changelog_url:.*$", app).group(0)
 
 
 def test_shipped_application_metadata_reports_current_version():
