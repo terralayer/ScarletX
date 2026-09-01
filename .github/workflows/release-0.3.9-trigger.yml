@@ -1,0 +1,54 @@
+name: Trigger ScarletX 0.3.9 Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/release-0.3.9-trigger.yml"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_NOTES: |
+        # ScarletX 0.3.9
+
+        ScarletX 0.3.9 is a security, reliability, performance, and supply-chain hardening release.
+
+        ## Highlights
+
+        - Adds a secure one-time setup token for first-run administrator creation.
+        - Encrypts stored API keys and other sensitive settings using an installation-specific encryption key.
+        - Preserves the encryption key alongside ScarletX database backups.
+        - Runs the backend container as a non-root user.
+        - Hardens ZIP, RAR, and 7z extraction against path traversal, symlink escapes, and unsafe archive contents.
+        - Removes stored archive passwords after post-processing completes.
+        - Rejects API keys supplied through query strings.
+        - Hardens remote artwork downloads against SSRF, unsafe redirects, and oversized responses.
+        - Adds Nginx security headers, compression, request-size limits, and additional proxy hardening.
+        - Keeps FastAPI private behind Nginx.
+        - Reduces SQLite connection and cache memory usage.
+        - Improves library matching performance with indexed scene matching.
+        - Reduces database work during completed-download polling through batched state loading.
+        - Adds dependency vulnerability auditing with pip-audit.
+        - Adds Dependabot monitoring for Python, Docker, and GitHub Actions dependencies.
+        - Preserves compatibility with existing ScarletX 0.3.8 databases and storage layouts.
+
+        ## Upgrade notes
+
+        Existing ScarletX 0.3.8 configuration, databases, downloads, media, and backup paths are preserved.
+
+        Container deployments require matching ScarletX 0.3.9 backend and web images:
+
+        - `ghcr.io/terralayer/scarletx:0.3.9`
+        - `ghcr.io/terralayer/scarletx-web:0.3.9`
+
+        Nginx remains the only supported public HTTP entrypoint. Backend port 8000 remains internal and should not be published directly.
+    steps:
+      - name: Dispatch canonical release workflow
+        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main --field release_notes="$RELEASE_NOTES"
