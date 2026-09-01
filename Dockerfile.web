@@ -1,6 +1,7 @@
 FROM nginx:alpine
 
-ENV SCARLETX_WEB_PORT=8690
+ENV SCARLETX_WEB_PORT=8690 \
+    SCARLETX_FORWARDED_PROTO=http
 
 # Make the stock Nginx image safe for an arbitrary non-root UID/GID. TrueNAS
 # overrides the runtime identity from the app's User and Group settings.

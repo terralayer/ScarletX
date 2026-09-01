@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session, selectinload
 from .config import Settings
 from .db import Base, SessionLocal, engine, get_session
 from .models import (
-    BackgroundJob, BackupRecord, History, IndexerFeedItem, LibraryItemConfig,
+    AuthUser, BackgroundJob, BackupRecord, History, IndexerFeedItem, LibraryItemConfig,
     MediaFile, MediaProbe, NativeUsenetJob, Performer, PlaybackState, QualityProfile, ReleaseBlocklist, ReleaseProfile,
     RootFolder, Scene, Studio, TrackedDownload, TrackedDownloadMeta, UnmatchedMediaFile,
     UserTag, Webhook, library_user_tag, utcnow,
@@ -79,6 +79,7 @@ from .notifications import emit_webhooks
 from .rss import rss_sync_cycle
 from .wanted import calendar_items, cutoff_unmet, disk_space, missing_items
 from .settings_store import load_database_settings, seed_database_settings, set_setting
+from .setup_security import ensure_setup_token
 from .studio_art import StudioArtworkError, cache_studio_artwork, cached_studio_artwork, download_and_prepare_studio_artwork
 from .media_library import (
     MediaLibraryError, asset_for, duplicate_rows, index_media_file, index_media_file_by_id,
@@ -264,6 +265,9 @@ async def lifespan(_: FastAPI):
             db.commit()
         seed_database_settings(db)
         migrate_to_scarletx(db)
+        setup_token = ensure_setup_token(admin_exists=db.scalar(select(AuthUser.id).limit(1)) is not None)
+        if setup_token:
+            print(f"ScarletX first-run setup token: {setup_token}", flush=True)
         seed_quality_profiles(db)
         default_media_root = os.getenv("SCARLETX_DEFAULT_MEDIA_ROOT", "").strip()
         if default_media_root and db.scalar(select(RootFolder.id).where(RootFolder.content_type == "scene").limit(1)) is None:

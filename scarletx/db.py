@@ -19,7 +19,7 @@ def _engine_kwargs(url: str) -> dict:
     # slightly wider read pool so UI/API reads do not queue behind downloader and
     # scanner sessions. Do not change in-memory SQLite's special pool semantics.
     if ":memory:" not in url:
-        kwargs.update(pool_size=10, max_overflow=20, pool_timeout=30)
+        kwargs.update(pool_size=5, max_overflow=5, pool_timeout=30)
     return kwargs
 
 engine = create_engine(DATABASE_URL, **_engine_kwargs(DATABASE_URL))
@@ -37,9 +37,9 @@ if DATABASE_URL.startswith("sqlite"):
         cursor.execute("PRAGMA busy_timeout=5000")
         # Favor a larger read cache and memory-backed temp work. These are per
         # connection and keep library paging/sorting from repeatedly hitting disk.
-        cursor.execute("PRAGMA cache_size=-65536")
+        cursor.execute("PRAGMA cache_size=-16384")
         cursor.execute("PRAGMA temp_store=MEMORY")
-        cursor.execute("PRAGMA mmap_size=268435456")
+        cursor.execute("PRAGMA mmap_size=134217728")
         cursor.close()
 
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)

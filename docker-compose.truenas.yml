@@ -39,6 +39,7 @@ services:
     pull_policy: always
     environment:
       SCARLETX_WEB_PORT: ${SCARLETX_PORT:-8690}
+      SCARLETX_FORWARDED_PROTO: ${SCARLETX_FORWARDED_PROTO:-http}
     depends_on:
       scarletx-backend:
         condition: service_healthy
