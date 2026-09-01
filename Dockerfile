@@ -10,13 +10,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     SCARLETX_USENET_COMPLETE_DIR=/downloads/complete \
     SCARLETX_GENERATED_DIR=/config/generated \
     SCARLETX_CACHE_DIR=/config/cache \
-    SCARLETX_DEFAULT_MEDIA_ROOT=/tmp
-
-WORKDIR /app
+    SCARLETX_DEFAULT_MEDIA_ROOT=/tmp \
+    SCARLETX_SECRET_KEY_FILE=/config/.scarletx-secret.key \
+    SCARLETX_SETUP_TOKEN_FILE=/config/setup-token.json
 
 # ScarletX owns the downloader, while mature system utilities handle repair and
 # extraction. Enable Debian non-free so the official unrar package is available;
 # fall back to unrar-free if a mirror omits it. 7-Zip remains the extraction fallback.
+WORKDIR /app
+
+RUN groupadd --gid 568 scarletx && useradd --uid 568 --gid 568 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin scarletx
+
 RUN set -eux; \
     if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
       sed -i 's/^Components: main$/Components: main contrib non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources; \
@@ -34,10 +38,12 @@ RUN python -m pip install --no-cache-dir --disable-pip-version-check -r requirem
 COPY scarletx ./scarletx
 COPY README.md RELEASE-NOTES-*.md BUILD-INFO.txt ./
 
-RUN mkdir -p /config /config/generated /config/cache /downloads/incomplete /downloads/complete /downloads/failed /media /backups
+RUN mkdir -p /config /config/generated /config/cache /downloads/incomplete /downloads/complete /downloads/failed /media /backups \
+    && chown -R 568:568 /config /downloads /media /backups
 
 VOLUME ["/config", "/downloads", "/media", "/backups"]
 EXPOSE 8000
+USER 568:568
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD python -c "import json,urllib.request; d=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)); raise SystemExit(0 if d.get('app')=='ScarletX' else 1)"

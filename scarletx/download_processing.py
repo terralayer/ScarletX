@@ -61,14 +61,30 @@ async def _fetch(settings, identifier, metadata_factory):
         return await metadata.get_scene(identifier)
 
 
-def _native_states(db, jobs):
+def _pending_state_maps(db, pending):
+    tracked_ids = [tracked.id for tracked in pending]
+    external_ids = [tracked.nzo_id for tracked in pending if tracked.nzo_id]
+    metadata_by_tracked = {
+        row.tracked_download_id: row
+        for row in db.scalars(
+            select(TrackedDownloadMeta).where(TrackedDownloadMeta.tracked_download_id.in_(tracked_ids))
+        ).all()
+    } if tracked_ids else {}
+    native_by_id = {
+        row.id: row
+        for row in db.scalars(
+            select(NativeUsenetJob).where(NativeUsenetJob.id.in_(external_ids))
+        ).all()
+    } if external_ids else {}
+    jobs = []
     states = {}
-    for job in jobs:
-        native = db.get(NativeUsenetJob, job["external_id"])
-        if not native:
+    for tracked in pending:
+        jobs.append({"tracked_id": tracked.id, "external_id": tracked.nzo_id, "client": "scarletx"})
+        native = native_by_id.get(tracked.nzo_id)
+        if native is None:
             continue
         status = native.status
-        states[job["tracked_id"]] = {
+        states[tracked.id] = {
             "client": "scarletx",
             "status": status,
             "completed": status == "completed",
@@ -76,7 +92,7 @@ def _native_states(db, jobs):
             "path": native.output_path,
             "error": native.error or ("Download was cancelled" if status == "cancelled" else ""),
         }
-    return states
+    return jobs, states, metadata_by_tracked, native_by_id
 
 
 async def process_completed_downloads(
@@ -90,47 +106,47 @@ async def process_completed_downloads(
 
     with session_factory() as db:
         pending = db.scalars(select(TrackedDownload).where(TrackedDownload.status.in_(PENDING))).all()
-        jobs = []
-        for tracked in pending:
-            meta = db.get(TrackedDownloadMeta, tracked.id)
-            jobs.append(
-                {
-                    "tracked_id": tracked.id,
-                    "external_id": tracked.nzo_id,
-                    "client": "scarletx",
-                }
-            )
-        native_jobs = [item for item in jobs if item["client"] == "scarletx"]
-        states = _native_states(db, native_jobs)
+        jobs, states, metadata_by_tracked, native_by_id = _pending_state_maps(db, pending)
 
     if not jobs:
         return {"enabled": True, "checked": 0, "imported": 0, "failed": 0, "poll_seconds": settings.download_poll_seconds}
 
     imported = failed = 0
     notifications = []
-    for job in jobs:
-        state = states.get(job["tracked_id"])
-        if not state:
-            continue
-        with session_factory() as db:
-            tracked = db.get(TrackedDownload, job["tracked_id"])
-            meta = db.get(TrackedDownloadMeta, tracked.id) if tracked else None
-            if not tracked:
+    completed_jobs = []
+    tracked_ids = [job["tracked_id"] for job in jobs]
+    with session_factory() as db:
+        tracked_by_id = {
+            row.id: row for row in db.scalars(
+                select(TrackedDownload).where(TrackedDownload.id.in_(tracked_ids))
+            ).all()
+        } if tracked_ids else {}
+        for job in jobs:
+            state = states.get(job["tracked_id"])
+            tracked = tracked_by_id.get(job["tracked_id"])
+            if not state or not tracked:
                 continue
             tracked.client_status = state["status"]
             tracked.last_checked_at = utcnow()
             if state["failed"]:
                 tracked.status = "failed"
                 tracked.error = state["error"] or f"Download status: {state['status']}"
-                _block_failed(db, tracked, meta, tracked.error)
+                _block_failed(db, tracked, metadata_by_tracked.get(tracked.id), tracked.error)
                 db.add(History(event_type="download_failed", scene_id=tracked.scene_id, message=f"Download failed: {tracked.release_title}"))
-                db.commit()
                 failed += 1
                 notifications.append(("failed", {"scene_id": tracked.scene_id, "release_title": tracked.release_title, "error": tracked.error}))
                 continue
             if not state["completed"]:
                 tracked.status = "downloading" if state["status"] not in {"queued", "paused"} else state["status"]
-                db.commit()
+                continue
+            completed_jobs.append(job)
+        db.commit()
+
+    for job in completed_jobs:
+        state = states[job["tracked_id"]]
+        with session_factory() as db:
+            tracked = db.get(TrackedDownload, job["tracked_id"])
+            if not tracked:
                 continue
             storage_path = state["path"]
             tracked.storage_path = storage_path

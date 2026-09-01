@@ -32,12 +32,17 @@ def make_client():
 
 
 def setup_admin(client, username="admin", password=PASSWORD):
+    from scarletx.setup_security import ensure_setup_token
+
+    setup_token = ensure_setup_token(admin_exists=False)
+    assert setup_token
     return client.post(
         "/api/setup/admin",
         json={
             "username": username,
             "password": password,
             "password_confirm": password,
+            "setup_token": setup_token,
         },
     )
 

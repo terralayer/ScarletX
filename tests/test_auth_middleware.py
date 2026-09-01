@@ -82,7 +82,7 @@ def test_existing_api_key_authenticates_when_enabled():
     create_admin(factory)
     assert client.get("/api/private", headers={"X-Api-Key": "automation-key"}).status_code == 200
     assert client.get("/api/private", headers={"Authorization": "Bearer automation-key"}).status_code == 200
-    assert client.get("/api/private?apikey=automation-key").status_code == 200
+    assert client.get("/api/private?apikey=automation-key").status_code == 401
     assert client.get("/api/private", headers={"X-Api-Key": "wrong"}).status_code == 401
 
 

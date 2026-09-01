@@ -6,6 +6,7 @@ from pydantic import SecretStr
 from sqlalchemy.orm import Session
 from .config import DEFAULT_ADULT_INDEXER_CATEGORIES, DEV_NZBGEEK_API_KEY, DEV_NZBGEEK_API_URL, DEV_TREASURE_MAPS_API_KEY, DEV_TREASURE_MAPS_API_URL, DEV_NZBLIFE_API_KEY, DEV_NZBLIFE_API_URL, DEV_USENET_CRAWLER_API_KEY, DEV_USENET_CRAWLER_API_URL, DEV_ASTRAWEB_HOST, DEV_ASTRAWEB_PORT, DEV_ASTRAWEB_USERNAME, DEV_ASTRAWEB_PASSWORD, DEV_ASTRAWEB_CONNECTIONS, DEV_NEWSHOSTING_HOST, DEV_NEWSHOSTING_PORT, DEV_NEWSHOSTING_USERNAME, DEV_NEWSHOSTING_PASSWORD, DEV_NEWSHOSTING_CONNECTIONS, Settings
 from .models import AppSetting
+from .secret_store import decrypt_secret, encrypt_secret, migrate_secret
 
 SECRET_KEYS={"theporndb_api_key","newznab_indexers_json","native_usenet_providers_json","api_key"}
 _SETTINGS_CACHE_LOCK=threading.RLock()
@@ -20,6 +21,11 @@ def invalidate_settings_cache(db=None):
     with _SETTINGS_CACHE_LOCK:
         if db is None: _SETTINGS_CACHE.clear()
         else: _SETTINGS_CACHE.pop(_cache_key(db), None)
+
+def _setting_value(item):
+    if item is None:
+        return ""
+    return decrypt_secret(item.value) if item.is_secret else item.value
 
 LEGACY_KEYS={
  "tmdb_api_token","tmdb_base_url","tmdb_image_base_url","tmdb_language","adult_enabled",
@@ -50,11 +56,13 @@ def default_setting_values():
     }
 
 def set_setting(db,key,value,*,commit=True):
+    is_secret=key in SECRET_KEYS
+    stored=encrypt_secret(value) if is_secret else value
     item=db.get(AppSetting,key)
     if item is None:
-        item=AppSetting(key=key,value=value,is_secret=key in SECRET_KEYS);db.add(item)
+        item=AppSetting(key=key,value=stored,is_secret=is_secret);db.add(item)
     else:
-        item.value=value;item.is_secret=key in SECRET_KEYS
+        item.value=stored;item.is_secret=is_secret
     if commit: db.commit()
     invalidate_settings_cache(db)
 
@@ -66,8 +74,8 @@ def seed_database_settings(db):
         item = db.get(AppSetting,key)
         if item is None:
             set_setting(db,key,value,commit=False)
-        elif key == "theporndb_api_key" and not (item.value or "").strip() and value:
-            item.value = value
+        elif key == "theporndb_api_key" and not (_setting_value(item) or "").strip() and value:
+            item.value = encrypt_secret(value)
             item.is_secret = True
     oldlog=db.get(AppSetting,"scenecore_log_level")
     if oldlog and db.get(AppSetting,"scarletx_log_level") is None: set_setting(db,"scarletx_log_level",oldlog.value,commit=False)
@@ -77,7 +85,7 @@ def seed_database_settings(db):
     # Force all retained indexers to Usenet/Newznab and adult categories only.
     idx=db.get(AppSetting,"newznab_indexers_json")
     if idx:
-        try: rows=json.loads(idx.value or "[]")
+        try: rows=json.loads(_setting_value(idx) or "[]")
         except Exception: rows=[]
         clean=[]
         for row in rows:
@@ -86,14 +94,14 @@ def seed_database_settings(db):
             if not row.get("adult_categories"): row["adult_categories"] = row.get("categories") or list(DEFAULT_ADULT_INDEXER_CATEGORIES)
             for old in ("implementation","categories","tv_categories","movie_categories"): row.pop(old,None)
             clean.append(row)
-        idx.value=json.dumps(clean)
+        idx.value=encrypt_secret(json.dumps(clean))
 
     # Local-dev seed: ensure NZBGeek is available once with the requested
     # development key. After this marker exists, user changes/removal in Settings win.
     marker=db.get(AppSetting,"dev_nzbgeek_083_applied")
     if marker is None and DEV_NZBGEEK_API_KEY:
         item=db.get(AppSetting,"newznab_indexers_json")
-        try: rows=json.loads(item.value if item else "[]")
+        try: rows=json.loads(_setting_value(item) if item else "[]")
         except Exception: rows=[]
         match=None
         for row in rows:
@@ -122,7 +130,7 @@ def seed_database_settings(db):
     tm_marker=db.get(AppSetting,"dev_treasure_maps_084_applied")
     if tm_marker is None and DEV_TREASURE_MAPS_API_KEY:
         item=db.get(AppSetting,"newznab_indexers_json")
-        try: rows=json.loads(item.value if item else "[]")
+        try: rows=json.loads(_setting_value(item) if item else "[]")
         except Exception: rows=[]
         match=None
         for row in rows:
@@ -152,7 +160,7 @@ def seed_database_settings(db):
     nl_marker=db.get(AppSetting,"dev_nzblife_085_applied")
     if nl_marker is None and DEV_NZBLIFE_API_KEY:
         item=db.get(AppSetting,"newznab_indexers_json")
-        try: rows=json.loads(item.value if item else "[]")
+        try: rows=json.loads(_setting_value(item) if item else "[]")
         except Exception: rows=[]
         match=None
         for row in rows:
@@ -182,7 +190,7 @@ def seed_database_settings(db):
     uc_marker=db.get(AppSetting,"dev_usenet_crawler_085_applied")
     if uc_marker is None and DEV_USENET_CRAWLER_API_KEY:
         item=db.get(AppSetting,"newznab_indexers_json")
-        try: rows=json.loads(item.value if item else "[]")
+        try: rows=json.loads(_setting_value(item) if item else "[]")
         except Exception: rows=[]
         match=None
         for row in rows:
@@ -212,7 +220,7 @@ def seed_database_settings(db):
     aw_marker=db.get(AppSetting,"dev_astraweb_091_applied")
     if aw_marker is None and DEV_ASTRAWEB_USERNAME and DEV_ASTRAWEB_PASSWORD:
         item=db.get(AppSetting,"native_usenet_providers_json")
-        try: providers=json.loads(item.value if item else "[]")
+        try: providers=json.loads(_setting_value(item) if item else "[]")
         except Exception: providers=[]
         match=None
         for row in providers:
@@ -234,7 +242,7 @@ def seed_database_settings(db):
     # rows before runtime model validation, including older configurations that
     # may have allowed plaintext NNTP. Common plaintext ports are moved to 563.
     provider_item=db.get(AppSetting,"native_usenet_providers_json")
-    try: secure_providers=json.loads(provider_item.value if provider_item else "[]")
+    try: secure_providers=json.loads(_setting_value(provider_item) if provider_item else "[]")
     except Exception: secure_providers=[]
     secure_changed=False
     for row in secure_providers:
@@ -252,7 +260,7 @@ def seed_database_settings(db):
     nh_marker=db.get(AppSetting,"dev_newshosting_091_applied")
     if nh_marker is None and DEV_NEWSHOSTING_USERNAME and DEV_NEWSHOSTING_PASSWORD:
         item=db.get(AppSetting,"native_usenet_providers_json")
-        try: providers=json.loads(item.value if item else "[]")
+        try: providers=json.loads(_setting_value(item) if item else "[]")
         except Exception: providers=[]
         match=None
         for row in providers:
@@ -319,7 +327,18 @@ def load_database_settings(db, *, force=False):
             cached=_SETTINGS_CACHE.get(key)
             if cached and now-cached[0] < _SETTINGS_CACHE_TTL:
                 return cached[1].model_copy(deep=True)
-    d=Settings(); v=default_setting_values();v.update({x.key:x.value for x in db.query(AppSetting).all()})
+    d=Settings(); v=default_setting_values(); migrated=False
+    for item in db.query(AppSetting).all():
+        if item.is_secret:
+            plain, stored = migrate_secret(item.value)
+            v[item.key] = plain
+            if stored != item.value:
+                item.value = stored
+                migrated = True
+        else:
+            v[item.key] = item.value
+    if migrated:
+        db.commit()
     settings=Settings(
       app_name=v.get("app_name") or "ScarletX",theporndb_api_key=SecretStr(v.get("theporndb_api_key","")),theporndb_base_url=v.get("theporndb_base_url",d.theporndb_base_url),
       newznab_indexers_json=SecretStr(v.get("newznab_indexers_json","[]")),

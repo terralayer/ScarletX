@@ -8,6 +8,7 @@
     <form id="authForm" hidden>
       <div class="sx-auth-fields">
         <div class="sx-auth-field"><label for="authUsername">Username</label><input id="authUsername" name="username" autocomplete="username" maxlength="100" required></div>
+        <div class="sx-auth-field" id="authSetupTokenField" hidden><label for="authSetupToken">First-run setup token</label><input id="authSetupToken" name="setup_token" autocomplete="off" maxlength="512"><span class="sx-auth-hint">Copy the token printed in the ScarletX backend startup log.</span></div>
         <div class="sx-auth-field"><label for="authPassword">Password</label><input id="authPassword" name="password" type="password" autocomplete="current-password" maxlength="1024" required></div>
         <div class="sx-auth-field" id="authConfirmField" hidden><label for="authPasswordConfirm">Confirm password</label><input id="authPasswordConfirm" name="password_confirm" type="password" autocomplete="new-password" maxlength="1024"></div>
       </div>
@@ -53,6 +54,8 @@
     const setup = mode === 'setup';
     el('authGate').hidden = false;
     el('authForm').hidden = false;
+    el('authSetupTokenField').hidden = !setup;
+    el('authSetupToken').required = setup;
     el('authConfirmField').hidden = !setup;
     el('authPasswordConfirm').required = setup;
     el('authPassword').autocomplete = setup ? 'new-password' : 'current-password';
@@ -62,6 +65,7 @@
       : 'Enter the local administrator credentials for this ScarletX server.';
     el('authSubmit').textContent = setup ? 'Create administrator' : 'Sign in';
     el('authError').textContent = message;
+    el('authSetupToken').value = '';
     el('authPassword').value = '';
     el('authPasswordConfirm').value = '';
     setTimeout(() => el('authUsername').focus(), 0);
@@ -104,10 +108,12 @@
       const username = el('authUsername').value.trim();
       const password = el('authPassword').value;
       if (state.setupRequired) {
+        const setupToken = el('authSetupToken').value.trim();
         const passwordConfirm = el('authPasswordConfirm').value;
+        if (!setupToken) throw new Error('The first-run setup token is required.');
         if (password.length < 12) throw new Error('Password must be at least 12 characters.');
         if (password !== passwordConfirm) throw new Error('Passwords do not match.');
-        await request('/api/setup/admin', {method:'POST', body:JSON.stringify({username, password, password_confirm:passwordConfirm})});
+        await request('/api/setup/admin', {method:'POST', body:JSON.stringify({username, password, password_confirm:passwordConfirm, setup_token:setupToken})});
       } else {
         await request('/api/auth/login', {method:'POST', body:JSON.stringify({username, password})});
       }

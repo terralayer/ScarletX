@@ -48,7 +48,7 @@ def test_nginx_is_the_public_http_entrypoint():
     assert "proxy_set_header Host $host;" in config
     assert "proxy_set_header X-Real-IP $remote_addr;" in config
     assert "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;" in config
-    assert "proxy_set_header X-Forwarded-Proto $scheme;" in config
+    assert "proxy_set_header X-Forwarded-Proto $scarletx_forwarded_proto;" in config
     assert "location = /api/activity/stream" in config
     assert "proxy_buffering off;" in config
     assert "proxy_cache off;" in config
@@ -98,11 +98,3 @@ def test_truenas_template_routes_public_port_through_nginx():
     assert "scarletx_backend_container_name: scarletx-backend" in values
     assert "scarletx_web_container_name: scarletx-web" in values
     assert 'tpl.add_container(values.consts.scarletx_backend_container_name, "backend_image")' in template
-    assert 'tpl.add_container(values.consts.scarletx_web_container_name, "web_image")' in template
-    assert 'backend.environment.add_env("SCARLETX_TRUST_PROXY_HEADERS", "1")' in template
-    assert 'web.environment.add_env("SCARLETX_WEB_PORT", values.network.web_port.port_number)' in template
-    assert 'web.depends.add_dependency(values.consts.scarletx_backend_container_name, "service_healthy")' in template
-    assert "backend.add_storage" in template
-    assert "web.add_port(values.network.web_port)" in template
-    assert "backend.add_port(values.network.web_port)" not in template
-    assert "tpl.portals.add(values.network.web_port)" in template

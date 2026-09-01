@@ -73,18 +73,16 @@ def session_user(db: Session, token: str, now: datetime | None = None) -> AuthUs
     if not token:
         return None
     now = _as_utc(now or datetime.now(UTC))
-    row = db.scalar(
-        select(AuthSession).where(AuthSession.token_digest == _digest(token)).limit(1)
-    )
-    if row is None:
+    result = db.execute(
+        select(AuthSession, AuthUser)
+        .join(AuthUser, AuthUser.id == AuthSession.user_id)
+        .where(AuthSession.token_digest == _digest(token))
+        .limit(1)
+    ).first()
+    if result is None:
         return None
+    row, user = result
     if _as_utc(row.expires_at) <= now:
-        db.delete(row)
-        db.commit()
-        return None
-
-    user = db.get(AuthUser, row.user_id)
-    if user is None:
         db.delete(row)
         db.commit()
         return None

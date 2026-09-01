@@ -305,7 +305,7 @@ class SecuritySettingsWrite(BaseModel):
     api_key: str | None = None
 
 
-class AdminSetupWrite(BaseModel):
+class AdminCredentialsWrite(BaseModel):
     username: str = Field(default="admin", min_length=1, max_length=100)
     password: str = Field(min_length=12, max_length=1024)
     password_confirm: str = Field(min_length=12, max_length=1024)
@@ -325,6 +325,10 @@ class AdminSetupWrite(BaseModel):
         return self
 
 
+class AdminSetupWrite(AdminCredentialsWrite):
+    setup_token: str = Field(min_length=16, max_length=512)
+
+
 class LoginWrite(BaseModel):
     username: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=1, max_length=1024)
@@ -337,6 +341,3 @@ class LoginWrite(BaseModel):
             raise ValueError("Username is required")
         return value
 
-
-class AdminCredentialsWrite(AdminSetupWrite):
-    pass

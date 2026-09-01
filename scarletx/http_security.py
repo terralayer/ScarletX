@@ -5,11 +5,9 @@ from collections.abc import Callable
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import select
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .auth import SESSION_COOKIE_NAME, session_user
-from .models import AuthUser
 
 PUBLIC_API_PATHS = {
     "/api/health",
@@ -43,7 +41,7 @@ def remove_legacy_api_key_middleware(app: FastAPI) -> bool:
 
 
 def _supplied_api_key(request: Request) -> str:
-    supplied = request.headers.get("X-Api-Key") or request.query_params.get("apikey") or ""
+    supplied = request.headers.get("X-Api-Key") or ""
     authorization = request.headers.get("Authorization") or ""
     if not supplied and authorization.casefold().startswith("bearer "):
         supplied = authorization[7:].strip()
@@ -68,13 +66,6 @@ def install_authentication(
         authenticated = False
         try:
             with session_factory() as db:
-                admin_exists = db.scalar(select(AuthUser.id).limit(1)) is not None
-                if not admin_exists:
-                    return JSONResponse(
-                        {"detail": "Administrator setup is required"},
-                        status_code=401,
-                    )
-
                 token = request.cookies.get(SESSION_COOKIE_NAME) or ""
                 if token and session_user(db, token) is not None:
                     authenticated = True

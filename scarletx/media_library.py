@@ -16,6 +16,7 @@ from PIL import Image
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from .library_match import build_scene_match_index, match_local_scene
 from .models import (
     BackgroundJob,
     History,
@@ -247,6 +248,8 @@ def scan_library(session_factory, job_id: int | None = None) -> dict[str, int]:
             db.commit()
         roots = db.scalars(select(RootFolder).where(RootFolder.content_type == "scene")).all()
         scenes = db.scalars(select(Scene).where(Scene.content_type == "scene")).all()
+        scene_match_index = build_scene_match_index(scenes)
+        probe_map = {probe.media_file_id: probe for probe in db.scalars(select(MediaProbe)).all()}
         known = {str(Path(x.path).expanduser().resolve(strict=False)): x for x in db.scalars(select(MediaFile)).all()}
         seen: set[str] = set()
         unmatched_known = {str(Path(x.path).expanduser().resolve(strict=False)): x for x in db.scalars(select(UnmatchedMediaFile)).all()}
@@ -259,7 +262,7 @@ def scan_library(session_factory, job_id: int | None = None) -> dict[str, int]:
                     seen.add(key)
                     media = known.get(key)
                     if media is None:
-                        scene = _match_local_scene(path, scenes)
+                        scene = match_local_scene(path, scene_match_index)
                         if scene is not None:
                             media = MediaFile(scene_id=scene.id, path=str(path), size_bytes=path.stat().st_size, quality=None, release_title=path.stem)
                             db.add(media); db.flush(); known[key] = media
@@ -281,7 +284,7 @@ def scan_library(session_factory, job_id: int | None = None) -> dict[str, int]:
                             stats["unmatched"] += 1
                             continue
                     stat = path.stat()
-                    probe = db.get(MediaProbe, media.id)
+                    probe = probe_map.get(media.id)
                     if probe and probe.file_mtime == stat.st_mtime and probe.size_bytes == stat.st_size and probe.duration_seconds is not None and not probe.missing:
                         stats["skipped"] += 1
                     else:
@@ -292,10 +295,11 @@ def scan_library(session_factory, job_id: int | None = None) -> dict[str, int]:
             for key, media in known.items():
                 if key in seen:
                     continue
-                probe = db.get(MediaProbe, media.id)
+                probe = probe_map.get(media.id)
                 if probe is None:
                     probe = MediaProbe(media_file_id=media.id)
                     db.add(probe)
+                    probe_map[media.id] = probe
                 if not Path(media.path).exists():
                     probe.missing = True
                     probe.scanned_at = utcnow()
