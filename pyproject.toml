@@ -17,7 +17,7 @@ dependencies = [
   "watchdog>=4,<7",
   "orjson>=3.10,<4",
   "pwdlib[argon2]>=0.2,<1",
-  "cryptography>=43,<48",
+  "cryptography>=50,<51",
 ]
 
 [project.optional-dependencies]
