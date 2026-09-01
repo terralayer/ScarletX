@@ -1,0 +1,137 @@
+name: Apply Status Console Worker Events
+
+on:
+  push:
+    branches:
+      - feature/status-console
+    paths:
+      - .github/workflows/status-console-worker-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feature/status-console
+      - name: Patch live subsystem events
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path_name: str, old: str, new: str, label: str) -> None:
+              path = Path(path_name)
+              text = path.read_text()
+              if old not in text:
+                  raise SystemExit(f'{label} anchor not found in {path_name}')
+              path.write_text(text.replace(old, new, 1))
+
+          # Native Usenet: provider checks and worker lifecycle.
+          replace(
+              'scarletx/native_usenet.py',
+              'from .archive_security import parse_7z_listing, validate_archive_member_path, validate_extracted_tree\n',
+              'from .archive_security import parse_7z_listing, validate_archive_member_path, validate_extracted_tree\nfrom .status_console import emit_status\n',
+              'native import',
+          )
+          replace(
+              'scarletx/native_usenet.py',
+              '''def test_provider(provider: UsenetProviderConfig) -> dict:\n    connection = NNTPConnection(provider)\n    started = time.monotonic()\n    try:\n        connection.connect()\n        return {\n            "ok": True,\n            "provider": provider.name,\n            "host": provider.host,\n            "port": provider.port,\n            "ssl": provider.use_ssl,\n            "latency_ms": round((time.monotonic() - started) * 1000),\n        }\n    finally:\n        connection.close()\n''',
+              '''def test_provider(provider: UsenetProviderConfig) -> dict:\n    connection = NNTPConnection(provider)\n    started = time.monotonic()\n    emit_status(provider.name, "CONNECTING", f"TLS :{provider.port}", severity="active")\n    try:\n        connection.connect()\n        latency_ms = round((time.monotonic() - started) * 1000)\n        emit_status(provider.name, "CONNECTED", f"TLS :{provider.port} | {latency_ms} ms", severity="ok")\n        return {\n            "ok": True,\n            "provider": provider.name,\n            "host": provider.host,\n            "port": provider.port,\n            "ssl": provider.use_ssl,\n            "latency_ms": latency_ms,\n        }\n    except Exception as exc:\n        emit_status(provider.name, "FAILED", exc.__class__.__name__, severity="error")\n        raise\n    finally:\n        connection.close()\n''',
+              'provider status',
+          )
+          replace(
+              'scarletx/native_usenet.py',
+              'async def native_worker_loop(session_factory, settings_loader, poll_seconds: float = 1.0) -> None:\n    # Jobs interrupted by an app restart are safe to retry because decoded segments\n',
+              'async def native_worker_loop(session_factory, settings_loader, poll_seconds: float = 1.0) -> None:\n    emit_status("Native Downloader", "ACTIVE", f"poll every {poll_seconds:g}s", severity="active")\n    # Jobs interrupted by an app restart are safe to retry because decoded segments\n',
+              'native worker',
+          )
+
+          # Completed-download import processing.
+          replace(
+              'scarletx/download_processing.py',
+              'from .services import upsert_scene\n',
+              'from .services import upsert_scene\nfrom .status_console import emit_status\n',
+              'import worker import',
+          )
+          replace(
+              'scarletx/download_processing.py',
+              '''            release_title = tracked.release_title\n            download_client = state["client"]\n            db.commit()\n\n        try:\n''',
+              '''            release_title = tracked.release_title\n            download_client = state["client"]\n            db.commit()\n\n        emit_status("Download", "COMPLETED", release_title, severity="ok")\n        emit_status("Import", "PROCESSING", release_title, severity="active")\n        try:\n''',
+              'import start',
+          )
+          replace(
+              'scarletx/download_processing.py',
+              '''                imported += 1\n                notifications.append(("import", {"scene_id": scene.id, "title": scene.title, "release_title": release_title, "path": moved}))\n            if media_id is not None:\n''',
+              '''                imported += 1\n                notifications.append(("import", {"scene_id": scene.id, "title": scene.title, "release_title": release_title, "path": moved}))\n                emit_status("Import", "COMPLETED", moved or release_title, severity="ok")\n            if media_id is not None:\n''',
+              'import completion',
+          )
+          replace(
+              'scarletx/download_processing.py',
+              '''        except (FileImportError, MetadataProviderError) as exc:\n            with session_factory() as db:\n''',
+              '''        except (FileImportError, MetadataProviderError) as exc:\n            emit_status("Import", "FAILED", f"{release_title} | {exc.__class__.__name__}", severity="error")\n            with session_factory() as db:\n''',
+              'import failure',
+          )
+
+          # Backups.
+          replace(
+              'scarletx/backups.py',
+              'from .models import BackupRecord\n',
+              'from .models import BackupRecord\nfrom .status_console import emit_status\n',
+              'backup import',
+          )
+          replace(
+              'scarletx/backups.py',
+              '''    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")\n    target = target_dir / f"scarletx-{timestamp}.db"\n    try:\n''',
+              '''    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")\n    target = target_dir / f"scarletx-{timestamp}.db"\n    emit_status("Backup", "PROCESSING", str(target), severity="active")\n    try:\n''',
+              'backup start',
+          )
+          replace(
+              'scarletx/backups.py',
+              '''    except (sqlite3.Error, BackupError) as exc:\n        target.unlink(missing_ok=True)\n''',
+              '''    except (sqlite3.Error, BackupError) as exc:\n        emit_status("Backup", "FAILED", exc.__class__.__name__, severity="error")\n        target.unlink(missing_ok=True)\n''',
+              'backup failure',
+          )
+          replace(
+              'scarletx/backups.py',
+              '''    rotate_backups(db, target_dir, keep)\n    return record\n''',
+              '''    rotate_backups(db, target_dir, keep)\n    emit_status("Backup", "COMPLETED", str(target), severity="ok")\n    return record\n''',
+              'backup completion',
+          )
+
+          # Library scan.
+          replace(
+              'scarletx/media_library.py',
+              'from .library_match import build_scene_match_index, match_local_scene\n',
+              'from .library_match import build_scene_match_index, match_local_scene\nfrom .status_console import emit_status\n',
+              'library import',
+          )
+          replace(
+              'scarletx/media_library.py',
+              '''def scan_library(session_factory, job_id: int | None = None) -> dict[str, int]:\n    stats = {"files": 0, "indexed": 0, "skipped": 0, "matched": 0, "unmatched": 0, "missing": 0, "errors": 0}\n''',
+              '''def scan_library(session_factory, job_id: int | None = None) -> dict[str, int]:\n    stats = {"files": 0, "indexed": 0, "skipped": 0, "matched": 0, "unmatched": 0, "missing": 0, "errors": 0}\n    emit_status("Library Scan", "ACTIVE", "scanning configured scene roots", severity="active")\n''',
+              'library start',
+          )
+          replace(
+              'scarletx/media_library.py',
+              '''        except Exception as exc:\n            if job:\n                job.status = "failed"\n''',
+              '''        except Exception as exc:\n            emit_status("Library Scan", "FAILED", exc.__class__.__name__, severity="error")\n            if job:\n                job.status = "failed"\n''',
+              'library failure',
+          )
+          replace(
+              'scarletx/media_library.py',
+              '''            db.commit()\n            raise\n    return stats\n\n\ndef library_stats''',
+              '''            db.commit()\n            raise\n    emit_status(\n        "Library Scan",\n        "COMPLETED",\n        f"{stats['files']} files | {stats['indexed']} indexed | {stats['unmatched']} unmatched | {stats['errors']} errors",\n        severity="ok" if stats["errors"] == 0 else "warning",\n    )\n    return stats\n\n\ndef library_stats''',
+              'library completion',
+          )
+          PY
+      - name: Commit branch-only live events
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scarletx/native_usenet.py scarletx/download_processing.py scarletx/backups.py scarletx/media_library.py
+          git commit -m 'feat: emit live subsystem status events'
+          git push origin HEAD:feature/status-console
