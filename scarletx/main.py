@@ -88,6 +88,8 @@ from .media_library import (
 from .media_watch import media_watch_loop
 from .remote_art import RemoteArtworkError, cached_remote_image, cached_remote_thumbnail, close_remote_art_client
 from .status_console import collect_startup_status, emit_status, render_dashboard
+from .migrations import ensure_performance_indexes
+from .list_queries import performer_summary_page, scene_summary_page, studio_summary_page
 
 
 def _encode_cursor(*parts) -> str:
@@ -266,6 +268,8 @@ async def lifespan(_: FastAPI):
             db.commit()
         seed_database_settings(db)
         migrate_to_scarletx(db)
+        with engine.begin() as connection:
+            ensure_performance_indexes(connection)
         setup_token = ensure_setup_token(admin_exists=db.scalar(select(AuthUser.id).limit(1)) is not None)
         if setup_token:
             print(f"ScarletX first-run setup token: {setup_token}", flush=True)
@@ -1838,7 +1842,7 @@ def _scene_summary_rows(db: Session, *, limit: int, offset: int = 0, q: str | No
 
 @app.get("/api/library/scenes/page")
 def library_scene_page(limit: int = Query(100, ge=1, le=250), offset: int = Query(0, ge=0), cursor: str | None = None, q: str | None = None, db: Session = Depends(get_session)):
-    return _scene_summary_rows(db, limit=limit, offset=offset, q=q, cursor=cursor)
+    return scene_summary_page(db, limit=limit, offset=offset, q=q, cursor=cursor)
 
 
 @app.get("/api/library/scenes/{item_id}/detail")
@@ -2069,58 +2073,12 @@ def system_diskspace(db: Session = Depends(get_session)):
 
 @app.get("/api/library/performers/page")
 def performers_library_page(limit: int = Query(60, ge=1, le=200), offset: int = Query(0, ge=0), cursor: str | None = None, q: str | None = None, db: Session = Depends(get_session)):
-    base = [Performer.is_library.is_(True)]
-    params = {}
-    fts = _fts_query(q)
-    if fts and _fts_available(db, "performer_search"):
-        base.append(text("performers.id IN (SELECT rowid FROM performer_search WHERE performer_search MATCH :fts_q)"))
-        params["fts_q"] = fts
-    elif q:
-        base.append(Performer.name.ilike(f"%{q.strip()}%"))
-    total = (db.scalar(select(func.count(Performer.id)).where(*base).params(**params)) or 0) if not cursor and offset == 0 else None
-    cursor_parts = _decode_cursor(cursor)
-    if cursor_parts:
-        try:
-            last_name, last_id = str(cursor_parts[0]), int(cursor_parts[1])
-        except Exception as exc:
-            raise HTTPException(400, "Invalid performer pagination cursor") from exc
-        base.append(or_(Performer.name > last_name, and_(Performer.name == last_name, Performer.id > last_id)))
-    stmt = select(Performer).where(*base).order_by(Performer.name.asc(), Performer.id.asc())
-    if not cursor:
-        stmt = stmt.offset(offset)
-    fetched = db.scalars(stmt.limit(limit + 1).params(**params)).all()
-    has_more = len(fetched) > limit
-    items = fetched[:limit]
-    next_cursor = _encode_cursor(items[-1].name, items[-1].id) if has_more and items else None
-    return {"total":int(total) if total is not None else None,"offset":offset if not cursor else None,"limit":limit,"has_more":has_more,"next_cursor":next_cursor,"items":[{"id":x.id,"tpdb_id":x.tpdb_id,"name":x.name,"image_url":x.image_url,"aliases":x.aliases,"monitored":x.monitored} for x in items]}
+    return performer_summary_page(db, limit=limit, offset=offset, cursor=cursor, q=q)
 
 
 @app.get("/api/library/studios/page")
 def studios_library_page(limit: int = Query(60, ge=1, le=200), offset: int = Query(0, ge=0), cursor: str | None = None, q: str | None = None, db: Session = Depends(get_session)):
-    base = [Studio.is_library.is_(True)]
-    params = {}
-    fts = _fts_query(q)
-    if fts and _fts_available(db, "studio_search"):
-        base.append(text("studios.id IN (SELECT rowid FROM studio_search WHERE studio_search MATCH :fts_q)"))
-        params["fts_q"] = fts
-    elif q:
-        base.append(Studio.name.ilike(f"%{q.strip()}%"))
-    total = (db.scalar(select(func.count(Studio.id)).where(*base).params(**params)) or 0) if not cursor and offset == 0 else None
-    cursor_parts = _decode_cursor(cursor)
-    if cursor_parts:
-        try:
-            last_name, last_id = str(cursor_parts[0]), int(cursor_parts[1])
-        except Exception as exc:
-            raise HTTPException(400, "Invalid studio pagination cursor") from exc
-        base.append(or_(Studio.name > last_name, and_(Studio.name == last_name, Studio.id > last_id)))
-    stmt = select(Studio).where(*base).order_by(Studio.name.asc(), Studio.id.asc())
-    if not cursor:
-        stmt = stmt.offset(offset)
-    fetched = db.scalars(stmt.limit(limit + 1).params(**params)).all()
-    has_more = len(fetched) > limit
-    items = fetched[:limit]
-    next_cursor = _encode_cursor(items[-1].name, items[-1].id) if has_more and items else None
-    return {"total":int(total) if total is not None else None,"offset":offset if not cursor else None,"limit":limit,"has_more":has_more,"next_cursor":next_cursor,"items":[{"id":x.id,"tpdb_id":x.tpdb_id,"name":x.name,"image_url":x.poster_url or x.logo_url,"monitored":x.monitored} for x in items]}
+    return studio_summary_page(db, limit=limit, offset=offset, cursor=cursor, q=q)
 
 
 @app.get("/api/library/performers/{item_id}/detail")
