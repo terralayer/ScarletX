@@ -121,6 +121,29 @@ def test_database_backups_preserve_matching_secret_key():
     assert "with_suffix" in source
 
 
+def test_remote_artwork_rejects_private_and_loopback_targets():
+    assert importlib.util.find_spec("scarletx.network_security") is not None
+    module = importlib.import_module("scarletx.network_security")
+    for url in (
+        "http://8.8.8.8/image.jpg",
+        "https://127.0.0.1/image.jpg",
+        "https://10.0.0.1/image.jpg",
+        "https://169.254.169.254/latest/meta-data/",
+        "https://[::1]/image.jpg",
+    ):
+        try:
+            module.validate_public_https_url(url)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"unsafe artwork URL accepted: {url}")
+    assert module.validate_public_https_url("https://8.8.8.8/image.jpg").hostname == "8.8.8.8"
+    remote_art = _source("scarletx/remote_art.py")
+    assert "validate_public_https_url" in remote_art
+    assert "follow_redirects=False" in remote_art
+    assert "aiter_bytes" in remote_art
+
+
 def test_archive_member_validation_blocks_traversal():
     assert importlib.util.find_spec("scarletx.archive_security") is not None
     module = importlib.import_module("scarletx.archive_security")
@@ -153,9 +176,16 @@ def test_nginx_applies_security_limits_and_compression():
         "X-Frame-Options",
         "Permissions-Policy",
         "Content-Security-Policy",
-        "SCARLETX_FORWARDED_PROTO",
     ):
         assert expected in source
+
+
+def test_nginx_preserves_trusted_upstream_https_without_allowing_downgrade():
+    source = _source("nginx/scarletx.conf")
+    assert "map $http_x_forwarded_proto $scarletx_forwarded_proto" in source
+    assert "default $scheme;" in source
+    assert "https https;" in source
+    assert "proxy_set_header X-Forwarded-Proto $scarletx_forwarded_proto;" in source
 
 
 def test_backend_container_runs_non_root():
@@ -212,12 +242,3 @@ def test_ci_audits_dependencies_and_dependabot_tracks_supply_chain():
     assert 'package-ecosystem: "pip"' in dependabot
     assert 'package-ecosystem: "docker"' in dependabot
     assert 'package-ecosystem: "github-actions"' in dependabot
-
-
-def test_forwarded_proto_is_explicit_in_deployments():
-    for path in (
-        "docker-compose.yml",
-        "docker-compose.truenas.yml",
-        "packaging/truenas/scarletx/templates/docker-compose.yaml",
-    ):
-        assert "SCARLETX_FORWARDED_PROTO" in _source(path)
