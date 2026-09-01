@@ -2,7 +2,7 @@ app_version: 0.3.9
 capabilities: []
 categories:
 - media
-changelog_url: https://github.com/terralayer/ScarletX/blob/main/RELEASE-NOTES-0.3.9.md
+changelog_url: https://github.com/terralayer/ScarletX/releases
 date_added: '2026-08-30'
 description: Self-hosted adult scene management and automation with TPDB metadata, monitoring, built-in downloading, imports, library management, and playback.
 home: https://github.com/terralayer/ScarletX
