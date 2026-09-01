@@ -1081,32 +1081,7 @@ replace_once(
 ''',
 )
 
-# Supply-chain checks.
-replace_once(
-    ".github/workflows/tests.yml",
-    '''  container-builds:
-    name: Build container images
-''',
-    '''  security-audit:
-    name: Python dependency audit
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v5
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install project and pip-audit
-        run: python -m pip install --disable-pip-version-check --editable . pip-audit
-      - name: Audit installed dependencies
-        run: python -m pip_audit
-
-  container-builds:
-    name: Build container images
-''',
-)
+# Supply-chain workflow changes are committed separately through the GitHub connector.
 write(
     ".github/dependabot.yml",
     '''version: 2
@@ -1138,4 +1113,3 @@ write(".gitignore", gitignore)
 
 # Remove this one-shot implementation helper and workflow from the resulting tree.
 (ROOT / "tools/apply_039_hardening.py").unlink(missing_ok=True)
-(ROOT / ".github/workflows/apply-039-hardening.yml").unlink(missing_ok=True)
