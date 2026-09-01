@@ -34,6 +34,7 @@ except Exception:  # The pure-Python/C-stdlib path remains a safe fallback.
     sabctools = None
 
 from .archive_security import parse_7z_listing, validate_archive_member_path, validate_extracted_tree
+from .status_console import emit_status
 from .models import History, NativeUsenetJob, TrackedDownload, utcnow
 
 
@@ -248,16 +249,22 @@ class NNTPConnection:
 def test_provider(provider: UsenetProviderConfig) -> dict:
     connection = NNTPConnection(provider)
     started = time.monotonic()
+    emit_status(provider.name, "CONNECTING", f"TLS :{provider.port}", severity="active")
     try:
         connection.connect()
+        latency_ms = round((time.monotonic() - started) * 1000)
+        emit_status(provider.name, "CONNECTED", f"TLS :{provider.port} | {latency_ms} ms", severity="ok")
         return {
             "ok": True,
             "provider": provider.name,
             "host": provider.host,
             "port": provider.port,
             "ssl": provider.use_ssl,
-            "latency_ms": round((time.monotonic() - started) * 1000),
+            "latency_ms": latency_ms,
         }
+    except Exception as exc:
+        emit_status(provider.name, "FAILED", exc.__class__.__name__, severity="error")
+        raise
     finally:
         connection.close()
 
@@ -2154,6 +2161,7 @@ async def process_job(session_factory, settings, job_id: str) -> None:
 
 
 async def native_worker_loop(session_factory, settings_loader, poll_seconds: float = 1.0) -> None:
+    emit_status("Native Downloader", "ACTIVE", f"poll every {poll_seconds:g}s", severity="active")
     # Jobs interrupted by an app restart are safe to retry because decoded segments
     # are persisted under the incomplete directory and skipped on the next pass.
     with session_factory() as db:
