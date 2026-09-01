@@ -13,3 +13,5 @@ docker-data/
 .scarletx-secret.key
 .scarletx-setup-token.json
 setup-token.json
+
+.worktrees/
