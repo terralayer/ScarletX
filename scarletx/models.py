@@ -186,7 +186,10 @@ class UnmatchedMediaFile(Base):
 
 class History(Base):
     __tablename__ = "history"
-    __table_args__ = (Index("ix_history_created_at", "created_at"),)
+    __table_args__ = (
+        Index("ix_history_created_at", "created_at"),
+        Index("ix_history_event_type_created_at", "event_type", "created_at"),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     event_type: Mapped[str] = mapped_column(String(50), index=True)
     scene_id: Mapped[int | None] = mapped_column(ForeignKey("scenes.id"))
@@ -196,6 +199,9 @@ class History(Base):
 
 class BackgroundJob(Base):
     __tablename__ = "background_jobs"
+    __table_args__ = (
+        Index("ix_background_jobs_status_kind_created_at", "status", "kind", "created_at"),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     kind: Mapped[str] = mapped_column(String(50), index=True)
     payload: Mapped[str] = mapped_column(Text, default="{}")
@@ -207,6 +213,10 @@ class BackgroundJob(Base):
 
 class TrackedDownload(Base):
     __tablename__ = "tracked_downloads"
+    __table_args__ = (
+        Index("ix_tracked_downloads_status_created_at", "status", "created_at"),
+        Index("ix_tracked_downloads_status_last_checked_at", "status", "last_checked_at"),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     nzo_id: Mapped[str] = mapped_column(String(150), unique=True, index=True)
     release_title: Mapped[str] = mapped_column(String(1000))
@@ -228,6 +238,10 @@ class TrackedDownload(Base):
 
 class NativeUsenetJob(Base):
     __tablename__ = "native_usenet_jobs"
+    __table_args__ = (
+        Index("ix_native_usenet_jobs_status_created_at", "status", "created_at"),
+        Index("ix_native_usenet_jobs_status_updated_at", "status", "updated_at"),
+    )
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     title: Mapped[str] = mapped_column(String(1000))
     nzb_url: Mapped[str] = mapped_column(Text)
