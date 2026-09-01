@@ -174,6 +174,15 @@ def test_dashboard_never_echoes_secret_like_detail_values():
     assert "setup token" not in rendered.casefold()
 
 
+def test_lifespan_wires_startup_dashboard_and_worker_lifecycle_events():
+    root = Path(__file__).resolve().parents[1]
+    main_source = (root / "scarletx" / "main.py").read_text()
+    assert "collect_startup_status" in main_source
+    assert "render_dashboard" in main_source
+    assert 'emit_status("Background Workers", "ACTIVE"' in main_source
+    assert 'emit_status("Background Workers", "STOPPED"' in main_source
+
+
 def test_main_and_pyproject_remain_at_released_039_version():
     root = Path(__file__).resolve().parents[1]
     pyproject = (root / "pyproject.toml").read_text()
