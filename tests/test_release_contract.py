@@ -110,6 +110,12 @@ def test_truenas_test_values_do_not_inject_undocumented_environment_variables():
         assert "SCARLETX_TEST_MODE" not in contents, f"{path.name} injects an undocumented environment variable"
 
 
+def test_truenas_host_path_fixture_uses_standard_web_port():
+    host_path_values = text("packaging/truenas/scarletx/templates/test_values/host-path-values.yaml")
+    assert "port_number: 8690" in host_path_values
+    assert "port_number: 30970" not in host_path_values
+
+
 def test_truenas_full_deploy_is_release_tag_only():
     workflow = text(".github/workflows/truenas-validation.yml")
     assert 'tags: ["v*"]' in workflow
