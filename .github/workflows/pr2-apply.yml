@@ -1,0 +1,32 @@
+name: PR 2 one-shot wiring
+
+on:
+  push:
+    branches:
+      - perf/0.3.10-query-paths
+    paths:
+      - tools/pr2-apply.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: perf/0.3.10-query-paths
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Apply focused route and model patch
+        run: python tools/apply_pr2_patch.py
+      - name: Commit implementation wiring
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scarletx/main.py scarletx/models.py
+          git diff --cached --check
+          git commit -m "perf: wire lightweight query paths"
+          git push origin HEAD:perf/0.3.10-query-paths
