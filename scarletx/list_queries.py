@@ -107,7 +107,9 @@ def scene_summary_page(
             Scene.tpdb_id.label("tpdb_id"),
             Scene.title.label("title"),
             Scene.release_date.label("release_date"),
-            func.coalesce(Scene.poster_url, Scene.image_url).label("image_url"),
+            func.coalesce(func.nullif(Scene.poster_url, ""), Scene.image_url).label(
+                "image_url"
+            ),
             Scene.monitored.label("monitored"),
             Studio.name.label("studio"),
             Studio.tpdb_id.label("studio_id"),
@@ -305,7 +307,9 @@ def studio_summary_page(
             Studio.id.label("id"),
             Studio.tpdb_id.label("tpdb_id"),
             Studio.name.label("name"),
-            func.coalesce(Studio.poster_url, Studio.logo_url).label("image_url"),
+            func.coalesce(func.nullif(Studio.poster_url, ""), Studio.logo_url).label(
+                "image_url"
+            ),
             Studio.monitored.label("monitored"),
         )
         .where(*filters)
