@@ -320,7 +320,7 @@ class _CountingTransport(httpx.AsyncBaseTransport):
         return httpx.Response(200, json={"data": {"id": "benchmark"}}, request=request)
 
 
-async def _one_tpdb_sample(cache_root: Path) -> tuple[float, int]:
+async def _one_tpdb_sample(cache_root: Path, sample_index: int) -> tuple[float, int]:
     from scarletx.tpdb import ThePornDBClient
 
     shutil.rmtree(cache_root, ignore_errors=True)
@@ -334,7 +334,10 @@ async def _one_tpdb_sample(cache_root: Path) -> tuple[float, int]:
     started = time.perf_counter()
     try:
         await asyncio.gather(
-            *(client._get("/scenes/benchmark") for _ in range(TPDB_CONCURRENT_READS))
+            *(
+                client._get(f"/scenes/benchmark-{sample_index}")
+                for _ in range(TPDB_CONCURRENT_READS)
+            )
         )
     finally:
         await client.aclose()
@@ -350,8 +353,8 @@ def _benchmark_tpdb_coalescing(temp_root: Path, iterations: int) -> BenchmarkRes
     try:
         samples: list[float] = []
         network_calls: list[int] = []
-        for _ in range(iterations):
-            elapsed, calls = asyncio.run(_one_tpdb_sample(cache_root))
+        for sample_index in range(iterations):
+            elapsed, calls = asyncio.run(_one_tpdb_sample(cache_root, sample_index))
             samples.append(elapsed)
             network_calls.append(calls)
         return BenchmarkResult(
