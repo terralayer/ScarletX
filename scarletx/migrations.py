@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from sqlalchemy.engine import Connection
 
 
@@ -36,6 +36,27 @@ PERFORMANCE_INDEXES = (
         "event_type, created_at",
     ),
 )
+
+
+def performance_index_migration_required(connection: Connection) -> bool:
+    """Return whether this SQLite database still needs any PR-2 worker index."""
+    if connection.dialect.name != "sqlite":
+        return False
+
+    tables = set(inspect(connection).get_table_names())
+    required = {
+        index_name
+        for table, index_name, _columns in PERFORMANCE_INDEXES
+        if table in tables
+    }
+    existing = {
+        str(row[0])
+        for row in connection.execute(
+            text("SELECT name FROM sqlite_master WHERE type='index'")
+        )
+        if row[0]
+    }
+    return not required.issubset(existing)
 
 
 def ensure_performance_indexes(connection: Connection) -> None:
