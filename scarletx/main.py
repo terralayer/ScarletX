@@ -87,6 +87,7 @@ from .media_library import (
 )
 from .media_watch import media_watch_loop
 from .remote_art import RemoteArtworkError, cached_remote_image, cached_remote_thumbnail, close_remote_art_client
+from .status_console import collect_startup_status, emit_status, render_dashboard
 
 
 def _encode_cursor(*parts) -> str:
@@ -277,6 +278,10 @@ async def lifespan(_: FastAPI):
         repair_legacy_auto_monitored_adult_entities(db)
         runtime = load_database_settings(db)
         app.title = f"{runtime.app_name} API"
+        try:
+            print(render_dashboard(collect_startup_status(db, runtime), version="0.3.9"), flush=True)
+        except Exception as exc:
+            emit_status("Status Console", "FAILED", exc.__class__.__name__, severity="error")
     def _runtime_settings_loader():
         with SessionLocal() as runtime_db:
             return load_database_settings(runtime_db)
@@ -289,6 +294,7 @@ async def lifespan(_: FastAPI):
         asyncio.create_task(backup_loop()),
         asyncio.create_task(media_watch_loop(SessionLocal)),
     ]
+    emit_status("Background Workers", "ACTIVE", f"{len(watchers)} workers", severity="active")
     try:
         yield
     finally:
@@ -302,6 +308,7 @@ async def lifespan(_: FastAPI):
         await close_shared_tpdb_clients()
         await close_shared_newznab_clients()
         await close_remote_art_client()
+        emit_status("Background Workers", "STOPPED", "shutdown complete", severity="ok")
 
 
 app = FastAPI(title="ScarletX API", version="0.3.9", lifespan=lifespan, default_response_class=ORJSONResponse)
