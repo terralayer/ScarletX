@@ -1,0 +1,62 @@
+name: Apply Status Console Lifespan Patch
+
+on:
+  push:
+    branches:
+      - feature/status-console
+    paths:
+      - .github/workflows/status-console-main-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'ci: apply status console lifespan patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feature/status-console
+      - name: Patch lifespan integration
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('scarletx/main.py')
+          text = path.read_text()
+
+          old = 'from .remote_art import RemoteArtworkError, cached_remote_image, cached_remote_thumbnail, close_remote_art_client\n'
+          new = old + 'from .status_console import collect_startup_status, emit_status, render_dashboard\n'
+          if old not in text:
+              raise SystemExit('status import anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = '        runtime = load_database_settings(db)\n        app.title = f"{runtime.app_name} API"\n'
+          new = '''        runtime = load_database_settings(db)\n        app.title = f"{runtime.app_name} API"\n        try:\n            print(render_dashboard(collect_startup_status(db, runtime), version="0.3.9"), flush=True)\n        except Exception as exc:\n            emit_status("Status Console", "FAILED", exc.__class__.__name__, severity="error")\n'''
+          if old not in text:
+              raise SystemExit('runtime anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = '''    watchers = [\n        asyncio.create_task(native_worker_loop(SessionLocal, _runtime_settings_loader)),\n        asyncio.create_task(completed_download_import_loop()),\n        asyncio.create_task(automatic_search_loop()),\n        asyncio.create_task(rss_sync_loop()),\n        asyncio.create_task(backup_loop()),\n        asyncio.create_task(media_watch_loop(SessionLocal)),\n    ]\n    try:\n'''
+          new = '''    watchers = [\n        asyncio.create_task(native_worker_loop(SessionLocal, _runtime_settings_loader)),\n        asyncio.create_task(completed_download_import_loop()),\n        asyncio.create_task(automatic_search_loop()),\n        asyncio.create_task(rss_sync_loop()),\n        asyncio.create_task(backup_loop()),\n        asyncio.create_task(media_watch_loop(SessionLocal)),\n    ]\n    emit_status("Background Workers", "ACTIVE", f"{len(watchers)} workers", severity="active")\n    try:\n'''
+          if old not in text:
+              raise SystemExit('watcher anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = '        await close_shared_newznab_clients()\n        await close_remote_art_client()\n'
+          new = old + '        emit_status("Background Workers", "STOPPED", "shutdown complete", severity="ok")\n'
+          if old not in text:
+              raise SystemExit('shutdown anchor not found')
+          text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+      - name: Commit branch-only integration
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scarletx/main.py
+          git commit -m 'feat: integrate status dashboard into app lifespan'
+          git push origin HEAD:feature/status-console
