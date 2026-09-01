@@ -304,7 +304,7 @@ async def lifespan(_: FastAPI):
         await close_remote_art_client()
 
 
-app = FastAPI(title="ScarletX API", version="0.3.8", lifespan=lifespan, default_response_class=ORJSONResponse)
+app = FastAPI(title="ScarletX API", version="0.3.9", lifespan=lifespan, default_response_class=ORJSONResponse)
 app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=5)
 
 
@@ -760,7 +760,7 @@ def delete_release_profile(profile_id: int, db: Session = Depends(get_session)):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "app": "ScarletX", "version": "0.3.8", "upstream": "SceneCore 0.7.16"}
+    return {"status": "ok", "app": "ScarletX", "version": "0.3.9", "upstream": "SceneCore 0.7.16"}
 
 
 @app.get("/api/search/status")
