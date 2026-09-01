@@ -138,7 +138,7 @@ def _load_key() -> bytes:
         fd = os.open(temp, flags, 0o600)
         try:
             with os.fdopen(fd, "wb") as handle:
-                handle.write(key + b"\n")
+                handle.write(key + b"\\n")
         except Exception:
             try:
                 temp.unlink(missing_ok=True)
