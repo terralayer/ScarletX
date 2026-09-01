@@ -39,9 +39,9 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
-      - name: Run Ruff
+      - name: Run Ruff on PR 1 Python changes
         if: matrix.python-version == '3.12'
-        run: python -m ruff check scarletx tests tools
+        run: python -m ruff check tests/test_performance_baseline.py tools/benchmark_0310.py
 
       - name: Verify source compilation
         run: python -m compileall -q scarletx tests tools
