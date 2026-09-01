@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from sqlalchemy import create_engine
@@ -56,6 +57,24 @@ def test_dashboard_has_no_ansi_when_color_is_disabled():
 def test_dashboard_uses_ansi_when_color_is_enabled():
     rendered = render_dashboard(sample_groups(), version="0.3.9", color=True)
     assert "\x1b[" in rendered
+
+
+def test_colored_dashboard_group_borders_have_equal_visible_width():
+    rendered = render_dashboard(sample_groups(), version="0.3.9", color=True)
+    plain_lines = [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in rendered.splitlines()]
+    widths: list[int] = []
+    in_group = False
+    for line in plain_lines:
+        if line.startswith("┌"):
+            widths = [len(line)]
+            in_group = True
+            continue
+        if not in_group:
+            continue
+        widths.append(len(line))
+        if line.startswith("└"):
+            assert len(set(widths)) == 1, widths
+            in_group = False
 
 
 def test_status_symbols_cover_ok_active_warning_and_error():
