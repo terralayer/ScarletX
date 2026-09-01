@@ -12,11 +12,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     SCARLETX_CACHE_DIR=/config/cache \
     SCARLETX_DEFAULT_MEDIA_ROOT=/tmp
 
-WORKDIR /app
-
 # ScarletX owns the downloader, while mature system utilities handle repair and
 # extraction. Enable Debian non-free so the official unrar package is available;
 # fall back to unrar-free if a mirror omits it. 7-Zip remains the extraction fallback.
+WORKDIR /app
+
 RUN set -eux; \
     if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
       sed -i 's/^Components: main$/Components: main contrib non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources; \
