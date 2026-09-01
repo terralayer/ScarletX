@@ -6,6 +6,7 @@ import sys
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+EXPECTED_SCENARIOS = {"list_api", "library_scan", "queue_reads", "tpdb_coalescing"}
 
 
 def _benchmark_module():
@@ -45,3 +46,19 @@ def test_cli_writes_machine_readable_result(tmp_path):
     assert completed.returncode == 0, completed.stderr
     payload = json.loads(target.read_text())
     assert payload["scenario"] == "queue_reads"
+
+
+def test_harness_exposes_all_planned_scenarios():
+    module = _benchmark_module()
+
+    assert set(module.SCENARIOS) == EXPECTED_SCENARIOS
+
+
+def test_cli_all_writes_every_scenario(tmp_path):
+    target = tmp_path / "all.json"
+    completed = run_benchmark_cli("all", target)
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(target.read_text())
+    assert payload["scenario"] == "all"
+    assert {item["scenario"] for item in payload["results"]} == EXPECTED_SCENARIOS
