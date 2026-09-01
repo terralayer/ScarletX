@@ -23,7 +23,6 @@
 
 {% do web.set_user(values.run_as.user, values.run_as.group) %}
 {% do web.environment.add_env("SCARLETX_WEB_PORT", values.network.web_port.port_number) %}
-{% do web.environment.add_env("SCARLETX_FORWARDED_PROTO", "http") %}
 {% do web.healthcheck.set_test("wget", {"port": values.network.web_port.port_number, "path": "/api/health"}) %}
 {% do web.depends.add_dependency(values.consts.scarletx_backend_container_name, "service_healthy") %}
 {% do web.add_port(values.network.web_port) %}
