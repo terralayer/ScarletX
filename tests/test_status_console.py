@@ -183,6 +183,34 @@ def test_lifespan_wires_startup_dashboard_and_worker_lifecycle_events():
     assert 'emit_status("Background Workers", "STOPPED"' in main_source
 
 
+def test_core_workers_emit_structured_live_status_events():
+    root = Path(__file__).resolve().parents[1] / "scarletx"
+    native = (root / "native_usenet.py").read_text()
+    imports = (root / "download_processing.py").read_text()
+    backups = (root / "backups.py").read_text()
+    library = (root / "media_library.py").read_text()
+
+    for source in (native, imports, backups, library):
+        assert "from .status_console import emit_status" in source
+
+    assert 'emit_status(provider.name, "CONNECTING"' in native
+    assert 'emit_status(provider.name, "CONNECTED"' in native
+    assert 'emit_status(provider.name, "FAILED"' in native
+    assert 'emit_status("Native Downloader", "ACTIVE"' in native
+
+    assert 'emit_status("Import", "PROCESSING"' in imports
+    assert 'emit_status("Import", "COMPLETED"' in imports
+    assert 'emit_status("Import", "FAILED"' in imports
+
+    assert 'emit_status("Backup", "PROCESSING"' in backups
+    assert 'emit_status("Backup", "COMPLETED"' in backups
+    assert 'emit_status("Backup", "FAILED"' in backups
+
+    assert 'emit_status("Library Scan", "ACTIVE"' in library
+    assert 'emit_status("Library Scan", "COMPLETED"' in library
+    assert 'emit_status("Library Scan", "FAILED"' in library
+
+
 def test_main_and_pyproject_remain_at_released_039_version():
     root = Path(__file__).resolve().parents[1]
     pyproject = (root / "pyproject.toml").read_text()
