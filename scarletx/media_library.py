@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from .library_match import build_scene_match_index, match_local_scene
+from .status_console import emit_status
 from .models import (
     BackgroundJob,
     History,
@@ -240,6 +241,7 @@ def _video_paths(root: Path):
 
 def scan_library(session_factory, job_id: int | None = None) -> dict[str, int]:
     stats = {"files": 0, "indexed": 0, "skipped": 0, "matched": 0, "unmatched": 0, "missing": 0, "errors": 0}
+    emit_status("Library Scan", "ACTIVE", "scanning configured scene roots", severity="active")
     to_index: list[int] = []
     with session_factory() as db:
         job = db.get(BackgroundJob, job_id) if job_id else None
@@ -329,12 +331,19 @@ def scan_library(session_factory, job_id: int | None = None) -> dict[str, int]:
                 job.finished_at = utcnow()
             db.commit()
         except Exception as exc:
+            emit_status("Library Scan", "FAILED", exc.__class__.__name__, severity="error")
             if job:
                 job.status = "failed"
                 job.error = str(exc)[:2000]
                 job.finished_at = utcnow()
             db.commit()
             raise
+    emit_status(
+        "Library Scan",
+        "COMPLETED",
+        f"{stats['files']} files | {stats['indexed']} indexed | {stats['unmatched']} unmatched | {stats['errors']} errors",
+        severity="ok" if stats["errors"] == 0 else "warning",
+    )
     return stats
 
 

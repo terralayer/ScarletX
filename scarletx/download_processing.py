@@ -20,6 +20,7 @@ from .models import (
 )
 from .notifications import emit_webhooks
 from .services import upsert_scene
+from .status_console import emit_status
 
 PENDING = {"queued", "downloading", "paused", "postprocessing", "import_pending"}
 
@@ -158,6 +159,8 @@ async def process_completed_downloads(
             download_client = state["client"]
             db.commit()
 
+        emit_status("Download", "COMPLETED", release_title, severity="ok")
+        emit_status("Import", "PROCESSING", release_title, severity="active")
         try:
             local_scene_id = local_scene.id if local_scene and local_scene.content_type == "scene" else None
             if local_scene_id is None:
@@ -221,9 +224,11 @@ async def process_completed_downloads(
                         pass
                 imported += 1
                 notifications.append(("import", {"scene_id": scene.id, "title": scene.title, "release_title": release_title, "path": moved}))
+                emit_status("Import", "COMPLETED", moved or release_title, severity="ok")
             if media_id is not None:
                 await asyncio.to_thread(index_media_file_by_id, session_factory, media_id, generate_art=True)
         except (FileImportError, MetadataProviderError) as exc:
+            emit_status("Import", "FAILED", f"{release_title} | {exc.__class__.__name__}", severity="error")
             with session_factory() as db:
                 tracked = db.get(TrackedDownload, job["tracked_id"])
                 if tracked:
