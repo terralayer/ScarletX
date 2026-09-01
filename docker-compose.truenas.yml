@@ -36,7 +36,6 @@ services:
       SCARLETX_GENERATED_DIR: /config/generated
       SCARLETX_CACHE_DIR: /config/cache
       SCARLETX_DEFAULT_MEDIA_ROOT: /media
-      SCARLETX_NO_BROWSER: "1"
     volumes:
       - ${SCARLETX_CONFIG_PATH:?Set SCARLETX_CONFIG_PATH}:/config
       - ${SCARLETX_DOWNLOADS_PATH:?Set SCARLETX_DOWNLOADS_PATH}:/downloads
