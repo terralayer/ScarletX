@@ -98,7 +98,7 @@ def _row_line(row: StatusRow, *, color: bool, width: int = 66) -> str:
     line = f"{_status_token(row.severity, color)} {component} {dots} {state_text}"
     if detail:
         line += f" {detail}"
-    return line[: width + 42].rstrip()
+    return line.rstrip()
 
 
 def _header(title: str, *, color: bool, width: int = 66) -> str:
@@ -129,6 +129,7 @@ def render_dashboard(
     lines = [
         wordmark,
         "",
+        "                            SCARLETX",
         "                     TerraLayer Software",
         f"                       ScarletX {sanitize_console_text(version, limit=30)}",
         "",
