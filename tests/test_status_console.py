@@ -207,7 +207,7 @@ def test_core_workers_emit_structured_live_status_events():
     assert 'emit_status("Backup", "FAILED"' in backups
 
     assert 'emit_status("Library Scan", "ACTIVE"' in library
-    assert 'emit_status("Library Scan", "COMPLETED"' in library
+    assert 'emit_status(\n        "Library Scan",\n        "COMPLETED"' in library
     assert 'emit_status("Library Scan", "FAILED"' in library
 
 
