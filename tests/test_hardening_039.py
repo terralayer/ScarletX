@@ -113,6 +113,14 @@ def test_settings_store_encrypts_secret_rows_at_rest():
     assert "migrate_secret" in source
 
 
+def test_database_backups_preserve_matching_secret_key():
+    source = _source("scarletx/backups.py")
+    assert "SCARLETX_SECRET_KEY_FILE" in source
+    assert "secret_key_path" in source
+    assert "0600" in source or "0o600" in source
+    assert "with_suffix" in source
+
+
 def test_archive_member_validation_blocks_traversal():
     assert importlib.util.find_spec("scarletx.archive_security") is not None
     module = importlib.import_module("scarletx.archive_security")
@@ -155,6 +163,15 @@ def test_backend_container_runs_non_root():
     assert "USER 568:568" in source
     assert "SCARLETX_SECRET_KEY_FILE=/config/.scarletx-secret.key" in source
     assert "SCARLETX_SETUP_TOKEN_FILE=/config/setup-token.json" in source
+
+
+def test_compose_migrates_existing_bind_mount_permissions_before_non_root_backend():
+    source = _source("docker-compose.yml")
+    assert "scarletx-permissions:" in source
+    assert 'user: "0:0"' in source
+    assert "chown -R 568:568 /config /downloads /backups" in source
+    assert "find /media -type d" in source
+    assert "condition: service_completed_successfully" in source
 
 
 def test_sqlite_pool_and_cache_are_bounded():
