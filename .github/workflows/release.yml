@@ -1,0 +1,136 @@
+name: Release ScarletX
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: Markdown release notes for the next 0.3.x patch release
+        required: true
+        type: string
+
+concurrency:
+  group: release-scarletx
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Calculate next patch release
+        id: version
+        shell: bash
+        run: |
+          CURRENT_VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          NEXT_VERSION="$(python tools/release_version.py next "$CURRENT_VERSION")"
+          test "${CURRENT_VERSION%.*}" = "0.3"
+          test "${NEXT_VERSION%.*}" = "0.3"
+          if git rev-parse --verify --quiet "refs/tags/v${NEXT_VERSION}" >/dev/null; then
+            echo "v${NEXT_VERSION} already exists" >&2
+            exit 1
+          fi
+          echo "current=${CURRENT_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "next=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "NEXT_VERSION=${NEXT_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Apply next patch release metadata
+        env:
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        shell: bash
+        run: python tools/release_version.py apply --notes "$RELEASE_NOTES"
+
+      - name: Install project and validation dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --editable '.[dev]'
+          python -m pip install --disable-pip-version-check pyyaml psutil pytest-cov bcrypt
+
+      - name: Verify release tree
+        run: |
+          python -m pytest -q
+          python -m compileall -q scarletx tests tools
+
+      - name: Build release container images
+        run: |
+          docker build -t scarletx-backend:release .
+          docker build -f Dockerfile.web -t scarletx-web:release .
+
+      - name: Validate TrueNAS release render
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/truenas/apps.git /tmp/truenas-apps
+          rm -rf /tmp/truenas-apps/ix-dev/community/scarletx
+          cp -a packaging/truenas/scarletx /tmp/truenas-apps/ix-dev/community/scarletx
+          cd /tmp/truenas-apps
+          ./.github/scripts/ci.py --app scarletx --train community --test-file basic-values.yaml --render-only=true
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish candidate release images
+        shell: bash
+        run: |
+          docker tag scarletx-backend:release ghcr.io/terralayer/scarletx:${NEXT_VERSION}
+          docker tag scarletx-web:release ghcr.io/terralayer/scarletx-web:${NEXT_VERSION}
+          docker push ghcr.io/terralayer/scarletx:${NEXT_VERSION}
+          docker push ghcr.io/terralayer/scarletx-web:${NEXT_VERSION}
+
+      - name: Verify anonymous release image pulls
+        shell: bash
+        run: |
+          docker logout ghcr.io
+          for image in ghcr.io/terralayer/scarletx:${NEXT_VERSION} ghcr.io/terralayer/scarletx-web:${NEXT_VERSION}; do
+            pulled=false
+            for attempt in $(seq 1 36); do
+              if docker pull "$image"; then
+                pulled=true
+                break
+              fi
+              echo "$image not anonymously pullable yet; retrying in 10 seconds ($attempt/36)"
+              sleep 10
+            done
+            test "$pulled" = true
+          done
+
+      - name: Deploy and health-check through TrueNAS CI
+        working-directory: /tmp/truenas-apps
+        run: ./.github/scripts/ci.py --app scarletx --train community --test-file basic-values.yaml
+
+      - name: Commit verified release metadata
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml scarletx README.md BUILD-INFO.txt start-scarletx.sh Start-ScarletX.ps1 docker-compose.truenas.yml packaging/truenas/scarletx "RELEASE-NOTES-${NEXT_VERSION}.md"
+          git commit -m "Release ScarletX ${NEXT_VERSION}"
+          git push origin HEAD:main
+
+      - name: Create tag and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          git fetch origin main
+          git checkout --detach origin/main
+          test "$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')" = "${NEXT_VERSION}"
+          git tag -a "v${NEXT_VERSION}" -m "ScarletX ${NEXT_VERSION}"
+          git push origin "v${NEXT_VERSION}"
+          gh release create "v${NEXT_VERSION}" --title "ScarletX ${NEXT_VERSION}" --notes-file "RELEASE-NOTES-${NEXT_VERSION}.md" --verify-tag
