@@ -2,20 +2,20 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from contextlib import contextmanager
-from dataclasses import asdict, dataclass
-from datetime import UTC, datetime, timedelta
 import json
 import os
-from pathlib import Path
 import platform
 import shutil
 import sqlite3
 import statistics
 import sys
-from tempfile import TemporaryDirectory
 import time
-from typing import Callable, Iterator
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import httpx
 from sqlalchemy import create_engine, event
