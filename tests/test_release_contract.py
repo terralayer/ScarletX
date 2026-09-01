@@ -103,6 +103,13 @@ def test_truenas_validation_covers_application_changes():
         assert required in workflow
 
 
+def test_truenas_test_values_do_not_inject_undocumented_environment_variables():
+    test_values = ROOT / "packaging" / "truenas" / "scarletx" / "templates" / "test_values"
+    for path in test_values.glob("*.yaml"):
+        contents = path.read_text(encoding="utf-8")
+        assert "SCARLETX_TEST_MODE" not in contents, f"{path.name} injects an undocumented environment variable"
+
+
 def test_truenas_full_deploy_is_release_tag_only():
     workflow = text(".github/workflows/truenas-validation.yml")
     assert 'tags: ["v*"]' in workflow
