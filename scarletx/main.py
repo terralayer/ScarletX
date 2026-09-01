@@ -88,7 +88,10 @@ from .media_library import (
 from .media_watch import media_watch_loop
 from .remote_art import RemoteArtworkError, cached_remote_image, cached_remote_thumbnail, close_remote_art_client
 from .status_console import collect_startup_status, emit_status, render_dashboard
-from .migrations import ensure_performance_indexes
+from .migrations import (
+    ensure_performance_indexes,
+    performance_index_migration_required,
+)
 from .list_queries import performer_summary_page, scene_summary_page, studio_summary_page
 
 
@@ -267,6 +270,15 @@ async def lifespan(_: FastAPI):
         if interrupted:
             db.commit()
         seed_database_settings(db)
+        with engine.connect() as connection:
+            needs_performance_index_migration = performance_index_migration_required(connection)
+        if needs_performance_index_migration:
+            migration_settings = load_database_settings(db)
+            create_backup(
+                db,
+                migration_settings.backup_directory,
+                migration_settings.backup_keep,
+            )
         migrate_to_scarletx(db)
         with engine.begin() as connection:
             ensure_performance_indexes(connection)
