@@ -42,6 +42,25 @@ jobs:
       - name: Verify source compilation
         run: python -m compileall -q scarletx tests
 
+  security-audit:
+    name: Python dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install project and pip-audit
+        run: python -m pip install --disable-pip-version-check --editable . pip-audit
+
+      - name: Audit installed dependencies
+        run: python -m pip_audit
+
   container-builds:
     name: Build container images
     runs-on: ubuntu-latest
