@@ -48,7 +48,7 @@ def test_nginx_is_the_public_http_entrypoint():
     assert "proxy_set_header Host $host;" in config
     assert "proxy_set_header X-Real-IP $remote_addr;" in config
     assert "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;" in config
-    assert "proxy_set_header X-Forwarded-Proto ${SCARLETX_FORWARDED_PROTO};" in config
+    assert "proxy_set_header X-Forwarded-Proto $scarletx_forwarded_proto;" in config
     assert "location = /api/activity/stream" in config
     assert "proxy_buffering off;" in config
     assert "proxy_cache off;" in config
