@@ -1,9 +1,30 @@
 services:
+  scarletx-permissions:
+    image: ghcr.io/terralayer/scarletx:0.3.8
+    container_name: scarletx-permissions
+    pull_policy: always
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command: >-
+      chown -R 568:568 /config /downloads /backups &&
+      find /media -type d -exec chown 568:568 {} +
+    healthcheck:
+      disable: true
+    volumes:
+      - ${SCARLETX_CONFIG_PATH:?Set SCARLETX_CONFIG_PATH}:/config
+      - ${SCARLETX_DOWNLOADS_PATH:?Set SCARLETX_DOWNLOADS_PATH}:/downloads
+      - ${SCARLETX_MEDIA_PATH:?Set SCARLETX_MEDIA_PATH}:/media
+      - ${SCARLETX_BACKUPS_PATH:?Set SCARLETX_BACKUPS_PATH}:/backups
+
   scarletx-backend:
     image: ghcr.io/terralayer/scarletx:0.3.8
     container_name: scarletx-backend
     restart: unless-stopped
     pull_policy: always
+    depends_on:
+      scarletx-permissions:
+        condition: service_completed_successfully
     environment:
       TZ: ${TZ:-Etc/UTC}
       SCARLETX_HOST: 0.0.0.0
@@ -39,7 +60,6 @@ services:
     pull_policy: always
     environment:
       SCARLETX_WEB_PORT: ${SCARLETX_PORT:-8690}
-      SCARLETX_FORWARDED_PROTO: ${SCARLETX_FORWARDED_PROTO:-http}
     depends_on:
       scarletx-backend:
         condition: service_healthy
