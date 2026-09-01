@@ -62,3 +62,37 @@ def test_cli_all_writes_every_scenario(tmp_path):
     payload = json.loads(target.read_text())
     assert payload["scenario"] == "all"
     assert {item["scenario"] for item in payload["results"]} == EXPECTED_SCENARIOS
+
+
+def _run_ruff(*targets: Path | str):
+    return subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ruff",
+            "check",
+            "--config",
+            str(REPO_ROOT / "pyproject.toml"),
+            *(str(target) for target in targets),
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_ruff_baseline_accepts_existing_source_tree():
+    completed = _run_ruff("scarletx", "tests", "tools")
+
+    assert completed.returncode == 0, completed.stdout
+
+
+def test_ruff_baseline_rejects_undefined_names(tmp_path):
+    target = tmp_path / "undefined_name.py"
+    target.write_text("result = missing_value\n")
+
+    completed = _run_ruff(target)
+
+    assert completed.returncode == 1
+    assert "F821" in completed.stdout
