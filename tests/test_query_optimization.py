@@ -78,6 +78,8 @@ def _seed_scenes(session_factory, tmp_path: Path, count: int) -> None:
         studio = Studio(
             tpdb_id="studio-query-test",
             name="Query Test Studio",
+            logo_url="https://example.invalid/studio-logo.png",
+            poster_url="",
             is_library=True,
         )
         performers = [
@@ -102,6 +104,7 @@ def _seed_scenes(session_factory, tmp_path: Path, count: int) -> None:
                 content_type="scene",
                 description="detail-only scene description",
                 image_url=f"https://example.invalid/scene-{index}.jpg",
+                poster_url="",
                 studio=studio,
                 imported_at=started + timedelta(seconds=index),
             )
@@ -249,6 +252,7 @@ def test_scene_list_uses_summary_projection(tmp_path):
 
     data_query = next(statement for statement in statements if "ORDER BY scenes.imported_at" in statement)
     assert "scenes.description" not in data_query
+    assert payload["items"][0]["image_url"] == "https://example.invalid/scene-1.jpg"
     assert set(payload["items"][0]) == {
         "id",
         "tpdb_id",
@@ -308,6 +312,7 @@ def test_studio_list_uses_summary_projection(tmp_path):
     data_query = next(statement for statement in statements if "ORDER BY studios.name" in statement)
     assert "studios.description" not in data_query
     assert "studios.url" not in data_query
+    assert payload["items"][0]["image_url"] == "https://example.invalid/studio-logo.png"
     assert set(payload["items"][0]) == {
         "id",
         "tpdb_id",
