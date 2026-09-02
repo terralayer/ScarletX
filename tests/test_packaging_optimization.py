@@ -49,6 +49,14 @@ def test_runtime_images_remain_non_root_and_health_checked():
     assert "/api/health" in web
 
 
+def test_backend_routes_automatic_backups_to_persistent_volume():
+    dockerfile = source("Dockerfile")
+    config = source("scarletx/config.py")
+    assert "SCARLETX_BACKUP_DIR=/backups" in dockerfile
+    assert 'backup_directory: str = os.getenv("SCARLETX_BACKUP_DIR", "./backups")' in config
+    assert '"/backups"' in dockerfile
+
+
 def test_local_compose_exposes_only_web_and_uses_internal_network():
     compose = source("docker-compose.yml")
     backend = service_block(compose, "scarletx-backend")
