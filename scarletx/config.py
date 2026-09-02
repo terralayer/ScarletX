@@ -131,7 +131,7 @@ class Settings(BaseModel):
     recycle_bin_path: str = ""
     minimum_free_space_gb: float = 1.0
     backup_enabled: bool = True
-    backup_directory: str = "./backups"
+    backup_directory: str = os.getenv("SCARLETX_BACKUP_DIR", "./backups")
     backup_interval_hours: int = 24
     backup_keep: int = 14
     api_key_enabled: bool = False
