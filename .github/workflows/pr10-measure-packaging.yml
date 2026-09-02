@@ -1,0 +1,90 @@
+name: PR10 Packaging Measurement
+
+on:
+  pull_request:
+    branches: [release/0.3.10]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Build measurement images
+        run: |
+          docker build --file Dockerfile --tag scarletx-backend:measure .
+          docker build --file Dockerfile.web --tag scarletx-web:measure .
+
+      - name: Measure image sizes
+        run: |
+          backend_bytes=$(docker image inspect scarletx-backend:measure --format '{{.Size}}')
+          web_bytes=$(docker image inspect scarletx-web:measure --format '{{.Size}}')
+          backend_gzip=$(docker save scarletx-backend:measure | gzip -1 | wc -c | tr -d ' ')
+          web_gzip=$(docker save scarletx-web:measure | gzip -1 | wc -c | tr -d ' ')
+          echo "BACKEND_IMAGE_BYTES=$backend_bytes"
+          echo "WEB_IMAGE_BYTES=$web_bytes"
+          echo "BACKEND_GZIP_BYTES=$backend_gzip"
+          echo "WEB_GZIP_BYTES=$web_gzip"
+          {
+            echo '### Packaging image measurements'
+            echo '| Image | Uncompressed bytes | gzip -1 archive bytes |'
+            echo '| --- | ---: | ---: |'
+            echo "| backend | $backend_bytes | $backend_gzip |"
+            echo "| web | $web_bytes | $web_gzip |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Measure cold health and idle RSS
+        run: |
+          set -euo pipefail
+          docker network create scarletx-measure
+          cleanup() {
+            docker rm -f scarletx-web scarletx-backend >/dev/null 2>&1 || true
+            docker network rm scarletx-measure >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          start_ns=$(date +%s%N)
+          docker run -d --name scarletx-backend --network scarletx-measure \
+            --tmpfs /config:uid=568,gid=568 \
+            --tmpfs /downloads:uid=568,gid=568 \
+            --tmpfs /media:uid=568,gid=568 \
+            --tmpfs /backups:uid=568,gid=568 \
+            -p 18000:8000 scarletx-backend:measure
+          for _ in $(seq 1 300); do
+            if curl --fail --silent http://127.0.0.1:18000/api/health >/dev/null; then break; fi
+            sleep 0.1
+          done
+          curl --fail --silent http://127.0.0.1:18000/api/health >/dev/null
+          backend_ready_ns=$(date +%s%N)
+          backend_ms=$(( (backend_ready_ns - start_ns) / 1000000 ))
+
+          web_start_ns=$(date +%s%N)
+          docker run -d --name scarletx-web --network scarletx-measure -p 18690:8690 scarletx-web:measure
+          for _ in $(seq 1 300); do
+            if curl --fail --silent http://127.0.0.1:18690/api/health >/dev/null; then break; fi
+            sleep 0.1
+          done
+          curl --fail --silent http://127.0.0.1:18690/api/health >/dev/null
+          web_ready_ns=$(date +%s%N)
+          web_ms=$(( (web_ready_ns - web_start_ns) / 1000000 ))
+
+          sleep 5
+          backend_mem=$(docker stats --no-stream --format '{{.MemUsage}}' scarletx-backend)
+          web_mem=$(docker stats --no-stream --format '{{.MemUsage}}' scarletx-web)
+          echo "BACKEND_COLD_HEALTH_MS=$backend_ms"
+          echo "WEB_COLD_HEALTH_MS=$web_ms"
+          echo "BACKEND_IDLE_MEMORY=$backend_mem"
+          echo "WEB_IDLE_MEMORY=$web_mem"
+          {
+            echo '### Packaging runtime measurements'
+            echo '| Container | Cold health ms | Idle memory |'
+            echo '| --- | ---: | --- |'
+            echo "| backend | $backend_ms | $backend_mem |"
+            echo "| web | $web_ms | $web_mem |"
+          } >> "$GITHUB_STEP_SUMMARY"
