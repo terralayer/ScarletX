@@ -10,6 +10,7 @@ import sqlite3
 import statistics
 import sys
 import time
+import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
@@ -32,6 +33,8 @@ PROGRESS_DURATION_SECONDS = 10.0
 IDLE_UI_SESSION_SECONDS = 600
 IDLE_UI_PUBLISHER_EVENTS = 10_000
 IDLE_UI_FALLBACK_INTERVAL_SECONDS = 15
+DOWNLOAD_PIPELINE_SEGMENTS = 10_000
+DOWNLOAD_PIPELINE_WORKERS = 4
 
 
 @dataclass(frozen=True)
@@ -526,8 +529,90 @@ def _benchmark_idle_ui(temp_root: Path, iterations: int) -> BenchmarkResult:
         metadata,
     )
 
+
+def _one_download_pipeline_sample(temp_root: Path, sample_index: int) -> tuple[float, dict[str, object]]:
+    from scarletx.download_metrics import SegmentResultBuffer, download_phase_metrics
+    from scarletx.native_usenet import queue_rows
+
+    buffer = SegmentResultBuffer(DOWNLOAD_PIPELINE_WORKERS)
+    engine, session_factory = _session_factory(
+        temp_root / f"download-pipeline-{sample_index}.sqlite3"
+    )
+    job_id = f"download-pipeline-{sample_index}"
+    try:
+        _seed_queue(session_factory)
+        per_worker = DOWNLOAD_PIPELINE_SEGMENTS // DOWNLOAD_PIPELINE_WORKERS
+        remainder = DOWNLOAD_PIPELINE_SEGMENTS % DOWNLOAD_PIPELINE_WORKERS
+
+        def producer(worker_index: int) -> None:
+            count = per_worker + (1 if worker_index < remainder else 0)
+            for item_index in range(count):
+                with download_phase_metrics.start(job_id, "receive"):
+                    value = (worker_index, item_index)
+                with download_phase_metrics.start(job_id, "decode_write"):
+                    buffer.put(value)
+
+        threads = [
+            threading.Thread(target=producer, args=(index,), daemon=True)
+            for index in range(DOWNLOAD_PIPELINE_WORKERS)
+        ]
+        started = time.perf_counter()
+        for thread in threads:
+            thread.start()
+
+        api_started = time.perf_counter()
+        with session_factory() as db:
+            api_rows = len(queue_rows(db, limit=QUEUE_JOBS))
+        api_probe_seconds = time.perf_counter() - api_started
+
+        consumed = 0
+        while consumed < DOWNLOAD_PIPELINE_SEGMENTS:
+            buffer.get()
+            consumed += 1
+        for thread in threads:
+            thread.join(timeout=5)
+            if thread.is_alive():
+                raise RuntimeError("download pipeline benchmark producer stalled")
+        elapsed = time.perf_counter() - started
+        phases = download_phase_metrics.snapshot(job_id)
+        return elapsed, {
+            "workers": DOWNLOAD_PIPELINE_WORKERS,
+            "max_buffer_size": buffer.maxsize,
+            "peak_buffer_size": buffer.peak_size,
+            "api_probe_seconds": api_probe_seconds,
+            "api_rows": api_rows,
+            "phase_names": sorted(phases),
+        }
+    finally:
+        download_phase_metrics.clear(job_id)
+        engine.dispose()
+
+
+def _benchmark_download_pipeline(temp_root: Path, iterations: int) -> BenchmarkResult:
+    samples: list[float] = []
+    api_samples: list[float] = []
+    last: dict[str, object] = {}
+    for sample_index in range(iterations):
+        elapsed, last = _one_download_pipeline_sample(temp_root, sample_index)
+        samples.append(elapsed)
+        api_samples.append(float(last["api_probe_seconds"]))
+    metadata = {
+        **last,
+        "api_probe_seconds": statistics.median(api_samples),
+        "api_probe_samples_seconds": api_samples,
+        "samples_seconds": samples,
+    }
+    return BenchmarkResult(
+        "download_pipeline",
+        iterations,
+        statistics.median(samples),
+        DOWNLOAD_PIPELINE_SEGMENTS,
+        metadata,
+    )
+
 Scenario = Callable[[Path, int], BenchmarkResult]
 SCENARIOS: dict[str, Scenario] = {
+    "download_pipeline": _benchmark_download_pipeline,
     "idle_ui": _benchmark_idle_ui,
     "list_api": _benchmark_list_api,
     "library_scan": _benchmark_library_scan,
