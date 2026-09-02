@@ -65,13 +65,12 @@ def test_cli_all_writes_every_scenario(tmp_path):
     results = {item["scenario"]: item for item in payload["results"]}
     assert set(results) == EXPECTED_SCENARIOS
 
-
-assert results["idle_ui"]["operations"] == 10_000
-assert results["idle_ui"]["metadata"]["modeled_session_seconds"] == 600
-assert results["idle_ui"]["metadata"]["healthy_sse_queue_requests"] == 0
-assert results["idle_ui"]["metadata"]["subscriber_queue_size"] == 64
-assert results["idle_ui"]["metadata"]["replay_size"] == 512
-assert len(results["idle_ui"]["metadata"]["samples_seconds"]) == 1
+    assert results["idle_ui"]["operations"] == 10_000
+    assert results["idle_ui"]["metadata"]["modeled_session_seconds"] == 600
+    assert results["idle_ui"]["metadata"]["healthy_sse_queue_requests"] == 0
+    assert results["idle_ui"]["metadata"]["subscriber_queue_size"] == 64
+    assert results["idle_ui"]["metadata"]["replay_size"] == 512
+    assert len(results["idle_ui"]["metadata"]["samples_seconds"]) == 1
 
     assert results["list_api"]["operations"] == 100
     assert results["list_api"]["metadata"]["fixture_scenes"] == 1_000
