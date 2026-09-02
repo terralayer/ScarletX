@@ -298,7 +298,7 @@ async def lifespan(_: FastAPI):
         runtime = load_database_settings(db)
         app.title = f"{runtime.app_name} API"
         try:
-            print(render_dashboard(collect_startup_status(db, runtime), version="0.3.9"), flush=True)
+            print(render_dashboard(collect_startup_status(db, runtime), version="0.3.10-beta.1"), flush=True)
         except Exception as exc:
             emit_status("Status Console", "FAILED", exc.__class__.__name__, severity="error")
     def _runtime_settings_loader():
@@ -331,7 +331,7 @@ async def lifespan(_: FastAPI):
         emit_status("Background Workers", "STOPPED", "shutdown complete", severity="ok")
 
 
-app = FastAPI(title="ScarletX API", version="0.3.9", lifespan=lifespan, default_response_class=ORJSONResponse)
+app = FastAPI(title="ScarletX API", version="0.3.10-beta.1", lifespan=lifespan, default_response_class=ORJSONResponse)
 app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=5)
 
 
@@ -787,7 +787,7 @@ def delete_release_profile(profile_id: int, db: Session = Depends(get_session)):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "app": "ScarletX", "version": "0.3.9", "upstream": "SceneCore 0.7.16"}
+    return {"status": "ok", "app": "ScarletX", "version": "0.3.10-beta.1", "upstream": "SceneCore 0.7.16"}
 
 
 @app.get("/api/search/status")

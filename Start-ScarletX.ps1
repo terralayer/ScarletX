@@ -34,7 +34,7 @@ if (!$env:SCARLETX_PORT) {
 }
 $url = "http://${hostAddress}:$port"
 Write-Host ''
-Write-Host 'ScarletX 0.3.9'
+Write-Host 'ScarletX 0.3.10-beta.1'
 Write-Host 'Based on SceneCore 0.7.16 adult functionality'
 Write-Host "Opening: $url"
 Write-Host ''
@@ -43,7 +43,7 @@ Start-Job -ScriptBlock {
     for ($i=0; $i -lt 120; $i++) {
         try {
             $h = Invoke-RestMethod "$url/api/health" -TimeoutSec 1
-            if ($h.app -eq 'ScarletX' -and $h.version -eq '0.3.7') { Start-Process $url; return }
+            if ($h.app -eq 'ScarletX' -and $h.version -eq '0.3.10-beta.1') { Start-Process $url; return }
         } catch {}
         Start-Sleep -Milliseconds 500
     }

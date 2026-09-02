@@ -1744,7 +1744,7 @@ def _publish_progress(session_factory, job_id: str, *, total_bytes: int, downloa
 
 async def _fetch_nzb(url: str) -> bytes:
     try:
-        async with httpx.AsyncClient(timeout=45, follow_redirects=True, headers={"User-Agent": "ScarletX/0.3.9"}) as client:
+        async with httpx.AsyncClient(timeout=45, follow_redirects=True, headers={"User-Agent": "ScarletX/0.3.10-beta.1"}) as client:
             response = await client.get(url)
             response.raise_for_status()
             payload = response.content

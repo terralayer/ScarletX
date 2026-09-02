@@ -90,11 +90,11 @@ ghcr.io/terralayer/scarletx:main
 ghcr.io/terralayer/scarletx-web:main
 ```
 
-Stable container releases always use matching versions for both images, for example ScarletX 0.3.9:
+Stable container releases always use matching versions for both images, for example ScarletX 0.3.10-beta.1:
 
 ```text
-ghcr.io/terralayer/scarletx:0.3.9
-ghcr.io/terralayer/scarletx-web:0.3.9
+ghcr.io/terralayer/scarletx:0.3.10-beta.1
+ghcr.io/terralayer/scarletx-web:0.3.10-beta.1
 ```
 
 Runtime settings and credentials are configured by the user. ScarletX does not require development credentials to be committed to the repository.
@@ -147,9 +147,9 @@ GitHub Actions runs the test suite and source-compilation check on Python 3.11, 
 
 Stable releases are created with the manual `Release ScarletX` GitHub Actions workflow. The release helper enforces the `0.3.x` series and increments only the third component (the number after the second dot); it never changes the `0.3` portion. Adding or changing the workflow does not create a release; a release occurs only when the workflow is manually dispatched with release notes.
 
-Current application version: **0.3.9**.
+Current application version: **0.3.10-beta.1**.
 
-See `RELEASE-NOTES-0.3.9.md` for the current release summary.
+See `RELEASE-NOTES-0.3.10-beta.1.md` for the current release summary.
 
 ## License
 
