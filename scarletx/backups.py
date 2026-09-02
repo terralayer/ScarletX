@@ -19,7 +19,15 @@ class BackupError(RuntimeError):
 
 
 def _backup_dir(directory: str) -> Path:
-    path = Path(directory).expanduser()
+    # 0.3.9 persisted the local-development default (./backups) even in
+    # containers.  Honor an explicit packaging override only for that legacy
+    # default; a user-selected custom directory always wins.
+    requested = str(directory or "").strip()
+    if requested in {"backups", "./backups"}:
+        packaged = os.getenv("SCARLETX_BACKUP_DIR", "").strip()
+        if packaged:
+            requested = packaged
+    path = Path(requested or directory).expanduser()
     path.mkdir(parents=True, exist_ok=True)
     return path
 
