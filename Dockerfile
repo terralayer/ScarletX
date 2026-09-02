@@ -10,6 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     SCARLETX_GENERATED_DIR=/config/generated \
     SCARLETX_CACHE_DIR=/config/cache \
     SCARLETX_DEFAULT_MEDIA_ROOT=/tmp \
+    SCARLETX_BACKUP_DIR=/backups \
     SCARLETX_SECRET_KEY_FILE=/config/.scarletx-secret.key \
     SCARLETX_SETUP_TOKEN_FILE=/config/setup-token.json
 
