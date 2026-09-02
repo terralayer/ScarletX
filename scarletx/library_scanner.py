@@ -9,6 +9,7 @@ from typing import Callable, Iterable, Iterator
 from sqlalchemy import delete, select
 
 from .models import FileScanState, utcnow
+from .recent_imports import FileIdentity, recent_imports
 
 
 def normalized_path(path: str | Path) -> str:
@@ -85,8 +86,15 @@ def scandir_videos(
             continue
 
 
-def unchanged(state: FileScanState | None, stat: os.stat_result) -> bool:
-    return bool(state and state.size_bytes == stat.st_size and state.mtime_ns == stat.st_mtime_ns)
+def unchanged(
+    state: FileScanState | None,
+    stat: os.stat_result,
+    *,
+    path: str | Path | None = None,
+) -> bool:
+    if state and state.size_bytes == stat.st_size and state.mtime_ns == stat.st_mtime_ns:
+        return True
+    return bool(path is not None and recent_imports.contains(FileIdentity.from_stat(path, stat)))
 
 
 def load_states(db, directories: Iterable[str | Path]) -> dict[str, FileScanState]:
