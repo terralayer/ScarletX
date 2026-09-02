@@ -35,7 +35,7 @@ def _shared_http_client(base_url: str, api_key: str) -> httpx.AsyncClient:
     with _SHARED_HTTP_LOCK:
         client = _SHARED_HTTP_CLIENTS.get(key)
         if client is None or client.is_closed:
-            headers = {"Accept": "application/json", "User-Agent": "ScarletX/0.3.9"}
+            headers = {"Accept": "application/json", "User-Agent": "ScarletX/0.3.10-beta.1"}
             if api_key:
                 headers["Authorization"] = f"Bearer {api_key}"
             client = httpx.AsyncClient(
@@ -241,7 +241,7 @@ class ThePornDBClient:
         self.max_retries = max_retries
         self._owns_client = transport is not None
         if self._owns_client:
-            headers = {"Accept": "application/json", "User-Agent": "ScarletX/0.3.9"}
+            headers = {"Accept": "application/json", "User-Agent": "ScarletX/0.3.10-beta.1"}
             if api_key:
                 headers["Authorization"] = f"Bearer {api_key}"
             self.client = httpx.AsyncClient(base_url=base_url.rstrip("/"), headers=headers, timeout=20, transport=transport)
