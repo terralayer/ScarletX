@@ -1,0 +1,96 @@
+name: PR10 Upgrade Rollback Proof
+
+on:
+  pull_request:
+    branches: [release/0.3.10]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upgrade-rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@v5
+
+      - name: Build candidate backend
+        run: docker build --file Dockerfile --tag scarletx-backend:candidate .
+
+      - name: Pull released 0.3.9 backend
+        run: docker pull ghcr.io/terralayer/scarletx:0.3.9
+
+      - name: Exercise populated 0.3.9 upgrade and preserved rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/scarletx-pr10-upgrade"
+          config="$root/config"
+          backup="$root/config-039-backup"
+          mkdir -p "$config"
+          chmod 0777 "$config"
+
+          cleanup() {
+            docker rm -f scarletx-upgrade-check >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          run_app() {
+            local image="$1"
+            docker rm -f scarletx-upgrade-check >/dev/null 2>&1 || true
+            docker run -d --name scarletx-upgrade-check \
+              -v "$config:/config" \
+              --tmpfs /downloads:uid=568,gid=568 \
+              --tmpfs /media:uid=568,gid=568 \
+              --tmpfs /backups:uid=568,gid=568 \
+              -p 18000:8000 "$image" >/dev/null
+            for _ in $(seq 1 160); do
+              if curl --fail --silent http://127.0.0.1:18000/api/health >/dev/null; then
+                return 0
+              fi
+              sleep 0.25
+            done
+            docker logs scarletx-upgrade-check
+            return 1
+          }
+
+          stable=ghcr.io/terralayer/scarletx:0.3.9
+          candidate=scarletx-backend:candidate
+
+          echo 'Boot released 0.3.9 and create its schema'
+          run_app "$stable"
+          docker rm -f scarletx-upgrade-check >/dev/null
+
+          echo 'Populate a real 0.3.9 ORM record and create the persisted encryption key'
+          docker run --rm -v "$config:/config" --entrypoint python "$stable" -c \
+            'from scarletx.db import SessionLocal; from scarletx.models import Scene; from scarletx.secret_store import encrypt_secret; db=SessionLocal(); db.add(Scene(tpdb_id="pr10-upgrade-marker", title="PR10 0.3.9 Upgrade Marker")); db.commit(); db.close(); token=encrypt_secret("pr10-rollback-secret"); assert token.startswith("enc:v1:")'
+          test -s "$config/scarletx.db"
+          test -s "$config/.scarletx-secret.key"
+          db_before=$(sha256sum "$config/scarletx.db" | awk '{print $1}')
+          key_before=$(sha256sum "$config/.scarletx-secret.key" | awk '{print $1}')
+          cp -a "$config" "$backup"
+
+          echo 'Boot the PR10 candidate against the populated 0.3.9 state'
+          run_app "$candidate"
+          docker exec scarletx-upgrade-check python -c \
+            'from scarletx.db import SessionLocal; from scarletx.models import Scene; db=SessionLocal(); row=db.query(Scene).filter(Scene.tpdb_id=="pr10-upgrade-marker").one(); assert row.title=="PR10 0.3.9 Upgrade Marker"; db.close()'
+          docker rm -f scarletx-upgrade-check >/dev/null
+          test "$(sha256sum "$config/.scarletx-secret.key" | awk '{print $1}')" = "$key_before"
+
+          echo 'Restore the preserved 0.3.9 snapshot and roll back to the released image'
+          rm -rf "$config"
+          cp -a "$backup" "$config"
+          chmod 0777 "$config"
+          test "$(sha256sum "$config/scarletx.db" | awk '{print $1}')" = "$db_before"
+          test "$(sha256sum "$config/.scarletx-secret.key" | awk '{print $1}')" = "$key_before"
+          run_app "$stable"
+          docker exec scarletx-upgrade-check python -c \
+            'from scarletx.db import SessionLocal; from scarletx.models import Scene; from scarletx.secret_store import encrypt_secret, decrypt_secret; db=SessionLocal(); row=db.query(Scene).filter(Scene.tpdb_id=="pr10-upgrade-marker").one(); assert row.title=="PR10 0.3.9 Upgrade Marker"; db.close(); token=encrypt_secret("rollback-roundtrip"); assert decrypt_secret(token)=="rollback-roundtrip"'
+          docker rm -f scarletx-upgrade-check >/dev/null
+
+          echo "UPGRADE_FROM_039=passed"
+          echo "ROLLBACK_TO_039=passed"
+          echo "SECRET_KEY_PRESERVED=passed"
+          echo "POPULATED_RECORD_PRESERVED=passed"
