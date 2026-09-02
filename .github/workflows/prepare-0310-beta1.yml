@@ -1,0 +1,239 @@
+name: Prepare ScarletX 0.3.10-beta.1
+
+on:
+  push:
+    branches: [release/0.3.10]
+    paths:
+      - .github/workflows/prepare-0310-beta1.yml
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  beta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      VERSION: 0.3.10-beta.1
+      TAG: v0.3.10-beta.1
+    steps:
+      - name: Check out release branch
+        uses: actions/checkout@v5
+        with:
+          ref: release/0.3.10
+          fetch-depth: 0
+
+      - name: Record protected main head
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAIN_BEFORE="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          test -n "$MAIN_BEFORE"
+          echo "MAIN_BEFORE=$MAIN_BEFORE" >> "$GITHUB_ENV"
+          test "$(git branch --show-current)" = "release/0.3.10"
+
+      - name: Apply beta version metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import tomllib
+
+          old = "0.3.9"
+          new = "0.3.10-beta.1"
+          root = Path.cwd()
+          with (root / "pyproject.toml").open("rb") as handle:
+              current = tomllib.load(handle)["project"]["version"]
+          if current != old:
+              raise SystemExit(f"Expected {old} before beta prep, found {current}")
+
+          paths = [
+              "pyproject.toml",
+              "scarletx/__init__.py",
+              "scarletx/routes/application.py",
+              "README.md",
+              "BUILD-INFO.txt",
+              "start-scarletx.sh",
+              "Start-ScarletX.ps1",
+              "docker-compose.truenas.yml",
+              "scarletx/tpdb.py",
+              "scarletx/remote_art.py",
+              "scarletx/newznab.py",
+              "scarletx/usenet/worker.py",
+              "packaging/truenas/scarletx/app.yaml",
+              "packaging/truenas/scarletx/ix_values.yaml",
+          ]
+          for relative in paths:
+              path = root / relative
+              text = path.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"Missing {old} release marker in {relative}")
+              path.write_text(text.replace(old, new), encoding="utf-8")
+
+          # The launchers had a stale 0.3.7 health-version gate. Make the beta
+          # self-consistent so successful startup can open the browser again.
+          for relative in ("start-scarletx.sh", "Start-ScarletX.ps1"):
+              path = root / relative
+              text = path.read_text(encoding="utf-8").replace("0.3.7", new)
+              path.write_text(text, encoding="utf-8")
+
+          notes = root / f"RELEASE-NOTES-{new}.md"
+          if notes.exists():
+              raise SystemExit(f"{notes.name} already exists")
+          notes.write_text(
+              f"# ScarletX {new}\n\n"
+              "This is the first beta of the ScarletX 0.3.10 whole-app optimization release.\n\n"
+              "## Highlights\n\n"
+              "- Query indexes and lightweight list APIs for faster large-library views.\n"
+              "- TPDB in-memory caching and request coalescing.\n"
+              "- Throttled download-progress persistence and incremental library scanning.\n"
+              "- Duplicate media-processing suppression and a global queue event stream.\n"
+              "- Bounded download/post-processing pipeline with phase metrics and retry-preserved partial work.\n"
+              "- Backend/frontend module decomposition with externalized frontend assets.\n"
+              "- Packaging and deployment optimization with digest-pinned bases, private backend networking, persistent backups, and strengthened release validation.\n\n"
+              "## Beta note\n\n"
+              "This prerelease is intended for validation before the final 0.3.10 release. The stable main branch remains on 0.3.9.\n",
+              encoding="utf-8",
+          )
+          PY
+
+          # README release-note link is produced by the version replacement above.
+          test -f "RELEASE-NOTES-${VERSION}.md"
+          grep -F "version = \"${VERSION}\"" pyproject.toml
+          grep -F "__version__ = \"${VERSION}\"" scarletx/__init__.py
+          grep -F "Current application version: **${VERSION}**." README.md
+          grep -F "app_version: ${VERSION}" packaging/truenas/scarletx/app.yaml
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install validation dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --editable '.[dev]'
+          python -m pip install --disable-pip-version-check pyyaml psutil pytest-cov bcrypt
+
+      - name: Verify beta tree
+        run: |
+          python -m pytest -q
+          python -m ruff check scarletx tests tools
+          python -m compileall -q scarletx tests tools
+
+      - name: Build beta images
+        run: |
+          docker build -t scarletx-backend:beta .
+          docker build -f Dockerfile.web -t scarletx-web:beta .
+
+      - name: Validate deployment contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.yml config >/dev/null
+          SCARLETX_CONFIG_PATH=/tmp/scarletx/config \
+          SCARLETX_DOWNLOADS_PATH=/tmp/scarletx/downloads \
+          SCARLETX_MEDIA_PATH=/tmp/scarletx/media \
+          SCARLETX_BACKUPS_PATH=/tmp/scarletx/backups \
+            docker compose -f docker-compose.truenas.yml config >/dev/null
+          docker run --rm --entrypoint sh scarletx-backend:beta -ec 'command -v par2; command -v ffprobe; command -v 7z; command -v unrar'
+
+      - name: Smoke-test beta health
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker network create scarletx-beta-smoke >/dev/null
+          cleanup() {
+            docker rm -f scarletx-beta-web scarletx-beta-backend >/dev/null 2>&1 || true
+            docker network rm scarletx-beta-smoke >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker run -d --name scarletx-beta-backend --network scarletx-beta-smoke \
+            --tmpfs /config:uid=568,gid=568 \
+            --tmpfs /downloads:uid=568,gid=568 \
+            --tmpfs /media:uid=568,gid=568 \
+            --tmpfs /backups:uid=568,gid=568 \
+            -p 18000:8000 scarletx-backend:beta >/dev/null
+          for _ in $(seq 1 120); do
+            if curl --fail --silent http://127.0.0.1:18000/api/health | grep -F "\"version\":\"${VERSION}\"" >/dev/null; then break; fi
+            sleep 0.25
+          done
+          curl --fail --silent http://127.0.0.1:18000/api/health | grep -F "\"version\":\"${VERSION}\"" >/dev/null
+          docker run -d --name scarletx-beta-web --network scarletx-beta-smoke \
+            -e SCARLETX_BACKEND_HOST=scarletx-beta-backend \
+            -p 18690:8690 scarletx-web:beta >/dev/null
+          for _ in $(seq 1 120); do
+            if curl --fail --silent http://127.0.0.1:18690/api/health >/dev/null; then break; fi
+            sleep 0.25
+          done
+          curl --fail --silent http://127.0.0.1:18690/api/health | grep -F "\"version\":\"${VERSION}\"" >/dev/null
+
+      - name: Validate TrueNAS beta render
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/truenas/apps.git /tmp/truenas-apps
+          rm -rf /tmp/truenas-apps/ix-dev/community/scarletx
+          cp -a packaging/truenas/scarletx /tmp/truenas-apps/ix-dev/community/scarletx
+          cd /tmp/truenas-apps
+          ./.github/scripts/ci.py --app scarletx --train community --test-file basic-values.yaml --render-only=true
+
+      - name: Commit verified beta metadata to release branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/prepare-0310-beta1.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml scarletx README.md BUILD-INFO.txt start-scarletx.sh Start-ScarletX.ps1 docker-compose.truenas.yml packaging/truenas/scarletx "RELEASE-NOTES-${VERSION}.md"
+          git commit -m "Release ScarletX ${VERSION}"
+          git push origin HEAD:release/0.3.10
+          echo "FINAL_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Verify main was not changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAIN_AFTER="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          test "$MAIN_AFTER" = "$MAIN_BEFORE"
+          echo "main remained at $MAIN_AFTER"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish beta images
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker tag scarletx-backend:beta "ghcr.io/terralayer/scarletx:${VERSION}"
+          docker tag scarletx-web:beta "ghcr.io/terralayer/scarletx-web:${VERSION}"
+          docker push "ghcr.io/terralayer/scarletx:${VERSION}"
+          docker push "ghcr.io/terralayer/scarletx-web:${VERSION}"
+
+      - name: Create beta tag and GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin release/0.3.10
+          test "$(git rev-parse origin/release/0.3.10)" = "$FINAL_SHA"
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "${TAG} already exists" >&2
+            exit 1
+          fi
+          git tag -a "$TAG" "$FINAL_SHA" -m "ScarletX ${VERSION}"
+          git push origin "$TAG"
+          gh release create "$TAG" \
+            --repo terralayer/ScarletX \
+            --target "$FINAL_SHA" \
+            --title "ScarletX ${VERSION}" \
+            --notes-file "RELEASE-NOTES-${VERSION}.md" \
+            --prerelease \
+            --verify-tag
