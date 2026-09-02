@@ -98,6 +98,19 @@ def test_tpdb_benchmark_isolates_each_cold_coalescing_sample(tmp_path):
     assert len(payload["metadata"]["samples_seconds"]) == 5
 
 
+def test_queue_benchmark_reports_durable_progress_write_budget(tmp_path):
+    target = tmp_path / "queue.json"
+    completed = run_benchmark_cli("queue_reads", target, iterations=1)
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(target.read_text())
+    checkpoint = payload["metadata"]["progress_checkpoint"]
+    assert checkpoint["updates"] == 1_000
+    assert checkpoint["duration_seconds"] == 10.0
+    assert checkpoint["bytes_per_update"] == 4 * 1024
+    assert checkpoint["checkpoint_writes"] == 5
+
+
 def _run_ruff(*targets: Path | str):
     return subprocess.run(
         [
