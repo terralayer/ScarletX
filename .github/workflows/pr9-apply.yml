@@ -1,4 +1,4 @@
-# PR9 behavior-preserving decomposition runner (legacy lint policy preserved on relocated implementations)
+# PR9 behavior-preserving decomposition runner (final isolated rerun)
 name: PR9 Apply Decomposition
 
 on:
