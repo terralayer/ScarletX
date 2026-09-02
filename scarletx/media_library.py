@@ -276,7 +276,7 @@ def scan_library(
                     stats["files"] += 1
                     key = normalized_path(path)
                     seen.add(key)
-                    if unchanged(scan_states.get(key), stat):
+                    if unchanged(scan_states.get(key), stat, path=path):
                         stats["skipped"] += 1
                         continue
                     media = known.get(key)
