@@ -256,6 +256,7 @@ def _benchmark_library_scan(temp_root: Path, iterations: int) -> BenchmarkResult
                 "fixture_directories": (LIBRARY_FILES + 99) // 100,
                 "warmup": warmup,
                 "last_scan": last_scan,
+                "unchanged_expensive_probes": last_scan.get("indexed", 0) + last_scan.get("unmatched", 0),
                 "samples_seconds": samples,
             },
         )

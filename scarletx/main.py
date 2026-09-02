@@ -89,6 +89,7 @@ from .media_watch import media_watch_loop
 from .remote_art import RemoteArtworkError, cached_remote_image, cached_remote_thumbnail, close_remote_art_client
 from .status_console import collect_startup_status, emit_status, render_dashboard
 from .migrations import (
+    ensure_file_scan_state_table,
     ensure_performance_indexes,
     performance_index_migration_required,
 )
@@ -281,6 +282,7 @@ async def lifespan(_: FastAPI):
             )
         migrate_to_scarletx(db)
         with engine.begin() as connection:
+            ensure_file_scan_state_table(connection)
             ensure_performance_indexes(connection)
         setup_token = ensure_setup_token(admin_exists=db.scalar(select(AuthUser.id).limit(1)) is not None)
         if setup_token:
