@@ -95,3 +95,9 @@ def test_composition_modules_are_not_monoliths():
     assert line_count("scarletx/main.py") < 800
     assert line_count("scarletx/native_usenet.py") < 400
     assert line_count("frontend/index.html") < 1_200
+
+
+def test_temporary_pr9_repair_workflows_are_not_committed():
+    workflow_dir = ROOT / ".github" / "workflows"
+    assert not (workflow_dir / "pr9-apply.yml").exists()
+    assert not (workflow_dir / "pr9-fix-ci-contracts.yml").exists()
