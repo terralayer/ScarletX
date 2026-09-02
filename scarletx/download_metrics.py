@@ -3,6 +3,7 @@ from __future__ import annotations
 import queue
 import threading
 import time
+from collections import OrderedDict
 from contextlib import contextmanager
 
 
@@ -18,14 +19,23 @@ PHASES = (
 
 
 class DownloadPhaseMetrics:
-    """Small in-memory phase timer that never records payloads, errors, or secrets."""
+    """Small bounded in-memory phase timer that never stores errors or secrets."""
 
-    def __init__(self) -> None:
+    def __init__(self, max_jobs: int = 256) -> None:
+        self.max_jobs = max(1, int(max_jobs))
         self._lock = threading.RLock()
-        self._jobs: dict[str, dict[str, dict[str, float | int]]] = {}
+        self._jobs: OrderedDict[str, dict[str, dict[str, float | int]]] = OrderedDict()
 
     def _phase(self, job_id: str, phase: str) -> dict[str, float | int]:
-        phases = self._jobs.setdefault(str(job_id), {})
+        key = str(job_id)
+        phases = self._jobs.get(key)
+        if phases is None:
+            phases = {}
+            self._jobs[key] = phases
+            while len(self._jobs) > self.max_jobs:
+                self._jobs.popitem(last=False)
+        else:
+            self._jobs.move_to_end(key)
         return phases.setdefault(
             phase,
             {
