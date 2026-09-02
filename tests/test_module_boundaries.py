@@ -33,12 +33,14 @@ def test_route_and_method_contract_is_stable():
 
 
 def test_focused_route_boundaries_adopt_real_routes():
-    from scarletx.app import app  # noqa: F401
+    from scarletx.app import app
     from scarletx.routes import automation, downloads, library, settings
 
+    registered = {id(route) for route in app.routes if isinstance(route, APIRoute)}
     for module in (settings, library, downloads, automation):
         assert module.router.routes, module.__name__
         assert all(isinstance(route, APIRoute) for route in module.router.routes)
+        assert {id(route) for route in module.router.routes} <= registered
 
 
 def test_native_usenet_public_imports_remain_available_and_patchable(monkeypatch):
