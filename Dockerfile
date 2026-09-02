@@ -30,8 +30,8 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 # Dependency metadata is copied before application code so dependency layers stay
-# reusable across ordinary source-only rebuilds. Bytecode for unused dependency
-# modules is omitted; the runtime remains read-only and PYTHONDONTWRITEBYTECODE=1.
+# reusable across ordinary source-only rebuilds. Omit blanket bytecode generation,
+# then precompile only ScarletX and the startup-critical framework modules below.
 COPY requirements.txt requirements-performance.txt pyproject.toml ./
 RUN python -m pip install --no-cache-dir --disable-pip-version-check --no-compile -r requirements.txt \
     && (python -m pip install --no-cache-dir --disable-pip-version-check --no-compile -r requirements-performance.txt \
@@ -39,7 +39,19 @@ RUN python -m pip install --no-cache-dir --disable-pip-version-check --no-compil
 
 COPY scarletx ./scarletx
 
-RUN mkdir -p /config /config/generated /config/cache /downloads/incomplete /downloads/complete /downloads/failed /media /backups \
+RUN python -m compileall -q \
+      scarletx \
+      /usr/local/lib/python3.12/site-packages/fastapi \
+      /usr/local/lib/python3.12/site-packages/starlette \
+      /usr/local/lib/python3.12/site-packages/pydantic \
+      /usr/local/lib/python3.12/site-packages/sqlalchemy \
+      /usr/local/lib/python3.12/site-packages/uvicorn \
+      /usr/local/lib/python3.12/site-packages/anyio \
+      /usr/local/lib/python3.12/site-packages/httpx \
+      /usr/local/lib/python3.12/site-packages/httpcore \
+      /usr/local/lib/python3.12/site-packages/cryptography \
+      /usr/local/lib/python3.12/site-packages/pwdlib \
+    && mkdir -p /config /config/generated /config/cache /downloads/incomplete /downloads/complete /downloads/failed /media /backups \
     && chown -R 568:568 /config /downloads /media /backups
 
 VOLUME ["/config", "/downloads", "/media", "/backups"]
