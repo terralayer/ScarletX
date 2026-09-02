@@ -69,6 +69,71 @@ jobs:
           docker build -t scarletx-backend:release .
           docker build -f Dockerfile.web -t scarletx-web:release .
 
+      - name: Validate Compose deployment contracts
+        shell: bash
+        run: |
+          docker compose -f docker-compose.yml config >/dev/null
+          SCARLETX_CONFIG_PATH=/tmp/scarletx/config \
+          SCARLETX_DOWNLOADS_PATH=/tmp/scarletx/downloads \
+          SCARLETX_MEDIA_PATH=/tmp/scarletx/media \
+          SCARLETX_BACKUPS_PATH=/tmp/scarletx/backups \
+            docker compose -f docker-compose.truenas.yml config >/dev/null
+
+      - name: Verify required backend runtime tools
+        shell: bash
+        run: |
+          docker run --rm --entrypoint sh scarletx-backend:release -ec '
+            command -v par2
+            command -v ffprobe
+            command -v 7z
+            command -v unrar
+          '
+
+      - name: Record candidate image sizes
+        shell: bash
+        run: |
+          backend_bytes=$(docker image inspect scarletx-backend:release --format '{{.Size}}')
+          web_bytes=$(docker image inspect scarletx-web:release --format '{{.Size}}')
+          echo "backend_image_bytes=$backend_bytes"
+          echo "web_image_bytes=$web_bytes"
+          {
+            echo '### Candidate image sizes'
+            echo '| Image | Uncompressed bytes |'
+            echo '| --- | ---: |'
+            echo "| backend | $backend_bytes |"
+            echo "| web | $web_bytes |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke-test candidate health path
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker network create scarletx-release-smoke >/dev/null
+          cleanup() {
+            docker rm -f scarletx-release-web scarletx-release-backend >/dev/null 2>&1 || true
+            docker network rm scarletx-release-smoke >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker run -d --name scarletx-release-backend --network scarletx-release-smoke \
+            --tmpfs /config:uid=568,gid=568 \
+            --tmpfs /downloads:uid=568,gid=568 \
+            --tmpfs /media:uid=568,gid=568 \
+            --tmpfs /backups:uid=568,gid=568 \
+            -p 18000:8000 scarletx-backend:release >/dev/null
+          for _ in $(seq 1 120); do
+            if curl --fail --silent http://127.0.0.1:18000/api/health >/dev/null; then break; fi
+            sleep 0.25
+          done
+          curl --fail --silent http://127.0.0.1:18000/api/health >/dev/null
+          docker run -d --name scarletx-release-web --network scarletx-release-smoke \
+            -e SCARLETX_BACKEND_HOST=scarletx-release-backend \
+            -p 18690:8690 scarletx-web:release >/dev/null
+          for _ in $(seq 1 120); do
+            if curl --fail --silent http://127.0.0.1:18690/api/health >/dev/null; then break; fi
+            sleep 0.25
+          done
+          curl --fail --silent http://127.0.0.1:18690/api/health >/dev/null
+
       - name: Validate TrueNAS release render
         shell: bash
         run: |
