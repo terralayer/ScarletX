@@ -1,0 +1,31 @@
+name: PR7 Apply Idle Benchmark
+
+on:
+  push:
+    branches:
+      - perf/0.3.10-queue-event-stream
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v5
+        with:
+          ref: perf/0.3.10-queue-event-stream
+          fetch-depth: 0
+
+      - name: Apply idle benchmark integration
+        run: python tools/apply_pr7_idle_benchmark.py
+
+      - name: Commit benchmark implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/pr7-apply-idle-benchmark.yml tools/apply_pr7_idle_benchmark.py
+          git add tools/benchmark_0310.py tests/test_performance_baseline.py
+          git commit -m "perf: benchmark idle SSE queue traffic"
+          git push origin HEAD:perf/0.3.10-queue-event-stream
