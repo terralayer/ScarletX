@@ -1,6 +1,3 @@
-from pathlib import Path
-
-
 def test_legacy_default_uses_packaged_backup_override(monkeypatch, tmp_path):
     from scarletx.backups import _backup_dir
 
