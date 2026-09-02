@@ -41,6 +41,9 @@ services:
       - ${SCARLETX_DOWNLOADS_PATH:?Set SCARLETX_DOWNLOADS_PATH}:/downloads
       - ${SCARLETX_MEDIA_PATH:?Set SCARLETX_MEDIA_PATH}:/media
       - ${SCARLETX_BACKUPS_PATH:?Set SCARLETX_BACKUPS_PATH}:/backups
+    networks:
+      - scarletx-net
+      - scarletx-egress
     healthcheck:
       test:
         - CMD
@@ -59,8 +62,19 @@ services:
     pull_policy: always
     environment:
       SCARLETX_WEB_PORT: ${SCARLETX_PORT:-8690}
+      SCARLETX_BACKEND_HOST: ${SCARLETX_BACKEND_HOST:-scarletx-backend}
+      SCARLETX_BACKEND_PORT: ${SCARLETX_BACKEND_PORT:-8000}
     depends_on:
       scarletx-backend:
         condition: service_healthy
     ports:
       - "${SCARLETX_PORT:-8690}:${SCARLETX_PORT:-8690}"
+    networks:
+      - scarletx-net
+
+networks:
+  scarletx-net:
+    driver: bridge
+    internal: true
+  scarletx-egress:
+    driver: bridge
