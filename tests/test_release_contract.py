@@ -52,7 +52,7 @@ def test_truenas_changelog_url_is_not_version_pinned():
 def test_shipped_application_metadata_reports_current_version():
     expected_by_file = {
         "scarletx/__init__.py": f'__version__ = "{VERSION}"',
-        "scarletx/main.py": f'version="{VERSION}"',
+        "scarletx/routes/application.py": f'version="{VERSION}"',
         "README.md": f"Current application version: **{VERSION}**.",
         "BUILD-INFO.txt": f"ScarletX {VERSION}",
         "start-scarletx.sh": f"ScarletX {VERSION}",
@@ -66,7 +66,7 @@ def test_shipped_application_metadata_reports_current_version():
     assert f"image: ghcr.io/terralayer/scarletx-web:{VERSION}" in truenas_compose
     assert 'SCARLETX_PORT: "8000"' in truenas_compose
     assert 'SCARLETX_WEB_PORT: ${SCARLETX_PORT:-8690}' in truenas_compose
-    assert f'"version": "{VERSION}"' in text("scarletx/main.py")
+    assert f'"version": "{VERSION}"' in text("scarletx/routes/application.py")
     assert f"RELEASE-NOTES-{VERSION}.md" in text("README.md")
 
 
@@ -75,7 +75,7 @@ def test_outbound_user_agents_report_current_version():
         "scarletx/tpdb.py",
         "scarletx/remote_art.py",
         "scarletx/newznab.py",
-        "scarletx/native_usenet.py",
+        "scarletx/usenet/worker.py",
     ):
         assert f"ScarletX/{VERSION}" in text(path), f"{path} has a stale User-Agent"
 

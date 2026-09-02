@@ -195,7 +195,7 @@ def test_dashboard_never_echoes_secret_like_detail_values():
 
 def test_lifespan_wires_startup_dashboard_and_worker_lifecycle_events():
     root = Path(__file__).resolve().parents[1]
-    main_source = (root / "scarletx" / "main.py").read_text()
+    main_source = (root / "scarletx" / "routes" / "application.py").read_text()
     assert "collect_startup_status" in main_source
     assert "render_dashboard" in main_source
     assert 'emit_status("Background Workers", "ACTIVE"' in main_source
@@ -204,12 +204,13 @@ def test_lifespan_wires_startup_dashboard_and_worker_lifecycle_events():
 
 def test_core_workers_emit_structured_live_status_events():
     root = Path(__file__).resolve().parents[1] / "scarletx"
-    native = (root / "native_usenet.py").read_text()
+    native = (root / "usenet" / "worker.py").read_text()
     imports = (root / "download_processing.py").read_text()
     backups = (root / "backups.py").read_text()
     library = (root / "media_library.py").read_text()
 
-    for source in (native, imports, backups, library):
+    assert "from ..status_console import emit_status" in native
+    for source in (imports, backups, library):
         assert "from .status_console import emit_status" in source
 
     assert 'emit_status(provider.name, "CONNECTING"' in native
@@ -233,6 +234,6 @@ def test_core_workers_emit_structured_live_status_events():
 def test_main_and_pyproject_remain_at_released_039_version():
     root = Path(__file__).resolve().parents[1]
     pyproject = (root / "pyproject.toml").read_text()
-    main_source = (root / "scarletx" / "main.py").read_text()
+    main_source = (root / "scarletx" / "routes" / "application.py").read_text()
     assert 'version = "0.3.9"' in pyproject
     assert 'version="0.3.9"' in main_source
