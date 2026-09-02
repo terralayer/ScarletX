@@ -162,6 +162,16 @@ class MediaProbe(Base):
     scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class FileScanState(Base):
+    """Durable filesystem identity used to skip unchanged scanner work."""
+
+    __tablename__ = "file_scan_states"
+    path: Mapped[str] = mapped_column(String(3000), primary_key=True)
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    mtime_ns: Mapped[int] = mapped_column(Integer)
+    scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class PlaybackState(Base):
     __tablename__ = "playback_states"
     media_file_id: Mapped[int] = mapped_column(ForeignKey("media_files.id", ondelete="CASCADE"), primary_key=True)
