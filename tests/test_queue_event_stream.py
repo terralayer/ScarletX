@@ -8,8 +8,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_INDEX = ROOT / "frontend" / "index.html"
+FRONTEND_APP = ROOT / "frontend" / "app.js"
 FRONTEND_AUTH = ROOT / "frontend" / "auth.js"
-MAIN = ROOT / "scarletx" / "main.py"
+MAIN = ROOT / "scarletx" / "routes" / "application.py"
 
 
 def _broker_class():
@@ -129,13 +130,15 @@ def test_stream_route_uses_last_event_id_and_no_per_client_database_poll_loop():
 
 def test_frontend_has_one_authenticated_global_eventsource():
     index = FRONTEND_INDEX.read_text(encoding="utf-8")
+    app = FRONTEND_APP.read_text(encoding="utf-8")
     auth = FRONTEND_AUTH.read_text(encoding="utf-8")
     constructor = "new EventSource('/api/activity/stream')"
 
     assert constructor not in index
+    assert constructor not in app
     assert auth.count(constructor) == 1
     assert "scarletx:queue-event" in auth
-    assert "scarletx:queue-event" in index
+    assert "scarletx:queue-event" in app
 
 
 def test_frontend_rejects_duplicate_or_out_of_order_queue_deltas_by_event_id():
@@ -149,11 +152,12 @@ def test_frontend_rejects_duplicate_or_out_of_order_queue_deltas_by_event_id():
 
 def test_healthy_sse_path_uses_events_not_recurring_queue_polling():
     index = FRONTEND_INDEX.read_text(encoding="utf-8")
+    app = FRONTEND_APP.read_text(encoding="utf-8")
     auth = FRONTEND_AUTH.read_text(encoding="utf-8")
 
     assert "scarletx:queue-stream-fallback" in auth
-    assert "scarletx:queue-stream-fallback" in index
+    assert "scarletx:queue-stream-fallback" in app
     assert "source.onopen" in auth
     assert "source.onerror" in auth
-    assert "setTimeout(refreshLiveQueue,1000)" not in index
-    assert "setTimeout(refreshLiveQueue,750)" not in index
+    assert "setTimeout(refreshLiveQueue,1000)" not in index + app
+    assert "setTimeout(refreshLiveQueue,750)" not in index + app

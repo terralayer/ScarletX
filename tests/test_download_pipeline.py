@@ -9,7 +9,7 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-NATIVE_SOURCE = ROOT / "scarletx" / "native_usenet.py"
+NATIVE_SOURCE = ROOT / "scarletx" / "usenet" / "worker.py"
 IMPORT_SOURCE = ROOT / "scarletx" / "download_processing.py"
 EXPECTED_PHASES = {
     "receive",
