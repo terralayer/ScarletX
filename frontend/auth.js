@@ -36,7 +36,7 @@
   </div>
 </dialog>`);
 
-const state = {setupRequired:false, username:'', appStarted:false, appBoot:null, queueSource:null, queueFailures:0, queueRetryTimer:null};
+const state = {setupRequired:false, username:'', appStarted:false, appBoot:null, queueSource:null, queueFailures:0, queueRetryTimer:null, queueLastEventId:0};
 const el = id => document.getElementById(id);
 const QUEUE_KINDS = ['snapshot','progress','transition','history','resync'];
 
@@ -53,6 +53,7 @@ function stopQueueStream() {
     state.queueSource.close();
     state.queueSource = null;
   }
+  state.queueLastEventId = 0;
 }
 
 function startQueueStream() {
@@ -71,7 +72,11 @@ function startQueueStream() {
   const handle = kind => event => {
     let payload = {};
     try { payload = event.data ? JSON.parse(event.data) : {}; } catch { return; }
-    dispatchQueue('scarletx:queue-event', {kind, id:Number(event.lastEventId || 0), payload});
+    const eventId = Number(event.lastEventId || 0);
+    if (kind !== 'resync' && eventId && eventId <= state.queueLastEventId) return;
+    if (kind === 'resync') state.queueLastEventId = eventId;
+    else if (eventId) state.queueLastEventId = eventId;
+    dispatchQueue('scarletx:queue-event', {kind, id:eventId, payload});
   };
   QUEUE_KINDS.forEach(kind => source.addEventListener(kind, handle(kind)));
   source.onerror = () => {
