@@ -26,7 +26,7 @@ from xml.etree import ElementTree
 
 import httpx
 from pydantic import BaseModel, Field, SecretStr
-from sqlalchemy import select, update
+from sqlalchemy import event, select, update
 
 try:
     import sabctools  # SIMD yEnc + cross-platform positional file writer
@@ -36,6 +36,7 @@ except Exception:  # The pure-Python/C-stdlib path remains a safe fallback.
 from .archive_security import parse_7z_listing, validate_archive_member_path, validate_extracted_tree
 from .status_console import emit_status
 from .models import History, NativeUsenetJob, TrackedDownload, utcnow
+from .progress import ProgressCheckpointGate
 
 
 class NativeUsenetError(RuntimeError):
@@ -1567,6 +1568,11 @@ def _unique_directory(base: Path) -> Path:
 
 _LIVE_PROGRESS_LOCK = threading.RLock()
 _LIVE_PROGRESS: dict[str, dict[str, float | int | None]] = {}
+_PROGRESS_FIELDS = ("total_bytes", "downloaded_bytes", "speed_bps", "eta_seconds")
+_PROGRESS_CHECKPOINT_GATE = ProgressCheckpointGate(
+    interval_seconds=2.0,
+    byte_threshold=8 * 1024 * 1024,
+)
 
 
 def _set_live_progress(job_id: str, **values) -> None:
@@ -1583,6 +1589,30 @@ def _get_live_progress(job_id: str) -> dict:
 def _clear_live_progress(job_id: str) -> None:
     with _LIVE_PROGRESS_LOCK:
         _LIVE_PROGRESS.pop(job_id, None)
+    _PROGRESS_CHECKPOINT_GATE.clear(job_id)
+
+
+def apply_live_progress(job: NativeUsenetJob) -> bool:
+    """Copy current in-memory counters onto an ORM job before its commit."""
+    live = _get_live_progress(job.id)
+    changed = False
+    for field in _PROGRESS_FIELDS:
+        if field in live:
+            setattr(job, field, live[field])
+            changed = True
+    return changed
+
+
+@event.listens_for(NativeUsenetJob.status, "set")
+def _apply_live_progress_on_status_set(job, value, oldvalue, _initiator) -> None:
+    if value != oldvalue:
+        apply_live_progress(job)
+
+
+@event.listens_for(NativeUsenetJob.cancel_requested, "set")
+def _apply_live_progress_on_cancel_set(job, value, oldvalue, _initiator) -> None:
+    if value and value != oldvalue:
+        apply_live_progress(job)
 
 
 def enqueue_url(session_factory, settings, url: str, title: str) -> str:
@@ -1671,18 +1701,23 @@ async def _wait_if_paused(session_factory, job_id: str) -> None:
 
 
 def _set_job(session_factory, job_id: str, **values) -> None:
-    # Lifecycle changes are persisted immediately. High-frequency transfer progress
-    # uses the in-memory path below and is flushed at most once per second.
-    live_values = {k: v for k, v in values.items() if k in {"total_bytes", "downloaded_bytes", "speed_bps", "eta_seconds"}}
+    # State transitions remain immediately durable. If they occur between throttled
+    # checkpoints, merge current live counters into the same database write.
+    live_values = {k: v for k, v in values.items() if k in _PROGRESS_FIELDS}
     if live_values:
         _set_live_progress(job_id, **live_values)
+    if "status" in values:
+        current_live = _get_live_progress(job_id)
+        for field in _PROGRESS_FIELDS:
+            if field in current_live:
+                values.setdefault(field, current_live[field])
     values["updated_at"] = utcnow()
     with session_factory() as db:
         db.execute(update(NativeUsenetJob).where(NativeUsenetJob.id == job_id).values(**values))
         db.commit()
 
 
-def _publish_progress(session_factory, job_id: str, *, total_bytes: int, downloaded_bytes: int, speed_bps: float, eta_seconds: int | None, persist: bool) -> None:
+def _publish_progress(session_factory, job_id: str, *, total_bytes: int, downloaded_bytes: int, speed_bps: float, eta_seconds: int | None) -> None:
     values = {
         "total_bytes": int(total_bytes),
         "downloaded_bytes": int(downloaded_bytes),
@@ -1690,7 +1725,7 @@ def _publish_progress(session_factory, job_id: str, *, total_bytes: int, downloa
         "eta_seconds": eta_seconds,
     }
     _set_live_progress(job_id, **values)
-    if persist:
+    if _PROGRESS_CHECKPOINT_GATE.should_persist(job_id, values["downloaded_bytes"], time.monotonic()):
         _set_job(session_factory, job_id, **values)
 
 
@@ -1858,7 +1893,6 @@ async def process_job(session_factory, settings, job_id: str) -> None:
         session_downloaded = 0
         transfer_started = time.monotonic()
         speed_samples = deque([(transfer_started, 0)], maxlen=256)
-        last_progress_persist = 0.0
         last_control_check = 0.0
         _set_job(session_factory, job_id, total_bytes=effective_total, downloaded_bytes=downloaded)
 
@@ -1876,7 +1910,7 @@ async def process_job(session_factory, settings, job_id: str) -> None:
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=hard_cap, thread_name_prefix="scarletx-nntp")
 
         async def download_indices(indices: list[int], *, recovery: bool = False) -> None:
-            nonlocal downloaded, session_downloaded, effective_total, last_progress_persist, last_control_check, active_window
+            nonlocal downloaded, session_downloaded, effective_total, last_control_check, active_window
             jobs: list[tuple[int, int, int, NZBSegment, Path, Path, Path]] = []
             for idx in indices:
                 state = file_states[idx]
@@ -1961,11 +1995,10 @@ async def process_job(session_factory, settings, job_id: str) -> None:
                     tune_speed = max(speed, tune_speed * 0.985)
                     tune_time = now
 
-                persist = now - last_progress_persist >= 1.0
                 _publish_progress(
                     session_factory, job_id,
                     total_bytes=effective_total, downloaded_bytes=downloaded,
-                    speed_bps=speed, eta_seconds=eta, persist=persist,
+                    speed_bps=speed, eta_seconds=eta,
                 )
                 _set_live_progress(
                     job_id,
@@ -1975,9 +2008,6 @@ async def process_job(session_factory, settings, job_id: str) -> None:
                     connection_cap=hard_cap,
                     phase="recovery" if recovery else "payload",
                 )
-                if persist:
-                    last_progress_persist = now
-
                 limit = float(settings.native_usenet_speed_limit_mb_s or 0)
                 if limit > 0 and session_downloaded > 0:
                     target_elapsed = session_downloaded / (limit * 1024 * 1024)
@@ -1992,12 +2022,12 @@ async def process_job(session_factory, settings, job_id: str) -> None:
             first_t, first_bytes = speed_samples[0]
             final_speed = max(0.0, (session_downloaded - first_bytes) / max(0.001, final_now - first_t))
             final_eta = int(max(0, effective_total - downloaded) / final_speed) if final_speed > 0 else None
+            _PROGRESS_CHECKPOINT_GATE.force(job_id)
             _publish_progress(
                 session_factory, job_id,
                 total_bytes=effective_total, downloaded_bytes=downloaded,
-                speed_bps=final_speed, eta_seconds=final_eta, persist=True,
+                speed_bps=final_speed, eta_seconds=final_eta,
             )
-            last_progress_persist = final_now
 
         try:
             await download_indices(primary_indices)
