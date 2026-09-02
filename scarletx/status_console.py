@@ -260,7 +260,7 @@ def collect_startup_status(db: Session, settings: Settings) -> list[StatusGroup]
             StatusRow("Database Pool", "READY", _pool_detail(db), "ok"),
             StatusRow("Secret Store", "SECURE" if secret_key.exists() else "INITIALIZING", str(secret_key), "ok" if secret_key.exists() else "warning"),
             StatusRow("Authentication", "READY" if admin_count else "SETUP REQUIRED", f"{admin_count} admin users", "ok" if admin_count else "warning"),
-            StatusRow("SSE Event Stream", "READY", "Nginx buffering disabled", "ok"),
+            StatusRow("SSE Event Stream", "READY", "global queue stream | replay 512 | subscriber 64", "ok"),
         ]
         groups.append(StatusGroup("SYSTEM", system_rows))
     except Exception as exc:
