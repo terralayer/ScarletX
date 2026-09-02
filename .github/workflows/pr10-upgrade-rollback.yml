@@ -67,24 +67,27 @@ jobs:
           docker run --rm -v "$config:/config" --entrypoint python "$stable" -c \
             'from scarletx.db import SessionLocal; from scarletx.models import Scene; from scarletx.secret_store import encrypt_secret; db=SessionLocal(); db.add(Scene(tpdb_id="pr10-upgrade-marker", title="PR10 0.3.9 Upgrade Marker")); db.commit(); db.close(); token=encrypt_secret("pr10-rollback-secret"); assert token.startswith("enc:v1:")'
           test -s "$config/scarletx.db"
-          test -s "$config/.scarletx-secret.key"
-          db_before=$(sha256sum "$config/scarletx.db" | awk '{print $1}')
-          key_before=$(sha256sum "$config/.scarletx-secret.key" | awk '{print $1}')
-          cp -a "$config" "$backup"
+          sudo test -s "$config/.scarletx-secret.key"
+          test "$(sudo stat -c '%a' "$config/.scarletx-secret.key")" = "600"
+          db_before=$(sudo sha256sum "$config/scarletx.db" | awk '{print $1}')
+          key_before=$(sudo sha256sum "$config/.scarletx-secret.key" | awk '{print $1}')
+          sudo cp -a "$config" "$backup"
 
           echo 'Boot the PR10 candidate against the populated 0.3.9 state'
           run_app "$candidate"
           docker exec scarletx-upgrade-check python -c \
             'from scarletx.db import SessionLocal; from scarletx.models import Scene; db=SessionLocal(); row=db.query(Scene).filter(Scene.tpdb_id=="pr10-upgrade-marker").one(); assert row.title=="PR10 0.3.9 Upgrade Marker"; db.close()'
           docker rm -f scarletx-upgrade-check >/dev/null
-          test "$(sha256sum "$config/.scarletx-secret.key" | awk '{print $1}')" = "$key_before"
+          test "$(sudo sha256sum "$config/.scarletx-secret.key" | awk '{print $1}')" = "$key_before"
+          test "$(sudo stat -c '%a' "$config/.scarletx-secret.key")" = "600"
 
           echo 'Restore the preserved 0.3.9 snapshot and roll back to the released image'
-          rm -rf "$config"
-          cp -a "$backup" "$config"
-          chmod 0777 "$config"
-          test "$(sha256sum "$config/scarletx.db" | awk '{print $1}')" = "$db_before"
-          test "$(sha256sum "$config/.scarletx-secret.key" | awk '{print $1}')" = "$key_before"
+          sudo rm -rf "$config"
+          sudo cp -a "$backup" "$config"
+          sudo chmod 0777 "$config"
+          test "$(sudo sha256sum "$config/scarletx.db" | awk '{print $1}')" = "$db_before"
+          test "$(sudo sha256sum "$config/.scarletx-secret.key" | awk '{print $1}')" = "$key_before"
+          test "$(sudo stat -c '%a' "$config/.scarletx-secret.key")" = "600"
           run_app "$stable"
           docker exec scarletx-upgrade-check python -c \
             'from scarletx.db import SessionLocal; from scarletx.models import Scene; from scarletx.secret_store import encrypt_secret, decrypt_secret; db=SessionLocal(); row=db.query(Scene).filter(Scene.tpdb_id=="pr10-upgrade-marker").one(); assert row.title=="PR10 0.3.9 Upgrade Marker"; db.close(); token=encrypt_secret("rollback-roundtrip"); assert decrypt_secret(token)=="rollback-roundtrip"'
