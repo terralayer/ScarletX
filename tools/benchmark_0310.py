@@ -26,6 +26,9 @@ LIST_SCENES = 1_000
 LIBRARY_FILES = 10_000
 QUEUE_JOBS = 200
 TPDB_CONCURRENT_READS = 100
+PROGRESS_UPDATES = 1_000
+PROGRESS_BYTES_PER_UPDATE = 4 * 1024
+PROGRESS_DURATION_SECONDS = 10.0
 
 
 @dataclass(frozen=True)
@@ -285,12 +288,71 @@ def _seed_queue(session_factory, count: int = QUEUE_JOBS) -> None:
         db.commit()
 
 
+def _measure_progress_checkpoint_writes(engine, session_factory) -> dict[str, object]:
+    from scarletx import native_usenet
+    from scarletx.models import NativeUsenetJob
+
+    job_id = "benchmark-progress-checkpoints"
+    with session_factory() as db:
+        db.add(
+            NativeUsenetJob(
+                id=job_id,
+                title="Progress checkpoint benchmark",
+                nzb_url="https://invalid.local/progress.nzb",
+                status="completed",
+                total_bytes=64 * 1024 * 1024,
+                downloaded_bytes=0,
+                speed_bps=0.0,
+            )
+        )
+        db.commit()
+
+    writes = 0
+
+    def count_progress_updates(_conn, _cursor, statement, _parameters, _context, _executemany):
+        nonlocal writes
+        normalized = " ".join(statement.lower().split())
+        if normalized.startswith("update native_usenet_jobs set"):
+            writes += 1
+
+    event.listen(engine, "before_cursor_execute", count_progress_updates)
+    native_usenet._clear_live_progress(job_id)
+    gate = native_usenet._PROGRESS_CHECKPOINT_GATE
+    gate.clear(job_id)
+    original_monotonic = native_usenet.time.monotonic
+    clock = [100.0]
+    native_usenet.time.monotonic = lambda: clock[0]
+    try:
+        for index in range(PROGRESS_UPDATES):
+            clock[0] = 100.0 + index * (PROGRESS_DURATION_SECONDS / PROGRESS_UPDATES)
+            native_usenet._publish_progress(
+                session_factory,
+                job_id,
+                total_bytes=64 * 1024 * 1024,
+                downloaded_bytes=(index + 1) * PROGRESS_BYTES_PER_UPDATE,
+                speed_bps=PROGRESS_BYTES_PER_UPDATE * PROGRESS_UPDATES / PROGRESS_DURATION_SECONDS,
+                eta_seconds=1,
+            )
+    finally:
+        native_usenet.time.monotonic = original_monotonic
+        event.remove(engine, "before_cursor_execute", count_progress_updates)
+        native_usenet._clear_live_progress(job_id)
+
+    return {
+        "updates": PROGRESS_UPDATES,
+        "duration_seconds": PROGRESS_DURATION_SECONDS,
+        "bytes_per_update": PROGRESS_BYTES_PER_UPDATE,
+        "checkpoint_writes": writes,
+    }
+
+
 def _benchmark_queue_reads(temp_root: Path, iterations: int) -> BenchmarkResult:
     from scarletx.native_usenet import queue_rows
 
     engine, session_factory = _session_factory(temp_root / "queue.sqlite3")
     try:
         _seed_queue(session_factory)
+        progress_checkpoint = _measure_progress_checkpoint_writes(engine, session_factory)
         samples: list[float] = []
         operation_count = 0
         for _ in range(iterations):
@@ -304,7 +366,11 @@ def _benchmark_queue_reads(temp_root: Path, iterations: int) -> BenchmarkResult:
             iterations,
             statistics.median(samples),
             operation_count,
-            {"fixture_jobs": QUEUE_JOBS, "samples_seconds": samples},
+            {
+                "fixture_jobs": QUEUE_JOBS,
+                "progress_checkpoint": progress_checkpoint,
+                "samples_seconds": samples,
+            },
         )
     finally:
         engine.dispose()
