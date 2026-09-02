@@ -209,7 +209,8 @@ def test_core_workers_emit_structured_live_status_events():
     backups = (root / "backups.py").read_text()
     library = (root / "media_library.py").read_text()
 
-    for source in (native, imports, backups, library):
+    assert "from ..status_console import emit_status" in native
+    for source in (imports, backups, library):
         assert "from .status_console import emit_status" in source
 
     assert 'emit_status(provider.name, "CONNECTING"' in native
