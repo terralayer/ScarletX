@@ -81,8 +81,8 @@ def test_compose_publishes_only_nginx_web_port():
     backend_block, web_block = compose.split("  scarletx-web:", 1)
     assert "ports:" not in backend_block
     assert 'SCARLETX_TRUST_PROXY_HEADERS: "1"' in backend_block
-    assert '"8690:8690"' in web_block
-    assert 'SCARLETX_WEB_PORT: "8690"' in web_block
+    assert '"${SCARLETX_WEB_PORT:-8690}:${SCARLETX_WEB_PORT:-8690}"' in web_block
+    assert 'SCARLETX_WEB_PORT: "${SCARLETX_WEB_PORT:-8690}"' in web_block
     assert "scarletx-backend" in web_block
 
 
@@ -108,7 +108,9 @@ def test_truenas_template_routes_public_port_through_nginx():
 
 def test_truenas_containers_share_an_explicit_internal_network():
     template = text("packaging/truenas/scarletx/templates/docker-compose.yaml")
-    assert 'tpl.networks.create_internal("scarletx-net")' in template
+    values = text("packaging/truenas/scarletx/ix_values.yaml")
+    assert "internal_network_name:" in values
+    assert "tpl.networks.create_internal(values.consts.internal_network_name)" in template
     assert "backend.add_network(scarletx_net)" in template
     assert "web.add_network(scarletx_net)" in template
 

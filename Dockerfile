@@ -1,4 +1,4 @@
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -10,6 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     SCARLETX_GENERATED_DIR=/config/generated \
     SCARLETX_CACHE_DIR=/config/cache \
     SCARLETX_DEFAULT_MEDIA_ROOT=/tmp \
+    SCARLETX_BACKUP_DIR=/backups \
     SCARLETX_SECRET_KEY_FILE=/config/.scarletx-secret.key \
     SCARLETX_SETUP_TOKEN_FILE=/config/setup-token.json
 
@@ -29,15 +30,29 @@ RUN set -eux; \
     (apt-get install -y --no-install-recommends unrar || apt-get install -y --no-install-recommends unrar-free); \
     rm -rf /var/lib/apt/lists/*
 
+# Dependency metadata is copied before application code so dependency layers stay
+# reusable across ordinary source-only rebuilds. Omit blanket bytecode generation,
+# then precompile only ScarletX and the startup-critical framework modules below.
 COPY requirements.txt requirements-performance.txt pyproject.toml ./
-RUN python -m pip install --no-cache-dir --disable-pip-version-check -r requirements.txt \
-    && (python -m pip install --no-cache-dir --disable-pip-version-check -r requirements-performance.txt \
+RUN python -m pip install --no-cache-dir --disable-pip-version-check --no-compile -r requirements.txt \
+    && (python -m pip install --no-cache-dir --disable-pip-version-check --no-compile -r requirements-performance.txt \
         || echo "SABCTools acceleration unavailable; using built-in yEnc decoder")
 
 COPY scarletx ./scarletx
-COPY README.md RELEASE-NOTES-*.md BUILD-INFO.txt ./
 
-RUN mkdir -p /config /config/generated /config/cache /downloads/incomplete /downloads/complete /downloads/failed /media /backups \
+RUN python -m compileall -q \
+      scarletx \
+      /usr/local/lib/python3.12/site-packages/fastapi \
+      /usr/local/lib/python3.12/site-packages/starlette \
+      /usr/local/lib/python3.12/site-packages/pydantic \
+      /usr/local/lib/python3.12/site-packages/sqlalchemy \
+      /usr/local/lib/python3.12/site-packages/uvicorn \
+      /usr/local/lib/python3.12/site-packages/anyio \
+      /usr/local/lib/python3.12/site-packages/httpx \
+      /usr/local/lib/python3.12/site-packages/httpcore \
+      /usr/local/lib/python3.12/site-packages/cryptography \
+      /usr/local/lib/python3.12/site-packages/pwdlib \
+    && mkdir -p /config /config/generated /config/cache /downloads/incomplete /downloads/complete /downloads/failed /media /backups \
     && chown -R 568:568 /config /downloads /media /backups
 
 VOLUME ["/config", "/downloads", "/media", "/backups"]

@@ -165,10 +165,10 @@ def test_container_actions_use_node24_generations():
         assert deprecated not in workflow
 
 
-def test_container_includes_current_release_notes():
+def test_release_notes_stay_in_release_tree_but_not_runtime_image():
     dockerfile = text("Dockerfile")
-    assert "RELEASE-NOTES-*.md" in dockerfile
-    assert "RELEASE-NOTES-0.3.6.md" not in dockerfile
+    assert "RELEASE-NOTES-*.md" not in dockerfile
+    assert (ROOT / f"RELEASE-NOTES-{VERSION}.md").exists()
 
 
 def test_release_version_calculator_only_increments_third_component():
