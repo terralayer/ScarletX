@@ -102,7 +102,7 @@ let view='dashboard', libraryCache=[], settingsCache=null, entityMode={scenes:'l
 let entityLibraryCache={scenes:null,performers:null,studios:null},entityCursors={scenes:null,performers:null,studios:null},entityTotals={scenes:null,performers:null,studios:null},entityPageSize={scenes:100,performers:60,studios:60};
 let entityLibraryQuery={scenes:'',performers:'',studios:''},entityPrefetch=new Map();
 let mediaLibraryRows=[],mediaLibraryCursor=null,mediaLibraryHasMore=false,mediaLibraryPrefetch=new Map();
-let liveQueueTimer=null,liveQueueBusy=false,liveQueueSource=null;
+let liveQueueTimer=null,liveQueueBusy=false,liveQueueSnapshot={tracked:[],clients:{}};
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtDate=v=>v?new Date(v).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}):'—';
 const bytes=n=>{if(!n&&n!==0)return'—';let u=['B','KB','MB','GB','TB'],i=0,x=Number(n);while(x>=1024&&i<u.length-1){x/=1024;i++}return`${x.toFixed(i>2?2:i?1:0)} ${u[i]}`};
@@ -124,7 +124,6 @@ async function boot(){
   $('#globalSearch').onsubmit=e=>{e.preventDefault();let q=$('#globalSearchInput').value.trim();if(q.length<2)return;view='scenes';entityMode.scenes='search';nav();renderEntities('scenes',q)};
   try{let s=await api('/api/system/status');$('#versionSide').textContent=`v${s.version} · Local`}catch(e){$('#onlineText').textContent='Offline';$('#statusDot').style.background='#b91c2b'}
   await updateChrome();render();
-  setInterval(()=>{if(view!=='activity')updateQueueBadge()},5000);
 }
 async function updateChrome(){
   try{
@@ -134,9 +133,8 @@ async function updateChrome(){
     if(x&&x.total_bytes){let pct=Math.round((x.used_bytes/x.total_bytes)*100);$('#storageBar').style.width=`${pct}%`;$('#storageUsed').textContent=`${bytes(x.used_bytes)} / ${bytes(x.total_bytes)}`;$('#storagePct').textContent=`${pct}%`}
   }catch{}
 }
-function stopLiveQueue(){if(liveQueueTimer){clearTimeout(liveQueueTimer);liveQueueTimer=null}if(liveQueueSource){liveQueueSource.close();liveQueueSource=null}liveQueueBusy=false}
-async function updateQueueBadge(){try{let q=await api('/api/activity/queue');$('#queueBadge').textContent=(q.tracked||[]).length}catch{}}
-async function render(){if(view!=='activity')stopLiveQueue();nav();if(view==='dashboard')return dashboard();if(view==='library')return mediaLibrary();if(['scenes','performers','studios'].includes(view))return renderEntities(view);if(view==='wanted')return wanted();if(view==='activity')return activity();if(view==='calendar')return calendar();if(view==='settings')return settings()}
+function stopLiveQueue(){if(liveQueueTimer){clearTimeout(liveQueueTimer);liveQueueTimer=null}liveQueueBusy=false}
+async function render(){nav();if(view==='dashboard')return dashboard();if(view==='library')return mediaLibrary();if(['scenes','performers','studios'].includes(view))return renderEntities(view);if(view==='wanted')return wanted();if(view==='activity')return activity();if(view==='calendar')return calendar();if(view==='settings')return settings()}
 
 async function dashboard(){
   $('#app').innerHTML=pageHead('Welcome back','Here’s what’s happening with your library.',`<button class="btn primary" id="addNew">＋ Add New</button>`)+`<div class="stats" id="stats"></div><div class="dashgrid"><div class="panel"><div class="panel-head"><h2>Activity Queue</h2><button class="linkbtn" data-go="activity">View all</button></div><div class="rows" id="queueRows"></div></div><div class="panel"><div class="panel-head"><h2>Recent Activity</h2><button class="linkbtn" data-go="activity">View all</button></div><div class="rows" id="historyRows"></div></div><div class="panel"><div class="panel-head"><h2>Upcoming</h2><button class="linkbtn" data-go="calendar">View calendar</button></div><div class="rows" id="calendarRows"></div></div></div><div class="panel recent"><div class="panel-head"><h2>Recently Added Scenes</h2><button class="linkbtn" data-go="scenes">View library</button></div><div id="recentScenes" style="padding:0 12px 14px"></div></div>`;
@@ -382,34 +380,46 @@ function applyLiveQueue(q){
   }
   $('#queueBadge').textContent=rows.length;
 }
-async function refreshLiveQueue(){
-  if(view!=='activity'){stopLiveQueue();return}
-  if(liveQueueBusy){liveQueueTimer=setTimeout(refreshLiveQueue,1000);return}
-  liveQueueBusy=true;try{applyLiveQueue(await api('/api/activity/queue'))}catch(e){}finally{liveQueueBusy=false;if(view==='activity'&&!liveQueueSource)liveQueueTimer=setTimeout(refreshLiveQueue,1000)}
+async function resyncLiveQueue(){
+  if(liveQueueBusy)return;
+  liveQueueBusy=true;
+  try{liveQueueSnapshot=await api('/api/activity/queue');applyLiveQueue(liveQueueSnapshot)}catch(_){}finally{liveQueueBusy=false}
 }
-function startLiveQueue(){
-  if(view!=='activity')return;stopLiveQueue();
-  if(!window.EventSource){liveQueueTimer=setTimeout(refreshLiveQueue,750);return}
-  let source=new EventSource('/api/activity/stream');liveQueueSource=source;
-  source.onmessage=e=>{try{applyLiveQueue(JSON.parse(e.data))}catch(_){}};
-  source.onerror=()=>{if(liveQueueSource!==source)return;source.close();liveQueueSource=null;if(view==='activity')liveQueueTimer=setTimeout(refreshLiveQueue,1000)};
+function mergeLiveQueueJob(job){
+  let rows=[...(liveQueueSnapshot.tracked||[])],key=String(job.external_id||job.id||''),i=rows.findIndex(x=>String(x.external_id||x.id||'')===key);
+  if(i>=0)rows[i]={...rows[i],...job};else rows.push(job);
+  liveQueueSnapshot={...liveQueueSnapshot,tracked:rows};applyLiveQueue(liveQueueSnapshot);
 }
+async function refreshLiveQueueFallback(){
+  await resyncLiveQueue();
+  if(!liveQueueTimer)liveQueueTimer=setTimeout(()=>{liveQueueTimer=null;refreshLiveQueueFallback()},15000);
+}
+window.addEventListener('scarletx:queue-event',e=>{
+  let detail=e.detail||{},kind=detail.kind,payload=detail.payload||{};
+  if(kind==='snapshot'){liveQueueSnapshot=payload;applyLiveQueue(liveQueueSnapshot);return}
+  if((kind==='progress'||kind==='transition')&&payload.job){mergeLiveQueueJob(payload.job);return}
+  if(kind==='resync'){
+    if(payload.snapshot){liveQueueSnapshot=payload.snapshot;applyLiveQueue(liveQueueSnapshot)}else resyncLiveQueue();
+  }
+});
+window.addEventListener('scarletx:queue-stream-fallback',()=>{
+  if(!liveQueueTimer)liveQueueTimer=setTimeout(()=>{liveQueueTimer=null;refreshLiveQueueFallback()},15000);
+});
+window.addEventListener('scarletx:queue-stream-healthy',()=>stopLiveQueue());
 
 async function activity(){
-  stopLiveQueue();
   $('#app').innerHTML=pageHead('Activity','',`<button class="btn" id="processNow">Process Completed</button>`)+`<div class="panel"><div class="panel-head"><h2>Active Queue</h2><span class="client-chip" id="liveQueueState">LIVE</span></div><div id="activityQueue"></div></div><div style="height:14px"></div><div class="panel"><div class="panel-head"><h2>Completed</h2></div><div id="activityCompleted"></div></div><div style="height:14px"></div><div class="panel"><div class="panel-head"><h2>Failed</h2><button class="btn small danger" id="clearFailed">Clear Failed</button></div><div id="activityFailed"></div></div><div style="height:14px"></div><div class="panel"><div class="panel-head"><h2>History</h2></div><div id="activityHistory"></div></div>`;
   $('#processNow').onclick=async()=>{try{let r=await api('/api/downloads/process',post());notify(`Checked ${r.checked}; imported ${r.imported}; failed ${r.failed}.`,'ok');activity()}catch(e){notify(e.message,'error')}};
   $('#clearFailed').onclick=async e=>{if(!confirm('Clear all failed downloads and their partial files?'))return;e.currentTarget.disabled=true;try{let r=await api('/api/downloads/failed',{method:'DELETE'});notify(`Cleared ${r.cleared} failed download${r.cleared===1?'':'s'}.`,'ok');activity()}catch(err){notify(err.message,'error');e.currentTarget.disabled=false}};
-  $('#activityQueue').onclick=async e=>{let b=e.target.closest('[data-native-act]');if(!b)return;b.disabled=true;try{await api(`/api/downloads/native/${encodeURIComponent(b.dataset.job)}/${b.dataset.nativeAct}`,post());await refreshLiveQueue()}catch(err){notify(err.message,'error');b.disabled=false}};
+  $('#activityQueue').onclick=async e=>{let b=e.target.closest('[data-native-act]');if(!b)return;b.disabled=true;try{await api(`/api/downloads/native/${encodeURIComponent(b.dataset.job)}/${b.dataset.nativeAct}`,post());await resyncLiveQueue()}catch(err){notify(err.message,'error');b.disabled=false}};
   try{
     let [q,c,f,h]=await Promise.all([api('/api/activity/queue'),api('/api/downloads/completed?limit=100'),api('/api/downloads/failed'),api('/api/history?limit=200')]),rows=q.tracked||[],completed=c.scarletx||[],failed=f.scarletx||[];
-    $('#activityQueue').innerHTML=activityQueueHtml(rows);$('#queueBadge').textContent=rows.length;
+    liveQueueSnapshot=q;applyLiveQueue(q);
     $('#activityCompleted').innerHTML=completed.length?`<div class="tablewrap" style="border:0;border-radius:0"><table class="table"><thead><tr><th>Scene</th><th>Size</th><th>Completed</th><th>Import</th><th>Post-processing</th><th></th></tr></thead><tbody>${completed.map(x=>`<tr><td><b>${esc(x.scene_title||x.release_title||x.title||'Download')}</b></td><td>${bytes(x.total_bytes||x.downloaded_bytes||0)}</td><td>${fmtDate(x.completed_at)}</td><td><span class="state ${x.imported_at?'good':'warn'}">${x.imported_at?'Imported':'Awaiting import'}</span></td><td><small>${esc(x.postprocess_note||'Download complete')}</small></td><td>${x.imported_at?'':`<button class="btn small primary" data-reprocess-completed data-job="${esc(x.id)}">Reprocess</button>`}</td></tr>`).join('')}</tbody></table></div>`:empty('No completed downloads yet.');
     $('#activityCompleted').onclick=async e=>{let b=e.target.closest('[data-reprocess-completed]');if(!b)return;b.disabled=true;b.textContent='Reprocessing…';try{await api(`/api/downloads/native/${encodeURIComponent(b.dataset.job)}/reprocess`,post());notify('Completed payload reprocessed. Import will run automatically.','ok');activity()}catch(err){notify(err.message,'error');b.disabled=false;b.textContent='Reprocess'}};
     $('#activityFailed').innerHTML=failed.length?`<div class="tablewrap" style="border:0;border-radius:0"><table class="table"><thead><tr><th>Scene</th><th>Failure</th><th>Partial</th><th></th></tr></thead><tbody>${failed.map(x=>`<tr><td><b>${esc(x.title||'Download')}</b></td><td><span class="state bad">Failed</span><small>${esc(x.error||'Download failed')}</small></td><td>${bytes(x.downloaded_bytes||0)} / ${x.total_bytes?bytes(x.total_bytes):'—'}</td><td><div class="actions"><button class="btn small primary" data-failed-retry data-job="${esc(x.id)}">Retry</button><button class="btn small" data-native-password data-job="${esc(x.id)}">Archive Password</button></div></td></tr>`).join('')}</tbody></table></div>`:empty('No failed downloads.');
     $('#activityFailed').onclick=async e=>{let pw=e.target.closest('[data-native-password]');if(pw){let password=prompt('Archive password for this download:','');if(password===null)return;try{await api(`/api/downloads/native/${encodeURIComponent(pw.dataset.job)}/password`,post({password}));notify('Archive password saved.','ok')}catch(err){notify(err.message,'error')}return}let b=e.target.closest('[data-failed-retry]');if(!b)return;b.disabled=true;try{await api(`/api/downloads/native/${encodeURIComponent(b.dataset.job)}/resume`,post());notify('Failed download moved back to the queue.','ok');activity()}catch(err){notify(err.message,'error');b.disabled=false}};
     $('#activityHistory').innerHTML=h.length?`<div class="tablewrap" style="border:0;border-radius:0"><table class="table"><thead><tr><th>Event</th><th>Message</th><th>Date</th></tr></thead><tbody>${h.map(x=>`<tr><td>${esc(x.event_type)}</td><td>${esc(x.message)}</td><td>${fmtDate(x.created_at)}</td></tr>`).join('')}</tbody></table></div>`:empty('No history yet.');
-    startLiveQueue();
   }catch(e){notify(e.message,'error')}
 }
 

@@ -94,6 +94,7 @@ from .migrations import (
     performance_index_migration_required,
 )
 from .list_queries import performer_summary_page, scene_summary_page, studio_summary_page
+from .event_stream import QueueEvent, format_sse, queue_event_broker, queue_event_pump
 
 
 def _encode_cursor(*parts) -> str:
@@ -311,6 +312,7 @@ async def lifespan(_: FastAPI):
         asyncio.create_task(rss_sync_loop()),
         asyncio.create_task(backup_loop()),
         asyncio.create_task(media_watch_loop(SessionLocal)),
+        asyncio.create_task(queue_event_pump(_load_cached_activity_queue_data)),
     ]
     emit_status("Background Workers", "ACTIVE", f"{len(watchers)} workers", severity="active")
     try:
@@ -2307,30 +2309,49 @@ def activity_queue(db: Session = Depends(get_session)):
     return _cached_activity_queue_data(db)
 
 
+async def _load_activity_stream_snapshot() -> dict:
+    return await asyncio.to_thread(_load_cached_activity_queue_data)
+
+
 @app.get("/api/activity/stream")
 async def activity_stream(request: Request):
-    async def events():
-        last_payload = None
-        last_heartbeat = 0.0
-        while not await request.is_disconnected():
-            try:
-                payload = await asyncio.to_thread(_load_cached_activity_queue_data)
-                body = json.dumps(payload, default=str, separators=(",", ":"))
-                now = asyncio.get_running_loop().time()
-                if body != last_payload:
-                    last_payload = body
-                    yield f"data:{body}\n\n"
-                    last_heartbeat = now
-                elif now - last_heartbeat >= 15:
-                    yield ": keepalive\n\n"
-                    last_heartbeat = now
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                yield "event:error\ndata:{}\n\n"
-            await asyncio.sleep(0.75)
-    return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control":"no-cache", "X-Accel-Buffering":"no"})
+    raw_last_event_id = request.headers.get("last-event-id")
+    try:
+        last_event_id = int(raw_last_event_id) if raw_last_event_id is not None else None
+    except ValueError:
+        last_event_id = None
 
+    async def events():
+        subscription = queue_event_broker.subscribe(last_event_id)
+        try:
+            if last_event_id is None:
+                snapshot_id = int(queue_event_broker.snapshot()["last_event_id"])
+                payload = await _load_activity_stream_snapshot()
+                yield format_sse(QueueEvent(snapshot_id, "snapshot", payload))
+            while not await request.is_disconnected():
+                try:
+                    event = await asyncio.wait_for(anext(subscription), timeout=15.0)
+                except TimeoutError:
+                    yield ": keepalive\n\n"
+                    continue
+                if event.kind == "resync":
+                    payload = await _load_activity_stream_snapshot()
+                    event = QueueEvent(
+                        event.id,
+                        "resync",
+                        {"reason": event.payload.get("reason", "resync"), "snapshot": payload},
+                    )
+                yield format_sse(event)
+        except asyncio.CancelledError:
+            raise
+        finally:
+            await subscription.aclose()
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 _SYSTEM_STATUS_CACHE: tuple[float, dict] | None = None
 
