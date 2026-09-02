@@ -231,9 +231,11 @@ def test_core_workers_emit_structured_live_status_events():
     assert 'emit_status("Library Scan", "FAILED"' in library
 
 
-def test_main_and_pyproject_remain_at_released_039_version():
+def test_main_and_pyproject_report_same_current_version():
     root = Path(__file__).resolve().parents[1]
     pyproject = (root / "pyproject.toml").read_text()
     main_source = (root / "scarletx" / "routes" / "application.py").read_text()
-    assert 'version = "0.3.9"' in pyproject
-    assert 'version="0.3.9"' in main_source
+    match = re.search(r'(?m)^version = "([^"]+)"$', pyproject)
+    assert match is not None
+    version = match.group(1)
+    assert f'version="{version}"' in main_source
