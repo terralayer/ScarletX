@@ -71,6 +71,16 @@ def test_standalone_truenas_compose_exposes_only_web_and_uses_internal_network()
     assert "internal: true" in compose
 
 
+def test_private_backend_network_does_not_remove_outbound_access():
+    for path in ("docker-compose.yml", "docker-compose.truenas.yml"):
+        compose = source(path)
+        backend = service_block(compose, "scarletx-backend")
+        web = service_block(compose, "scarletx-web")
+        assert "scarletx-egress" in backend
+        assert "scarletx-egress" not in web
+        assert re.search(r"^  scarletx-egress:\n    driver: bridge\n", compose, re.MULTILINE)
+
+
 def test_web_backend_target_is_explicitly_configurable_in_compose_files():
     for path in ("docker-compose.yml", "docker-compose.truenas.yml"):
         compose = source(path)
@@ -88,7 +98,9 @@ def test_required_persistent_mounts_remain_on_backend_deployments():
 
 def test_truenas_template_keeps_backend_private_on_internal_network():
     template = source("packaging/truenas/scarletx/templates/docker-compose.yaml")
-    assert 'create_internal("scarletx-net")' in template
+    values = source("packaging/truenas/scarletx/ix_values.yaml")
+    assert "internal_network_name: scarletx-net" in values
+    assert "create_internal(values.consts.internal_network_name)" in template
     assert "backend.add_network(scarletx_net)" in template
     assert "web.add_network(scarletx_net)" in template
     assert "backend.add_port" not in template
@@ -100,12 +112,14 @@ def test_truenas_template_keeps_backend_private_on_internal_network():
 def test_release_gate_validates_compose_tools_and_records_image_sizes_before_publish():
     workflow = source(".github/workflows/release.yml")
     publish = workflow.index("Publish candidate release images")
-    assert "docker compose config" in workflow[:publish]
-    assert "command -v par2" in workflow[:publish]
-    assert "command -v ffprobe" in workflow[:publish]
-    assert "command -v 7z" in workflow[:publish]
-    assert "command -v unrar" in workflow[:publish]
-    assert "docker image inspect" in workflow[:publish]
+    before_publish = workflow[:publish]
+    assert "docker compose" in before_publish and " config" in before_publish
+    assert "command -v par2" in before_publish
+    assert "command -v ffprobe" in before_publish
+    assert "command -v 7z" in before_publish
+    assert "command -v unrar" in before_publish
+    assert "docker image inspect" in before_publish
+    assert "Smoke-test candidate health path" in before_publish
 
 
 def test_release_gate_retains_anonymous_pull_and_truenas_deploy_checks():
