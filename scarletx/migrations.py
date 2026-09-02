@@ -71,3 +71,13 @@ def ensure_performance_indexes(connection: Connection) -> None:
         connection.exec_driver_sql(
             f"CREATE INDEX IF NOT EXISTS {index_name} ON {table} ({columns})"
         )
+
+
+def ensure_file_scan_state_table(connection: Connection) -> None:
+    """Create PR-5 scanner state for databases upgraded in place."""
+    connection.exec_driver_sql(
+        "CREATE TABLE IF NOT EXISTS file_scan_states ("
+        "path VARCHAR(3000) NOT NULL PRIMARY KEY, "
+        "size_bytes INTEGER NOT NULL, mtime_ns INTEGER NOT NULL, "
+        "scanned_at DATETIME NOT NULL)"
+    )
