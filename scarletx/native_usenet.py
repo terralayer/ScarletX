@@ -37,6 +37,7 @@ from .archive_security import parse_7z_listing, validate_archive_member_path, va
 from .status_console import emit_status
 from .models import History, NativeUsenetJob, TrackedDownload, utcnow
 from .progress import ProgressCheckpointGate
+from .download_metrics import SegmentResultBuffer, download_phase_metrics
 
 
 class NativeUsenetError(RuntimeError):
@@ -1227,7 +1228,9 @@ class SegmentFetcher:
                 time.sleep(min(2.0, 0.15 * (2 ** max(0, retry_no - 1))))
         raise NativeUsenetError("; ".join(errors[-8:]) or "Article download failed")
 
-    def fetch_into(self, segment: NZBSegment, target: Path, done_marker: Path) -> DecodedSegment:
+    def fetch_into(
+        self, segment: NZBSegment, target: Path, done_marker: Path, *, job_id: str | None = None
+    ) -> DecodedSegment:
         done_size = _read_done_marker(done_marker)
         if done_size > 0 and target.exists():
             return DecodedSegment(path=target, size=done_size, filename=None, provider=None)
@@ -1259,9 +1262,11 @@ class SegmentFetcher:
             try:
                 if sabctools is not None and self.native_acceleration:
                     try:
-                        size, filename, begin, total_size = decode_yenc_native(
-                            connection, segment, self._target_writer(target)
-                        )
+                        with download_phase_metrics.start(job_id, "receive"):
+                            with download_phase_metrics.start(job_id, "decode_write"):
+                                size, filename, begin, total_size = decode_yenc_native(
+                                    connection, segment, self._target_writer(target)
+                                )
                     except (AttributeError, TypeError, BufferError, NotImplementedError) as native_exc:
                         # A SABCTools API/platform mismatch must never take the downloader
                         # down. Disable acceleration for this process and retry the article
@@ -1274,10 +1279,12 @@ class SegmentFetcher:
                             f"SIMD yEnc acceleration unavailable at runtime; retrying with built-in decoder: {native_exc}"
                         ) from native_exc
                 else:
-                    size, filename, begin, total_size = decode_yenc_to_target(
-                        connection.body_iter(segment.message_id), target,
-                        write_lock=self._target_lock(target),
-                    )
+                    with download_phase_metrics.start(job_id, "receive"):
+                        with download_phase_metrics.start(job_id, "decode_write"):
+                            size, filename, begin, total_size = decode_yenc_to_target(
+                                connection.body_iter(segment.message_id), target,
+                                write_lock=self._target_lock(target),
+                            )
                 _write_done_marker(done_marker, size, begin, total_size)
                 self._record_success(provider, size, time.monotonic() - started, segment)
                 return DecodedSegment(
@@ -1383,13 +1390,15 @@ def repair_payload(payload_dir: Path, enabled: bool, *, job_id: str | None = Non
     else:
         verify_cmd = [tool, "v", str(primary)]
         repair_cmd = [tool, "r", str(primary)]
-    verified = _run_tool(verify_cmd, payload_dir, 180, job_id=job_id, label="PAR2 verification")
+    with download_phase_metrics.start(job_id, "verify"):
+        verified = _run_tool(verify_cmd, payload_dir, 180, job_id=job_id, label="PAR2 verification")
     if verified.returncode == 0:
         notes.append("PAR2 verification passed")
         return notes
     if not repair_cmd:
         raise NativeUsenetError("PAR2 verification failed and no repair command is available")
-    repaired = _run_tool(repair_cmd, payload_dir, 600, job_id=job_id, label="PAR2 repair")
+    with download_phase_metrics.start(job_id, "repair"):
+        repaired = _run_tool(repair_cmd, payload_dir, 600, job_id=job_id, label="PAR2 repair")
     if repaired.returncode != 0:
         tail = (repaired.stdout or verified.stdout or "PAR2 repair failed")[-1200:]
         raise NativeUsenetError(f"PAR2 repair failed: {tail}")
@@ -1521,7 +1530,8 @@ def postprocess_payload(
     videos = _playable_videos(payload_dir)
     if not videos:
         mark("Identifying primary media")
-        notes.extend(recover_unknown_videos(payload_dir))
+        with download_phase_metrics.start(job_id, "probe"):
+            notes.extend(recover_unknown_videos(payload_dir))
         videos = _playable_videos(payload_dir)
 
     archives = _archive_files(payload_dir)
@@ -1541,17 +1551,20 @@ def postprocess_payload(
         notes.extend(repair_payload(payload_dir, repair_enabled, job_id=job_id))
         notes.extend(normalize_obfuscated_payload(payload_dir))
         if not _playable_videos(payload_dir):
-            notes.extend(recover_unknown_videos(payload_dir))
+            with download_phase_metrics.start(job_id, "probe"):
+                notes.extend(recover_unknown_videos(payload_dir))
         videos = _playable_videos(payload_dir)
 
     archives = _archive_files(payload_dir)
     if archives and not videos:
         mark("Extracting archives")
-        notes.extend(unpack_payload(payload_dir, unpack_enabled, password, job_id=job_id))
+        with download_phase_metrics.start(job_id, "extract"):
+            notes.extend(unpack_payload(payload_dir, unpack_enabled, password, job_id=job_id))
         mark("Identifying extracted media")
         notes.extend(normalize_obfuscated_payload(payload_dir))
         if not _playable_videos(payload_dir):
-            notes.extend(recover_unknown_videos(payload_dir))
+            with download_phase_metrics.start(job_id, "probe"):
+                notes.extend(recover_unknown_videos(payload_dir))
         videos = _playable_videos(payload_dir)
 
     return notes, videos
@@ -1927,18 +1940,34 @@ async def process_job(session_factory, settings, job_id: str) -> None:
 
             loop = asyncio.get_running_loop()
             position = 0
-            inflight: dict[asyncio.Future, tuple[int, Path]] = {}
+            result_buffer = SegmentResultBuffer(hard_cap)
+            inflight: dict[int, tuple[asyncio.Future, int, Path]] = {}
             tune_time = time.monotonic()
             tune_speed = 0.0
             stable_rounds = 0
+
+            def fetch_and_buffer(
+                token: int, segment: NZBSegment, target: Path, done_marker: Path
+            ) -> None:
+                try:
+                    result = fetcher.fetch_into(
+                        segment, target, done_marker, job_id=job_id
+                    )
+                except BaseException as exc:
+                    result_buffer.put((token, None, exc))
+                else:
+                    result_buffer.put((token, result, None))
 
             def submit_until_window() -> None:
                 nonlocal position
                 while len(inflight) < active_window and position < len(jobs):
                     _, idx, _, segment, target, done_marker, filename_marker = jobs[position]
+                    token = position
                     position += 1
-                    future = loop.run_in_executor(executor, fetcher.fetch_into, segment, target, done_marker)
-                    inflight[future] = (idx, filename_marker)
+                    future = loop.run_in_executor(
+                        executor, fetch_and_buffer, token, segment, target, done_marker
+                    )
+                    inflight[token] = (future, idx, filename_marker)
 
             submit_until_window()
             while inflight:
@@ -1947,20 +1976,24 @@ async def process_job(session_factory, settings, job_id: str) -> None:
                     await _wait_if_paused(session_factory, job_id)
                     last_control_check = now
 
-                done, _ = await asyncio.wait(set(inflight), timeout=0.20, return_when=asyncio.FIRST_COMPLETED)
-                if done:
-                    for future in done:
-                        idx, filename_marker = inflight.pop(future)
-                        result = future.result()
-                        downloaded += result.size
-                        session_downloaded += result.size
-                        if result.filename and not filename_marker.exists():
-                            try:
-                                temp = filename_marker.with_name("filename.txt.tmp")
-                                temp.write_text(_safe_filename(result.filename, f"file-{idx:04d}.bin"))
-                                temp.replace(filename_marker)
-                            except Exception:
-                                pass
+                try:
+                    token, result, error = result_buffer.get_nowait()
+                except queue.Empty:
+                    await asyncio.sleep(0.02)
+                else:
+                    future, idx, filename_marker = inflight.pop(token)
+                    await future
+                    if error is not None:
+                        raise error
+                    downloaded += result.size
+                    session_downloaded += result.size
+                    if result.filename and not filename_marker.exists():
+                        try:
+                            temp = filename_marker.with_name("filename.txt.tmp")
+                            temp.write_text(_safe_filename(result.filename, f"file-{idx:04d}.bin"))
+                            temp.replace(filename_marker)
+                        except Exception:
+                            pass
 
                 now = time.monotonic()
                 speed_samples.append((now, session_downloaded))
@@ -2007,6 +2040,8 @@ async def process_job(session_factory, settings, job_id: str) -> None:
                     active_connections=active_window,
                     connection_cap=hard_cap,
                     phase="recovery" if recovery else "payload",
+                    buffered_segments=result_buffer.qsize(),
+                    max_buffered_segments=result_buffer.peak_size,
                 )
                 limit = float(settings.native_usenet_speed_limit_mb_s or 0)
                 if limit > 0 and session_downloaded > 0:
@@ -2150,8 +2185,12 @@ async def process_job(session_factory, settings, job_id: str) -> None:
             fetcher.close_targets_under(assembly_root)
 
     except asyncio.CancelledError:
-        shutil.rmtree(work, ignore_errors=True)
-        _set_job(session_factory, job_id, status="cancelled", speed_bps=0.0, eta_seconds=0, output_path=None, error=None, completed_at=utcnow(), unpack_password=None)
+        _set_job(
+            session_factory, job_id, status="cancelled", speed_bps=0.0, eta_seconds=0,
+            output_path=str(work) if work.exists() else None, error=None,
+            postprocess_note="Cancelled; partial data preserved for retry",
+            completed_at=utcnow(), unpack_password=None,
+        )
         _clear_live_progress(job_id)
         with _CANCELLED_JOBS_LOCK:
             _CANCELLED_JOBS.discard(job_id)
@@ -2252,6 +2291,9 @@ def job_dict(job: NativeUsenetJob) -> dict:
         "active_connections": live.get("active_connections"),
         "connection_cap": live.get("connection_cap"),
         "phase": live.get("phase"),
+        "buffered_segments": live.get("buffered_segments", 0),
+        "max_buffered_segments": live.get("max_buffered_segments", 0),
+        "phase_metrics": download_phase_metrics.snapshot(job.id),
         "output_path": job.output_path,
         "error": job.error,
         "postprocess_note": job.postprocess_note,

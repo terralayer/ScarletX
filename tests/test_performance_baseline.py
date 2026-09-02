@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_SCENARIOS = {"idle_ui", "list_api", "library_scan", "queue_reads", "tpdb_coalescing"}
+EXPECTED_SCENARIOS = {"download_pipeline", "idle_ui", "list_api", "library_scan", "queue_reads", "tpdb_coalescing"}
 
 
 def _benchmark_module():
@@ -64,6 +64,14 @@ def test_cli_all_writes_every_scenario(tmp_path):
     assert payload["iterations"] == 1
     results = {item["scenario"]: item for item in payload["results"]}
     assert set(results) == EXPECTED_SCENARIOS
+
+    assert results["download_pipeline"]["operations"] == 10_000
+    assert results["download_pipeline"]["metadata"]["workers"] == 4
+    assert results["download_pipeline"]["metadata"]["max_buffer_size"] == 8
+    assert results["download_pipeline"]["metadata"]["peak_buffer_size"] <= 8
+    assert results["download_pipeline"]["metadata"]["api_rows"] == 200
+    assert results["download_pipeline"]["metadata"]["api_probe_seconds"] < 0.25
+    assert len(results["download_pipeline"]["metadata"]["samples_seconds"]) == 1
 
     assert results["idle_ui"]["operations"] == 10_000
     assert results["idle_ui"]["metadata"]["modeled_session_seconds"] == 600
