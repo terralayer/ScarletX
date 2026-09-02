@@ -1,0 +1,128 @@
+name: PR10 Packaging A-B Comparison
+
+on:
+  pull_request:
+    branches: [release/0.3.10]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out candidate with history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Materialize PR9 baseline
+        run: git worktree add "$RUNNER_TEMP/pr9-base" 34d7c27b44a8c4591eff313feee4fc209c4ec6cd
+
+      - name: Build baseline and candidate images
+        run: |
+          docker build --file "$RUNNER_TEMP/pr9-base/Dockerfile" --tag scarletx-backend:pr9 "$RUNNER_TEMP/pr9-base"
+          docker build --file Dockerfile --tag scarletx-backend:pr10 .
+          docker build --file "$RUNNER_TEMP/pr9-base/Dockerfile.web" --tag scarletx-web:pr9 "$RUNNER_TEMP/pr9-base"
+          docker build --file Dockerfile.web --tag scarletx-web:pr10 .
+
+      - name: Record exact image sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          for image in scarletx-backend:pr9 scarletx-backend:pr10 scarletx-web:pr9 scarletx-web:pr10; do
+            key=$(echo "$image" | tr ':-' '__' | tr '[:lower:]' '[:upper:]')
+            bytes=$(docker image inspect "$image" --format '{{.Size}}')
+            gzip_bytes=$(docker save "$image" | gzip -1 | wc -c | tr -d ' ')
+            echo "${key}_BYTES=$bytes" | tee -a "$GITHUB_ENV"
+            echo "${key}_GZIP_BYTES=$gzip_bytes" | tee -a "$GITHUB_ENV"
+          done
+
+      - name: Compare seven alternating backend cold starts
+        shell: bash
+        run: |
+          set -euo pipefail
+          results="$RUNNER_TEMP/cold-start.tsv"
+          : > "$results"
+
+          measure() {
+            local label="$1" image="$2" port="$3"
+            local name="scarletx-ab-${label}-${RANDOM}"
+            local start_ns ready_ns elapsed
+            start_ns=$(date +%s%N)
+            docker run -d --name "$name" \
+              --tmpfs /config:uid=568,gid=568 \
+              --tmpfs /downloads:uid=568,gid=568 \
+              --tmpfs /media:uid=568,gid=568 \
+              --tmpfs /backups:uid=568,gid=568 \
+              -p "${port}:8000" "$image" >/dev/null
+            for _ in $(seq 1 1500); do
+              if curl --fail --silent "http://127.0.0.1:${port}/api/health" >/dev/null; then
+                ready_ns=$(date +%s%N)
+                elapsed=$(( (ready_ns - start_ns) / 1000000 ))
+                printf '%s\t%s\n' "$label" "$elapsed" | tee -a "$results"
+                docker rm -f "$name" >/dev/null
+                return 0
+              fi
+              sleep 0.02
+            done
+            docker logs "$name" || true
+            docker rm -f "$name" >/dev/null || true
+            return 1
+          }
+
+          # Warm Docker's container/network path once; do not include warmups.
+          measure warm-pr9 scarletx-backend:pr9 18100 >/dev/null
+          measure warm-pr10 scarletx-backend:pr10 18101 >/dev/null
+          : > "$results"
+
+          for i in $(seq 1 7); do
+            if (( i % 2 == 1 )); then
+              measure pr9 scarletx-backend:pr9 18100
+              measure pr10 scarletx-backend:pr10 18101
+            else
+              measure pr10 scarletx-backend:pr10 18101
+              measure pr9 scarletx-backend:pr9 18100
+            fi
+          done
+
+          python - "$results" <<'PY'
+          import statistics, sys
+          from pathlib import Path
+          values = {"pr9": [], "pr10": []}
+          for line in Path(sys.argv[1]).read_text().splitlines():
+              label, value = line.split("\t")
+              values[label].append(int(value))
+          for label in ("pr9", "pr10"):
+              vals = values[label]
+              print(f"{label.upper()}_COLD_START_SAMPLES_MS={','.join(map(str, vals))}")
+              print(f"{label.upper()}_COLD_START_MEDIAN_MS={statistics.median(vals):.1f}")
+          base = statistics.median(values["pr9"])
+          candidate = statistics.median(values["pr10"])
+          delta = candidate - base
+          pct = (delta / base * 100.0) if base else 0.0
+          print(f"COLD_START_DELTA_MS={delta:.1f}")
+          print(f"COLD_START_DELTA_PCT={pct:.2f}")
+          with open(__import__('os').environ['GITHUB_ENV'], 'a') as out:
+              out.write(f"PR9_COLD_START_MEDIAN_MS={base:.1f}\n")
+              out.write(f"PR10_COLD_START_MEDIAN_MS={candidate:.1f}\n")
+              out.write(f"COLD_START_DELTA_MS={delta:.1f}\n")
+              out.write(f"COLD_START_DELTA_PCT={pct:.2f}\n")
+          PY
+
+      - name: Summarize A-B result
+        run: |
+          {
+            echo '### PR10 same-run packaging comparison'
+            echo '| Metric | PR9 baseline | PR10 candidate |'
+            echo '| --- | ---: | ---: |'
+            echo "| Backend image bytes | $SCARLETX_BACKEND_PR9_BYTES | $SCARLETX_BACKEND_PR10_BYTES |"
+            echo "| Backend gzip bytes | $SCARLETX_BACKEND_PR9_GZIP_BYTES | $SCARLETX_BACKEND_PR10_GZIP_BYTES |"
+            echo "| Web image bytes | $SCARLETX_WEB_PR9_BYTES | $SCARLETX_WEB_PR10_BYTES |"
+            echo "| Web gzip bytes | $SCARLETX_WEB_PR9_GZIP_BYTES | $SCARLETX_WEB_PR10_GZIP_BYTES |"
+            echo "| Backend cold-start median ms | $PR9_COLD_START_MEDIAN_MS | $PR10_COLD_START_MEDIAN_MS |"
+            echo
+            echo "Cold-start delta: ${COLD_START_DELTA_MS} ms (${COLD_START_DELTA_PCT}%)."
+          } >> "$GITHUB_STEP_SUMMARY"
