@@ -10,6 +10,7 @@ from sqlalchemy import or_, select
 from .library_scanner import DirtyDirectoryQueue, scan_directories
 from .media_library import VIDEO_EXTENSIONS, _match_local_scene, index_media_file_by_id, quick_fingerprint
 from .models import History, MediaFile, MediaProbe, RootFolder, Scene, UnmatchedMediaFile, utcnow
+from .recent_imports import FileIdentity, recent_imports
 
 try:
     from watchdog.events import FileSystemEventHandler
@@ -21,6 +22,15 @@ except Exception:  # pragma: no cover - optional runtime fallback
 
 def _normalized(path: str | Path) -> str:
     return str(Path(path).expanduser().resolve(strict=False))
+
+
+def _suppress_recent_import(kind: str, path: str | Path) -> bool:
+    if kind != "changed":
+        return False
+    try:
+        return recent_imports.contains(FileIdentity.from_path(path))
+    except OSError:
+        return False
 
 
 def _scene_candidates(db, path: Path) -> list[Scene]:
@@ -151,6 +161,8 @@ async def media_watch_loop(session_factory, refresh_seconds: float = 30.0) -> No
     watched: tuple[str, ...] = ()
 
     def submit(kind: str, path: str) -> None:
+        if _suppress_recent_import(kind, path):
+            return
         dirty.mark(path)
         def put() -> None:
             try:
