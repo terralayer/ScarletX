@@ -138,6 +138,15 @@ def test_frontend_has_one_authenticated_global_eventsource():
     assert "scarletx:queue-event" in index
 
 
+def test_frontend_rejects_duplicate_or_out_of_order_queue_deltas_by_event_id():
+    auth = FRONTEND_AUTH.read_text(encoding="utf-8")
+
+    assert "queueLastEventId" in auth
+    assert "eventId <= state.queueLastEventId" in auth
+    assert "kind !== 'resync'" in auth
+    assert "state.queueLastEventId = eventId" in auth
+
+
 def test_healthy_sse_path_uses_events_not_recurring_queue_polling():
     index = FRONTEND_INDEX.read_text(encoding="utf-8")
     auth = FRONTEND_AUTH.read_text(encoding="utf-8")
