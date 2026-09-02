@@ -43,6 +43,9 @@ services:
       - ./docker-data/downloads:/downloads
       - ./docker-data/media:/media
       - ./docker-data/backups:/backups
+    networks:
+      - scarletx-net
+      - scarletx-egress
 
   scarletx-web:
     build:
@@ -51,9 +54,20 @@ services:
     container_name: scarletx-web
     restart: unless-stopped
     environment:
-      SCARLETX_WEB_PORT: "8690"
+      SCARLETX_WEB_PORT: "${SCARLETX_WEB_PORT:-8690}"
+      SCARLETX_BACKEND_HOST: "${SCARLETX_BACKEND_HOST:-scarletx-backend}"
+      SCARLETX_BACKEND_PORT: "${SCARLETX_BACKEND_PORT:-8000}"
     depends_on:
       scarletx-backend:
         condition: service_healthy
     ports:
-      - "8690:8690"
+      - "${SCARLETX_WEB_PORT:-8690}:${SCARLETX_WEB_PORT:-8690}"
+    networks:
+      - scarletx-net
+
+networks:
+  scarletx-net:
+    driver: bridge
+    internal: true
+  scarletx-egress:
+    driver: bridge
