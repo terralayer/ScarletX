@@ -159,7 +159,7 @@ def test_archive_member_validation_blocks_traversal():
 
 
 def test_native_extraction_uses_quarantine_and_clears_password():
-    source = _source("scarletx/native_usenet.py")
+    source = _source("scarletx/usenet/worker.py")
     assert "validate_archive_member_path" in source
     assert "TemporaryDirectory" in source or "mkdtemp" in source
     assert "unpack_password=None" in source or "unpack_password = None" in source

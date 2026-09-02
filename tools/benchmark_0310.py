@@ -475,6 +475,7 @@ def _idle_ui_frontend_metrics() -> dict[str, int | str]:
     repo_root = Path(__file__).resolve().parents[1]
     auth_source = (repo_root / "frontend" / "auth.js").read_text(encoding="utf-8")
     index_source = (repo_root / "frontend" / "index.html").read_text(encoding="utf-8")
+    app_source = (repo_root / "frontend" / "app.js").read_text(encoding="utf-8")
     eventsource = "new EventSource('/api/activity/stream')"
     recurring_markers = (
         "setInterval(()=>{if(view!=='activity')updateQueueBadge()",
@@ -485,10 +486,10 @@ def _idle_ui_frontend_metrics() -> dict[str, int | str]:
     return {
         "measurement_kind": "modeled_control_flow",
         "global_eventsource_count": auth_source.count(eventsource),
-        "view_eventsource_count": index_source.count(eventsource),
-        "recurring_queue_poll_markers": sum(index_source.count(marker) for marker in recurring_markers),
+        "view_eventsource_count": (index_source + app_source).count(eventsource),
+        "recurring_queue_poll_markers": sum((index_source + app_source).count(marker) for marker in recurring_markers),
         "fallback_interval_seconds": (
-            IDLE_UI_FALLBACK_INTERVAL_SECONDS if fallback_marker in index_source else 0
+            IDLE_UI_FALLBACK_INTERVAL_SECONDS if fallback_marker in app_source else 0
         ),
     }
 
