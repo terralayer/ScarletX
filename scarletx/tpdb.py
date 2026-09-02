@@ -10,6 +10,7 @@ from typing import Any
 
 import httpx
 
+from .async_cache import AsyncLRUCache
 from .studio_policy import is_allowed_tpdb_scene_raw, is_allowed_tpdb_site_raw, studio_only_reason_raw
 from .schemas import (
     PerformerSearchResponse,
@@ -26,6 +27,7 @@ from .schemas import (
 TPDB_CACHE_ROOT = Path(os.getenv("SCARLETX_CACHE_DIR", "./cache")).expanduser() / "tpdb" / "json"
 _SHARED_HTTP_CLIENTS: dict[tuple[str, str], httpx.AsyncClient] = {}
 _SHARED_HTTP_LOCK = threading.RLock()
+_TPDB_MEMORY_CACHE = AsyncLRUCache(max_entries=512)
 
 
 def _shared_http_client(base_url: str, api_key: str) -> httpx.AsyncClient:
@@ -75,6 +77,13 @@ def _write_cache(path: Path, payload: dict) -> None:
         temp.replace(path)
     except OSError:
         pass
+
+
+def _disk_cache_expires_at(path: Path, ttl: int, now: float) -> float:
+    try:
+        return path.stat().st_mtime + ttl
+    except OSError:
+        return now + ttl
 
 
 class ThePornDBError(RuntimeError):
@@ -250,33 +259,53 @@ class ThePornDBClient:
         # Search pages change more often than entity details. Both are persistent
         # and stale cache is used as an offline/TPDB-outage fallback.
         ttl = 300 if params else 86400
-        cached = _read_cache(cache_path, ttl)
-        if cached is not None:
-            return cached
-        stale = _read_cache(cache_path, None)
-        last_error = None
-        for attempt in range(min(self.max_retries, 2)):
-            try:
-                response = await self.client.get(path, params=params)
-                if (response.status_code == 429 or response.status_code >= 500) and attempt + 1 < min(self.max_retries, 2):
-                    await asyncio.sleep(0.35 * (attempt + 1)); continue
-                response.raise_for_status()
-                payload = response.json()
-                if isinstance(payload, dict):
-                    _write_cache(cache_path, payload)
-                return payload
-            except (httpx.TimeoutException, httpx.NetworkError) as exc:
-                last_error = exc
-                if attempt + 1 < min(self.max_retries, 2):
-                    await asyncio.sleep(0.35 * (attempt + 1))
-            except httpx.HTTPStatusError as exc:
-                # Do not hide authorization/not-found errors behind stale cache.
-                if exc.response.status_code not in {429, 500, 502, 503, 504}:
-                    raise ThePornDBError(f"ThePornDB returned HTTP {exc.response.status_code}") from exc
-                last_error = exc
-        if stale is not None:
-            return stale
-        raise ThePornDBError("ThePornDB is unavailable") from last_error
+        now = time.time()
+        memory_cached = await _TPDB_MEMORY_CACHE.get(cache_path, now)
+        if memory_cached is not None:
+            return memory_cached
+
+        async def load() -> dict:
+            load_now = time.time()
+            cached = _read_cache(cache_path, ttl)
+            if cached is not None:
+                await _TPDB_MEMORY_CACHE.put(
+                    cache_path,
+                    cached,
+                    _disk_cache_expires_at(cache_path, ttl, load_now),
+                )
+                return cached
+
+            stale = _read_cache(cache_path, None)
+            last_error = None
+            for attempt in range(min(self.max_retries, 2)):
+                try:
+                    response = await self.client.get(path, params=params)
+                    if (response.status_code == 429 or response.status_code >= 500) and attempt + 1 < min(self.max_retries, 2):
+                        await asyncio.sleep(0.35 * (attempt + 1)); continue
+                    response.raise_for_status()
+                    payload = response.json()
+                    if isinstance(payload, dict):
+                        _write_cache(cache_path, payload)
+                        await _TPDB_MEMORY_CACHE.put(
+                            cache_path,
+                            payload,
+                            time.time() + ttl,
+                        )
+                    return payload
+                except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                    last_error = exc
+                    if attempt + 1 < min(self.max_retries, 2):
+                        await asyncio.sleep(0.35 * (attempt + 1))
+                except httpx.HTTPStatusError as exc:
+                    # Do not hide authorization/not-found errors behind stale cache.
+                    if exc.response.status_code not in {429, 500, 502, 503, 504}:
+                        raise ThePornDBError(f"ThePornDB returned HTTP {exc.response.status_code}") from exc
+                    last_error = exc
+            if stale is not None:
+                return stale
+            raise ThePornDBError("ThePornDB is unavailable") from last_error
+
+        return await _TPDB_MEMORY_CACHE.get_or_create(cache_path, load)
 
     async def search_scenes(
         self,
