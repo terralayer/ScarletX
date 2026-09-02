@@ -6,6 +6,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from .config import Settings
+from .download_metrics import download_phase_metrics
 from .library_management import FileImportError, ensure_library_config, import_media_file
 from .metadata import MetadataProviderError, metadata_client
 from .media_library import index_media_file_by_id
@@ -192,13 +193,14 @@ async def process_completed_downloads(
                 if settings.file_management_enabled or download_client == "scarletx":
                     if not storage_path:
                         raise FileImportError("Download client did not report a completed storage path")
-                    media = import_media_file(
-                        db,
-                        scene=scene,
-                        release_title=release_title,
-                        storage_path=storage_path,
-                        settings=settings,
-                    )
+                    with download_phase_metrics.start(str(tracked.nzo_id), "import"):
+                        media = import_media_file(
+                            db,
+                            scene=scene,
+                            release_title=release_title,
+                            storage_path=storage_path,
+                            settings=settings,
+                        )
                     moved = media.path
                     media_id = media.id
                 tracked.status = "imported"
