@@ -19,6 +19,7 @@ from .models import (
     utcnow,
 )
 from .notifications import emit_webhooks
+from .recent_imports import FileIdentity, recent_imports
 from .services import upsert_scene
 from .status_console import emit_status
 
@@ -213,6 +214,13 @@ async def process_completed_downloads(
                 msg = f"Imported {scene.title} after {label} completed {release_title}" + (f" -> {moved}" if moved else "")
                 db.add(History(event_type="download_imported", scene_id=scene.id, message=msg))
                 db.commit()
+                if moved:
+                    try:
+                        recent_imports.register(FileIdentity.from_path(moved))
+                    except OSError:
+                        # The durable import is already complete. A disappearing
+                        # destination should be reconciled normally by the scanner.
+                        pass
                 # Native Usenet has no seeding requirement. Once the selected video
                 # has been moved into the library, discard PAR2/RAR/hash support files.
                 if moved and storage_path and download_client == "scarletx":
