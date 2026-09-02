@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections import deque
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
@@ -171,8 +172,6 @@ queue_event_broker = QueueEventBroker(replay_size=512, subscriber_size=64)
 
 
 def format_sse(event: QueueEvent) -> str:
-    import json
-
     body = json.dumps(event.payload, default=str, separators=(",", ":"))
     return f"id:{event.id}\nevent:{event.kind}\ndata:{body}\n\n"
 
