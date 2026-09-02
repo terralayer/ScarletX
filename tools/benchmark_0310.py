@@ -29,6 +29,9 @@ TPDB_CONCURRENT_READS = 100
 PROGRESS_UPDATES = 1_000
 PROGRESS_BYTES_PER_UPDATE = 4 * 1024
 PROGRESS_DURATION_SECONDS = 10.0
+IDLE_UI_SESSION_SECONDS = 600
+IDLE_UI_PUBLISHER_EVENTS = 10_000
+IDLE_UI_FALLBACK_INTERVAL_SECONDS = 15
 
 
 @dataclass(frozen=True)
@@ -440,8 +443,92 @@ def _benchmark_tpdb_coalescing(temp_root: Path, iterations: int) -> BenchmarkRes
         shutil.rmtree(cache_root, ignore_errors=True)
 
 
+async def _measure_idle_ui_sample() -> tuple[float, dict[str, int | bool]]:
+    from scarletx.event_stream import QueueEventBroker
+
+    broker = QueueEventBroker(replay_size=512, subscriber_size=64)
+    subscriber = broker.subscribe(None)
+    try:
+        started = time.perf_counter()
+        for index in range(IDLE_UI_PUBLISHER_EVENTS):
+            broker.publish(
+                "progress",
+                {
+                    "job": {
+                        "external_id": "idle-ui-benchmark",
+                        "progress": index,
+                    }
+                },
+            )
+        elapsed = time.perf_counter() - started
+        snapshot = broker.snapshot()
+    finally:
+        await subscriber.aclose()
+    snapshot["subscriber_count_after_cleanup"] = broker.snapshot()["subscriber_count"]
+    return elapsed, snapshot
+
+
+def _idle_ui_frontend_metrics() -> dict[str, int | str]:
+    repo_root = Path(__file__).resolve().parents[1]
+    auth_source = (repo_root / "frontend" / "auth.js").read_text(encoding="utf-8")
+    index_source = (repo_root / "frontend" / "index.html").read_text(encoding="utf-8")
+    eventsource = "new EventSource('/api/activity/stream')"
+    recurring_markers = (
+        "setInterval(()=>{if(view!=='activity')updateQueueBadge()",
+        "setTimeout(refreshLiveQueue,1000)",
+        "setTimeout(refreshLiveQueue,750)",
+    )
+    fallback_marker = "refreshLiveQueueFallback()},15000)"
+    return {
+        "measurement_kind": "modeled_control_flow",
+        "global_eventsource_count": auth_source.count(eventsource),
+        "view_eventsource_count": index_source.count(eventsource),
+        "recurring_queue_poll_markers": sum(index_source.count(marker) for marker in recurring_markers),
+        "fallback_interval_seconds": (
+            IDLE_UI_FALLBACK_INTERVAL_SECONDS if fallback_marker in index_source else 0
+        ),
+    }
+
+
+def _benchmark_idle_ui(temp_root: Path, iterations: int) -> BenchmarkResult:
+    del temp_root
+    frontend = _idle_ui_frontend_metrics()
+    samples: list[float] = []
+    last_snapshot: dict[str, int | bool] = {}
+    for _ in range(iterations):
+        elapsed, last_snapshot = asyncio.run(_measure_idle_ui_sample())
+        samples.append(elapsed)
+
+    healthy_queue_requests = 0 if (
+        frontend["global_eventsource_count"] == 1
+        and frontend["view_eventsource_count"] == 0
+        and frontend["recurring_queue_poll_markers"] == 0
+    ) else 1
+    metadata: dict[str, object] = {
+        **frontend,
+        "modeled_session_seconds": IDLE_UI_SESSION_SECONDS,
+        "healthy_sse_queue_requests": healthy_queue_requests,
+        "publisher_events": IDLE_UI_PUBLISHER_EVENTS,
+        "publisher_elapsed_seconds": statistics.median(samples),
+        "samples_seconds": samples,
+        "replay_size": last_snapshot.get("replay_size", 0),
+        "subscriber_queue_size": last_snapshot.get("subscriber_size", 0),
+        "resync_required": last_snapshot.get("resync_required", False),
+        "subscriber_count_after_cleanup": last_snapshot.get(
+            "subscriber_count_after_cleanup", -1
+        ),
+    }
+    return BenchmarkResult(
+        "idle_ui",
+        iterations,
+        statistics.median(samples),
+        IDLE_UI_PUBLISHER_EVENTS,
+        metadata,
+    )
+
 Scenario = Callable[[Path, int], BenchmarkResult]
 SCENARIOS: dict[str, Scenario] = {
+    "idle_ui": _benchmark_idle_ui,
     "list_api": _benchmark_list_api,
     "library_scan": _benchmark_library_scan,
     "queue_reads": _benchmark_queue_reads,
