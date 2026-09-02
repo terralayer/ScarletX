@@ -8,6 +8,14 @@ on:
 permissions:
   contents: read
 
+env:
+  PROOF_ROOT: /tmp/scarletx-pr10-upgrade
+  PROOF_CONFIG: /tmp/scarletx-pr10-upgrade/config
+  PROOF_BACKUP: /tmp/scarletx-pr10-upgrade/config-039-backup
+  STABLE_IMAGE: ghcr.io/terralayer/scarletx:0.3.9
+  CANDIDATE_IMAGE: scarletx-backend:candidate
+  PROOF_CONTAINER: scarletx-upgrade-check
+
 jobs:
   upgrade-rollback:
     runs-on: ubuntu-latest
@@ -17,83 +25,99 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Build candidate backend
-        run: docker build --file Dockerfile --tag scarletx-backend:candidate .
+        run: docker build --file Dockerfile --tag "$CANDIDATE_IMAGE" .
 
       - name: Pull released 0.3.9 backend
-        run: docker pull ghcr.io/terralayer/scarletx:0.3.9
+        run: docker pull "$STABLE_IMAGE"
 
-      - name: Exercise populated 0.3.9 upgrade and preserved rollback
+      - name: Prepare upgrade proof state
         shell: bash
         run: |
           set -euo pipefail
-          root="$RUNNER_TEMP/scarletx-pr10-upgrade"
-          config="$root/config"
-          backup="$root/config-039-backup"
-          mkdir -p "$config"
-          chmod 0777 "$config"
+          sudo rm -rf "$PROOF_ROOT"
+          mkdir -p "$PROOF_CONFIG"
+          chmod 0777 "$PROOF_CONFIG"
+          cat > "$RUNNER_TEMP/run-scarletx-proof-image" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          image="$1"
+          docker rm -f scarletx-upgrade-check >/dev/null 2>&1 || true
+          docker run -d --name scarletx-upgrade-check \
+            -v /tmp/scarletx-pr10-upgrade/config:/config \
+            --tmpfs /downloads:uid=568,gid=568 \
+            --tmpfs /media:uid=568,gid=568 \
+            --tmpfs /backups:uid=568,gid=568 \
+            -p 18000:8000 "$image" >/dev/null
+          for _ in $(seq 1 160); do
+            if curl --fail --silent http://127.0.0.1:18000/api/health >/dev/null; then
+              exit 0
+            fi
+            sleep 0.25
+          done
+          docker logs scarletx-upgrade-check
+          exit 1
+          EOF
+          chmod +x "$RUNNER_TEMP/run-scarletx-proof-image"
 
-          cleanup() {
-            docker rm -f scarletx-upgrade-check >/dev/null 2>&1 || true
-          }
-          trap cleanup EXIT
+      - name: Boot released 0.3.9 schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/run-scarletx-proof-image" "$STABLE_IMAGE"
+          docker rm -f "$PROOF_CONTAINER" >/dev/null
 
-          run_app() {
-            local image="$1"
-            docker rm -f scarletx-upgrade-check >/dev/null 2>&1 || true
-            docker run -d --name scarletx-upgrade-check \
-              -v "$config:/config" \
-              --tmpfs /downloads:uid=568,gid=568 \
-              --tmpfs /media:uid=568,gid=568 \
-              --tmpfs /backups:uid=568,gid=568 \
-              -p 18000:8000 "$image" >/dev/null
-            for _ in $(seq 1 160); do
-              if curl --fail --silent http://127.0.0.1:18000/api/health >/dev/null; then
-                return 0
-              fi
-              sleep 0.25
-            done
-            docker logs scarletx-upgrade-check
-            return 1
-          }
-
-          stable=ghcr.io/terralayer/scarletx:0.3.9
-          candidate=scarletx-backend:candidate
-
-          echo 'Boot released 0.3.9 and create its schema'
-          run_app "$stable"
-          docker rm -f scarletx-upgrade-check >/dev/null
-
-          echo 'Populate a real 0.3.9 ORM record and create the persisted encryption key'
-          docker run --rm -v "$config:/config" --entrypoint python "$stable" -c \
+      - name: Populate 0.3.9 state and snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PROOF_CONFIG:/config" --entrypoint python "$STABLE_IMAGE" -c \
             'from scarletx.db import SessionLocal; from scarletx.models import Scene; from scarletx.secret_store import encrypt_secret; db=SessionLocal(); db.add(Scene(tpdb_id="pr10-upgrade-marker", title="PR10 0.3.9 Upgrade Marker")); db.commit(); db.close(); token=encrypt_secret("pr10-rollback-secret"); assert token.startswith("enc:v1:")'
-          test -s "$config/scarletx.db"
-          sudo test -s "$config/.scarletx-secret.key"
-          test "$(sudo stat -c '%a' "$config/.scarletx-secret.key")" = "600"
-          db_before=$(sudo sha256sum "$config/scarletx.db" | awk '{print $1}')
-          key_before=$(sudo sha256sum "$config/.scarletx-secret.key" | awk '{print $1}')
-          sudo cp -a "$config" "$backup"
+          test -s "$PROOF_CONFIG/scarletx.db"
+          sudo test -s "$PROOF_CONFIG/.scarletx-secret.key"
+          test "$(sudo stat -c '%a' "$PROOF_CONFIG/.scarletx-secret.key")" = "600"
+          sudo sha256sum "$PROOF_CONFIG/scarletx.db" | awk '{print $1}' | sudo tee "$PROOF_ROOT/db-before.sha256" >/dev/null
+          sudo sha256sum "$PROOF_CONFIG/.scarletx-secret.key" | awk '{print $1}' | sudo tee "$PROOF_ROOT/key-before.sha256" >/dev/null
+          sudo cp -a "$PROOF_CONFIG" "$PROOF_BACKUP"
 
-          echo 'Boot the PR10 candidate against the populated 0.3.9 state'
-          run_app "$candidate"
-          docker exec scarletx-upgrade-check python -c \
+      - name: Upgrade populated 0.3.9 state to candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/run-scarletx-proof-image" "$CANDIDATE_IMAGE"
+          docker exec "$PROOF_CONTAINER" python -c \
             'from scarletx.db import SessionLocal; from scarletx.models import Scene; db=SessionLocal(); row=db.query(Scene).filter(Scene.tpdb_id=="pr10-upgrade-marker").one(); assert row.title=="PR10 0.3.9 Upgrade Marker"; db.close()'
-          docker rm -f scarletx-upgrade-check >/dev/null
-          test "$(sudo sha256sum "$config/.scarletx-secret.key" | awk '{print $1}')" = "$key_before"
-          test "$(sudo stat -c '%a' "$config/.scarletx-secret.key")" = "600"
+          docker rm -f "$PROOF_CONTAINER" >/dev/null
+          key_before=$(cat "$PROOF_ROOT/key-before.sha256")
+          test "$(sudo sha256sum "$PROOF_CONFIG/.scarletx-secret.key" | awk '{print $1}')" = "$key_before"
+          test "$(sudo stat -c '%a' "$PROOF_CONFIG/.scarletx-secret.key")" = "600"
 
-          echo 'Restore the preserved 0.3.9 snapshot and roll back to the released image'
-          sudo rm -rf "$config"
-          sudo cp -a "$backup" "$config"
-          sudo chmod 0777 "$config"
-          test "$(sudo sha256sum "$config/scarletx.db" | awk '{print $1}')" = "$db_before"
-          test "$(sudo sha256sum "$config/.scarletx-secret.key" | awk '{print $1}')" = "$key_before"
-          test "$(sudo stat -c '%a' "$config/.scarletx-secret.key")" = "600"
-          run_app "$stable"
-          docker exec scarletx-upgrade-check python -c \
+      - name: Restore preserved 0.3.9 snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          db_before=$(cat "$PROOF_ROOT/db-before.sha256")
+          key_before=$(cat "$PROOF_ROOT/key-before.sha256")
+          sudo rm -rf "$PROOF_CONFIG"
+          sudo cp -a "$PROOF_BACKUP" "$PROOF_CONFIG"
+          sudo chmod 0777 "$PROOF_CONFIG"
+          test "$(sudo sha256sum "$PROOF_CONFIG/scarletx.db" | awk '{print $1}')" = "$db_before"
+          test "$(sudo sha256sum "$PROOF_CONFIG/.scarletx-secret.key" | awk '{print $1}')" = "$key_before"
+          test "$(sudo stat -c '%a' "$PROOF_CONFIG/.scarletx-secret.key")" = "600"
+
+      - name: Roll back to released 0.3.9
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/run-scarletx-proof-image" "$STABLE_IMAGE"
+          docker exec "$PROOF_CONTAINER" python -c \
             'from scarletx.db import SessionLocal; from scarletx.models import Scene; from scarletx.secret_store import encrypt_secret, decrypt_secret; db=SessionLocal(); row=db.query(Scene).filter(Scene.tpdb_id=="pr10-upgrade-marker").one(); assert row.title=="PR10 0.3.9 Upgrade Marker"; db.close(); token=encrypt_secret("rollback-roundtrip"); assert decrypt_secret(token)=="rollback-roundtrip"'
-          docker rm -f scarletx-upgrade-check >/dev/null
-
+          docker rm -f "$PROOF_CONTAINER" >/dev/null
           echo "UPGRADE_FROM_039=passed"
           echo "ROLLBACK_TO_039=passed"
           echo "SECRET_KEY_PRESERVED=passed"
           echo "POPULATED_RECORD_PRESERVED=passed"
+
+      - name: Clean up proof container
+        if: always()
+        shell: bash
+        run: docker rm -f "$PROOF_CONTAINER" >/dev/null 2>&1 || true
