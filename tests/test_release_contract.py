@@ -233,3 +233,46 @@ def test_readme_documents_two_container_nginx_deployment():
     ):
         assert required in readme
     assert f"Current application version: **{VERSION}**." in readme
+
+
+def test_release_calculator_promotes_beta_to_matching_stable_release():
+    module = load_release_version_module()
+    assert module.next_release_version("0.3.9") == "0.3.10"
+    assert module.next_release_version("0.3.10-beta.1") == "0.3.10"
+    assert module.next_release_version("0.3.10-beta.2") == "0.3.10"
+
+
+def test_release_apply_promotes_beta_without_incrementing_patch(tmp_path):
+    module = load_release_version_module()
+    current = "0.3.10-beta.1"
+    expected = "0.3.10"
+
+    for relative_path in module.VERSIONED_FILES:
+        path = tmp_path / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if relative_path == "pyproject.toml":
+            path.write_text(
+                f'[project]\nname = "scarletx"\nversion = "{current}"\n',
+                encoding="utf-8",
+            )
+        else:
+            path.write_text(f"release marker {current}\n", encoding="utf-8")
+
+    next_version = module.apply_release(tmp_path, "Stable 0.3.10 release notes.")
+    assert next_version == expected
+    for relative_path in module.VERSIONED_FILES:
+        updated = (tmp_path / relative_path).read_text(encoding="utf-8")
+        assert current not in updated
+        assert expected in updated
+
+    notes = (tmp_path / f"RELEASE-NOTES-{expected}.md").read_text(encoding="utf-8")
+    assert notes.startswith(f"# ScarletX {expected}\n")
+    assert "Stable 0.3.10 release notes." in notes
+
+
+def test_release_helper_tracks_current_version_bearing_modules():
+    module = load_release_version_module()
+    assert "scarletx/routes/application.py" in module.VERSIONED_FILES
+    assert "scarletx/usenet/worker.py" in module.VERSIONED_FILES
+    assert "scarletx/main.py" not in module.VERSIONED_FILES
+    assert "scarletx/native_usenet.py" not in module.VERSIONED_FILES
