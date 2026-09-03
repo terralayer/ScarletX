@@ -151,6 +151,27 @@ Current application version: **0.3.10-beta.1**.
 
 See `RELEASE-NOTES-0.3.10-beta.1.md` for the current release summary.
 
+## Legal Disclaimer
+
+ScarletX is an independent open-source software project provided solely as a media-management, automation, indexing, and downloading tool.
+
+ScarletX does **not** provide, host, store, sell, distribute, or make available copyrighted media or other third-party content. The project is not affiliated with, sponsored by, endorsed by, or otherwise associated with any Usenet provider, indexer, metadata provider, studio, performer, content producer, publisher, or other third party referenced or supported by the software.
+
+Users are solely responsible for how they configure and use ScarletX, including ensuring that their use complies with:
+
+- All applicable local, state, federal, and international laws and regulations.
+- Copyright, intellectual-property, privacy, and content-access laws.
+- The terms of service, acceptable-use policies, and licensing requirements of any Usenet provider, indexer, metadata service, or other third-party service used with ScarletX.
+- Any legal restrictions governing the possession, access, downloading, storage, or distribution of content in their jurisdiction.
+
+ScarletX and its contributors do not encourage, authorize, or condone copyright infringement, unauthorized access to content, or any other unlawful activity.
+
+Third-party integrations are provided for interoperability and convenience only. The availability of an integration does not imply that ScarletX or its contributors endorse, control, or assume responsibility for that service or the content obtainable through it.
+
+ScarletX is provided **“AS IS” and “AS AVAILABLE,” without warranties of any kind**, express or implied. To the fullest extent permitted by law, the developers, contributors, maintainers, and distributors of ScarletX shall not be liable for any damages, claims, losses, legal consequences, data loss, service disruption, or other liability arising from the installation, configuration, operation, or use of the software.
+
+**By using ScarletX, you accept full responsibility for ensuring that your use of the software and any services or content accessed through it is lawful and authorized.**
+
 ## License
 
 ScarletX is licensed under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`). See `LICENSE` for the full license text.
