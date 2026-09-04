@@ -13,16 +13,6 @@ groups:
     description: Configure Resources for ScarletX
 
 questions:
-  - variable: TZ
-    group: ScarletX Configuration
-    label: Timezone
-    schema:
-      type: string
-      default: Etc/UTC
-      required: true
-      $ref:
-        - definitions/timezone
-
   - variable: scarletx
     label: ""
     group: ScarletX Configuration
@@ -439,8 +429,10 @@ questions:
                         type: string
                         required: true
                         enum:
-                          - value: scarletx
-                            description: scarletx
+                          - value: backend
+                            description: backend
+                          - value: web
+                            description: web
 
   - variable: resources
     label: ""

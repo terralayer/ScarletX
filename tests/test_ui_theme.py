@@ -1,11 +1,15 @@
 from pathlib import Path
 
 
-INDEX = Path(__file__).parents[1] / "frontend" / "index.html"
+FRONTEND = Path(__file__).parents[1] / "frontend"
+INDEX = FRONTEND / "index.html"
+STYLES = FRONTEND / "styles.css"
 
 
 def html() -> str:
-    return INDEX.read_text(encoding="utf-8")
+    # Theme assertions remain byte-for-byte checks of the same CSS tokens/rules,
+    # but PR9 moves the stylesheet into its own static asset.
+    return INDEX.read_text(encoding="utf-8") + "\n" + STYLES.read_text(encoding="utf-8")
 
 
 def test_scarlet_dark_design_tokens_are_the_default_theme():

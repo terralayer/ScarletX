@@ -6,6 +6,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from .config import Settings
+from .download_metrics import download_phase_metrics
 from .library_management import FileImportError, ensure_library_config, import_media_file
 from .metadata import MetadataProviderError, metadata_client
 from .media_library import index_media_file_by_id
@@ -19,7 +20,9 @@ from .models import (
     utcnow,
 )
 from .notifications import emit_webhooks
+from .recent_imports import FileIdentity, recent_imports
 from .services import upsert_scene
+from .status_console import emit_status
 
 PENDING = {"queued", "downloading", "paused", "postprocessing", "import_pending"}
 
@@ -158,6 +161,8 @@ async def process_completed_downloads(
             download_client = state["client"]
             db.commit()
 
+        emit_status("Download", "COMPLETED", release_title, severity="ok")
+        emit_status("Import", "PROCESSING", release_title, severity="active")
         try:
             local_scene_id = local_scene.id if local_scene and local_scene.content_type == "scene" else None
             if local_scene_id is None:
@@ -188,13 +193,14 @@ async def process_completed_downloads(
                 if settings.file_management_enabled or download_client == "scarletx":
                     if not storage_path:
                         raise FileImportError("Download client did not report a completed storage path")
-                    media = import_media_file(
-                        db,
-                        scene=scene,
-                        release_title=release_title,
-                        storage_path=storage_path,
-                        settings=settings,
-                    )
+                    with download_phase_metrics.start(str(tracked.nzo_id), "import"):
+                        media = import_media_file(
+                            db,
+                            scene=scene,
+                            release_title=release_title,
+                            storage_path=storage_path,
+                            settings=settings,
+                        )
                     moved = media.path
                     media_id = media.id
                 tracked.status = "imported"
@@ -210,6 +216,13 @@ async def process_completed_downloads(
                 msg = f"Imported {scene.title} after {label} completed {release_title}" + (f" -> {moved}" if moved else "")
                 db.add(History(event_type="download_imported", scene_id=scene.id, message=msg))
                 db.commit()
+                if moved:
+                    try:
+                        recent_imports.register(FileIdentity.from_path(moved))
+                    except OSError:
+                        # The durable import is already complete. A disappearing
+                        # destination should be reconciled normally by the scanner.
+                        pass
                 # Native Usenet has no seeding requirement. Once the selected video
                 # has been moved into the library, discard PAR2/RAR/hash support files.
                 if moved and storage_path and download_client == "scarletx":
@@ -221,9 +234,11 @@ async def process_completed_downloads(
                         pass
                 imported += 1
                 notifications.append(("import", {"scene_id": scene.id, "title": scene.title, "release_title": release_title, "path": moved}))
+                emit_status("Import", "COMPLETED", moved or release_title, severity="ok")
             if media_id is not None:
                 await asyncio.to_thread(index_media_file_by_id, session_factory, media_id, generate_art=True)
         except (FileImportError, MetadataProviderError) as exc:
+            emit_status("Import", "FAILED", f"{release_title} | {exc.__class__.__name__}", severity="error")
             with session_factory() as db:
                 tracked = db.get(TrackedDownload, job["tracked_id"])
                 if tracked:

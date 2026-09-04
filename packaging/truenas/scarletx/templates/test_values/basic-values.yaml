@@ -3,10 +3,6 @@ resources:
     cpus: 2.0
     memory: 4096
 
-run_as:
-  user: 568
-  group: 568
-
 scarletx:
   additional_envs: []
 
@@ -15,7 +11,9 @@ network:
     bind_mode: published
     port_number: 30969
 
-labels: []
+run_as:
+  user: 568
+  group: 568
 
 ix_volumes:
   config: /opt/tests/mnt/scarletx/config
@@ -44,3 +42,5 @@ storage:
     ix_volume_config:
       dataset_name: backups
       create_host_path: true
+
+labels: []

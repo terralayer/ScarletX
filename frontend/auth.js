@@ -36,8 +36,62 @@
   </div>
 </dialog>`);
 
-  const state = {setupRequired:false, username:'', appStarted:false, appBoot:null};
-  const el = id => document.getElementById(id);
+const state = {setupRequired:false, username:'', appStarted:false, appBoot:null, queueSource:null, queueFailures:0, queueRetryTimer:null, queueLastEventId:0};
+const el = id => document.getElementById(id);
+const QUEUE_KINDS = ['snapshot','progress','transition','history','resync'];
+
+function dispatchQueue(name, detail={}) {
+  window.dispatchEvent(new CustomEvent(name, {detail}));
+}
+
+function stopQueueStream() {
+  if (state.queueRetryTimer) {
+    clearTimeout(state.queueRetryTimer);
+    state.queueRetryTimer = null;
+  }
+  if (state.queueSource) {
+    state.queueSource.close();
+    state.queueSource = null;
+  }
+  state.queueLastEventId = 0;
+}
+
+function startQueueStream() {
+  if (state.queueSource) return;
+  if (!window.EventSource) {
+    dispatchQueue('scarletx:queue-stream-fallback', {reason:'unsupported'});
+    return;
+  }
+  const source = new EventSource('/api/activity/stream');
+  state.queueSource = source;
+  source.onopen = () => {
+    if (state.queueSource !== source) return;
+    state.queueFailures = 0;
+    dispatchQueue('scarletx:queue-stream-healthy');
+  };
+  const handle = kind => event => {
+    let payload = {};
+    try { payload = event.data ? JSON.parse(event.data) : {}; } catch { return; }
+    const eventId = Number(event.lastEventId || 0);
+    if (kind !== 'resync' && eventId && eventId <= state.queueLastEventId) return;
+    if (kind === 'resync') state.queueLastEventId = eventId;
+    else if (eventId) state.queueLastEventId = eventId;
+    dispatchQueue('scarletx:queue-event', {kind, id:eventId, payload});
+  };
+  QUEUE_KINDS.forEach(kind => source.addEventListener(kind, handle(kind)));
+  source.onerror = () => {
+    if (state.queueSource !== source) return;
+    state.queueFailures += 1;
+    if (state.queueFailures < 3) return;
+    source.close();
+    state.queueSource = null;
+    dispatchQueue('scarletx:queue-stream-fallback', {reason:'repeated_failure'});
+    state.queueRetryTimer = setTimeout(() => {
+      state.queueRetryTimer = null;
+      startQueueStream();
+    }, 30000);
+  };
+}
 
   async function request(path, options={}) {
     const headers = {'Content-Type':'application/json', ...(options.headers || {})};
@@ -77,6 +131,7 @@
     el('authAccount').hidden = false;
     el('authAccountButton').textContent = state.username;
     el('authAccountUsername').value = state.username;
+    startQueueStream();
     if (!state.appStarted && state.appBoot) {
       state.appStarted = true;
       Promise.resolve(state.appBoot()).catch(error => console.error('ScarletX boot failed', error));
@@ -127,6 +182,7 @@
 
   el('authLogoutButton').addEventListener('click', async () => {
     el('authLogoutButton').disabled = true;
+    stopQueueStream();
     try { await request('/api/auth/logout', {method:'POST'}); } catch (error) { console.error(error); }
     location.reload();
   });

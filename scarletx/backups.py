@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from .db import engine
 from .models import BackupRecord
+from .status_console import emit_status
 
 
 class BackupError(RuntimeError):
@@ -18,7 +19,15 @@ class BackupError(RuntimeError):
 
 
 def _backup_dir(directory: str) -> Path:
-    path = Path(directory).expanduser()
+    # 0.3.9 persisted the local-development default (./backups) even in
+    # containers.  Honor an explicit packaging override only for that legacy
+    # default; a user-selected custom directory always wins.
+    requested = str(directory or "").strip()
+    if requested in {"backups", "./backups"}:
+        packaged = os.getenv("SCARLETX_BACKUP_DIR", "").strip()
+        if packaged:
+            requested = packaged
+    path = Path(requested or directory).expanduser()
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -55,11 +64,13 @@ def create_backup(db: Session, directory: str, keep: int = 14) -> BackupRecord:
     target_dir = _backup_dir(directory)
     timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     target = target_dir / f"scarletx-{timestamp}.db"
+    emit_status("Backup", "PROCESSING", str(target), severity="active")
     try:
         with sqlite3.connect(source) as src, sqlite3.connect(target) as dst:
             src.backup(dst)
         _copy_secret_key_for_backup(target)
     except (sqlite3.Error, BackupError) as exc:
+        emit_status("Backup", "FAILED", exc.__class__.__name__, severity="error")
         target.unlink(missing_ok=True)
         _secret_key_backup_path(target).unlink(missing_ok=True)
         if isinstance(exc, BackupError):
@@ -70,6 +81,7 @@ def create_backup(db: Session, directory: str, keep: int = 14) -> BackupRecord:
     db.commit()
     db.refresh(record)
     rotate_backups(db, target_dir, keep)
+    emit_status("Backup", "COMPLETED", str(target), severity="ok")
     return record
 
 
