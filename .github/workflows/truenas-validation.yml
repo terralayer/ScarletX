@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out ScarletX
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Check out TrueNAS Apps
         run: git clone --depth 1 https://github.com/truenas/apps.git /tmp/truenas-apps
