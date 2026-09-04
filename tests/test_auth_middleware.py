@@ -31,6 +31,10 @@ def make_app(*, api_key_enabled=False, api_key="", raise_server_exceptions=True)
     def private():
         return {"private": True}
 
+    @app.get("/api/activity/stream")
+    def activity_stream():
+        return {"stream": True}
+
     @app.get("/api/crash")
     def crash():
         raise RuntimeError("downstream failure")
@@ -68,6 +72,13 @@ def test_private_api_is_blocked_during_setup_and_after_setup_without_auth():
     assert client.get("/api/private").status_code == 401
     create_admin(factory)
     assert client.get("/api/private").status_code == 401
+
+
+def test_activity_stream_requires_authenticated_session():
+    client, factory = make_app()
+    create_admin(factory)
+
+    assert client.get("/api/activity/stream").status_code == 401
 
 
 def test_valid_browser_session_authenticates_private_api():

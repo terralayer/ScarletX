@@ -1,6 +1,6 @@
 services:
   scarletx-permissions:
-    image: ghcr.io/terralayer/scarletx:0.3.9
+    image: ghcr.io/terralayer/scarletx:0.3.10-beta.1
     container_name: scarletx-permissions
     pull_policy: always
     user: "0:0"
@@ -18,7 +18,7 @@ services:
       - ${SCARLETX_BACKUPS_PATH:?Set SCARLETX_BACKUPS_PATH}:/backups
 
   scarletx-backend:
-    image: ghcr.io/terralayer/scarletx:0.3.9
+    image: ghcr.io/terralayer/scarletx:0.3.10-beta.1
     container_name: scarletx-backend
     restart: unless-stopped
     pull_policy: always
@@ -36,12 +36,14 @@ services:
       SCARLETX_GENERATED_DIR: /config/generated
       SCARLETX_CACHE_DIR: /config/cache
       SCARLETX_DEFAULT_MEDIA_ROOT: /media
-      SCARLETX_NO_BROWSER: "1"
     volumes:
       - ${SCARLETX_CONFIG_PATH:?Set SCARLETX_CONFIG_PATH}:/config
       - ${SCARLETX_DOWNLOADS_PATH:?Set SCARLETX_DOWNLOADS_PATH}:/downloads
       - ${SCARLETX_MEDIA_PATH:?Set SCARLETX_MEDIA_PATH}:/media
       - ${SCARLETX_BACKUPS_PATH:?Set SCARLETX_BACKUPS_PATH}:/backups
+    networks:
+      - scarletx-net
+      - scarletx-egress
     healthcheck:
       test:
         - CMD
@@ -54,14 +56,25 @@ services:
       retries: 3
 
   scarletx-web:
-    image: ghcr.io/terralayer/scarletx-web:0.3.9
+    image: ghcr.io/terralayer/scarletx-web:0.3.10-beta.1
     container_name: scarletx-web
     restart: unless-stopped
     pull_policy: always
     environment:
       SCARLETX_WEB_PORT: ${SCARLETX_PORT:-8690}
+      SCARLETX_BACKEND_HOST: ${SCARLETX_BACKEND_HOST:-scarletx-backend}
+      SCARLETX_BACKEND_PORT: ${SCARLETX_BACKEND_PORT:-8000}
     depends_on:
       scarletx-backend:
         condition: service_healthy
     ports:
       - "${SCARLETX_PORT:-8690}:${SCARLETX_PORT:-8690}"
+    networks:
+      - scarletx-net
+
+networks:
+  scarletx-net:
+    driver: bridge
+    internal: true
+  scarletx-egress:
+    driver: bridge

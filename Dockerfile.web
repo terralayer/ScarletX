@@ -1,6 +1,8 @@
-FROM nginx:alpine
+FROM nginx:alpine@sha256:db35bfc6b2951e7f8a72db5db120288c127ffaeeb4a6d4b95a26fead017d5913
 
-ENV SCARLETX_WEB_PORT=8690
+ENV SCARLETX_WEB_PORT=8690 \
+    SCARLETX_BACKEND_HOST=scarletx-backend \
+    SCARLETX_BACKEND_PORT=8000
 
 # Make the stock Nginx image safe for an arbitrary non-root UID/GID. TrueNAS
 # overrides the runtime identity from the app's User and Group settings.
@@ -17,16 +19,20 @@ COPY nginx/scarletx.conf /etc/nginx/templates/default.conf.template
 COPY frontend/index.html /usr/share/nginx/html/index.html
 COPY frontend/auth.css /usr/share/nginx/html/auth.css
 COPY frontend/auth.js /usr/share/nginx/html/auth.js
+COPY frontend/styles.css /usr/share/nginx/html/styles.css
+COPY frontend/app.js /usr/share/nginx/html/app.js
 
 # Bake the authentication assets into the static HTML at image-build time.
 # Nginx serves the finished page directly; Python never renders or rewrites UI.
 RUN set -eux; \
     sed -i 's#</head>#<link rel="stylesheet" href="/auth.css"></head>#' /usr/share/nginx/html/index.html; \
     sed -i 's#<body>#<body><script src="/auth.js"></script>#' /usr/share/nginx/html/index.html; \
-    sed -i 's/^[[:space:]]*boot();[[:space:]]*$/authGateBoot(boot);/' /usr/share/nginx/html/index.html; \
+    sed -i 's/^[[:space:]]*boot();[[:space:]]*$/authGateBoot(boot);/' /usr/share/nginx/html/app.js; \
     grep -q '/auth.css' /usr/share/nginx/html/index.html; \
     grep -q '/auth.js' /usr/share/nginx/html/index.html; \
-    grep -q 'authGateBoot(boot);' /usr/share/nginx/html/index.html
+    grep -q '/styles.css' /usr/share/nginx/html/index.html; \
+    grep -q '/app.js' /usr/share/nginx/html/index.html; \
+    grep -q 'authGateBoot(boot);' /usr/share/nginx/html/app.js
 
 EXPOSE 8690
 USER 568:568

@@ -7,8 +7,10 @@ from typing import Callable
 
 from sqlalchemy import or_, select
 
+from .library_scanner import DirtyDirectoryQueue, scan_directories
 from .media_library import VIDEO_EXTENSIONS, _match_local_scene, index_media_file_by_id, quick_fingerprint
 from .models import History, MediaFile, MediaProbe, RootFolder, Scene, UnmatchedMediaFile, utcnow
+from .recent_imports import FileIdentity, recent_imports
 
 try:
     from watchdog.events import FileSystemEventHandler
@@ -20,6 +22,15 @@ except Exception:  # pragma: no cover - optional runtime fallback
 
 def _normalized(path: str | Path) -> str:
     return str(Path(path).expanduser().resolve(strict=False))
+
+
+def _suppress_recent_import(kind: str, path: str | Path) -> bool:
+    if kind != "changed":
+        return False
+    try:
+        return recent_imports.contains(FileIdentity.from_path(path))
+    except OSError:
+        return False
 
 
 def _scene_candidates(db, path: Path) -> list[Scene]:
@@ -145,10 +156,14 @@ async def media_watch_loop(session_factory, refresh_seconds: float = 30.0) -> No
 
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue(maxsize=8192)
+    dirty = DirtyDirectoryQueue(max_entries=8192)
     observer = None
     watched: tuple[str, ...] = ()
 
     def submit(kind: str, path: str) -> None:
+        if _suppress_recent_import(kind, path):
+            return
+        dirty.mark(path)
         def put() -> None:
             try:
                 queue.put_nowait((kind, path))
@@ -187,25 +202,18 @@ async def media_watch_loop(session_factory, refresh_seconds: float = 30.0) -> No
             if loop.time() >= next_refresh:
                 await rebuild_if_needed()
                 next_refresh = loop.time() + refresh_seconds
-            if not pending:
+            if not pending and not dirty.has_pending():
                 continue
             # Coalesce bursty create/write/rename events and wait for a copy to settle.
             await asyncio.sleep(0.75)
-            batch, pending = pending, {}
-            for path, kind in batch.items():
-                if kind == "deleted":
-                    await asyncio.to_thread(_mark_missing_path, session_factory, path)
-                    continue
-                p = Path(path)
-                try:
-                    first = p.stat().st_size
-                    await asyncio.sleep(0.35)
-                    if not p.exists() or p.stat().st_size != first:
-                        pending[path] = "changed"
-                        continue
-                except OSError:
-                    continue
-                await asyncio.to_thread(_index_changed_path, session_factory, path)
+            pending = {}
+            if dirty.overflow():
+                result = await asyncio.to_thread(scan_directories, session_factory, (), full=True)
+            else:
+                directories = dirty.drain(256)
+                result = await asyncio.to_thread(scan_directories, session_factory, directories)
+            for directory in result.get("failed_directories", ()):
+                dirty.mark(directory, is_directory=True)
     finally:
         if observer is not None:
             observer.stop()

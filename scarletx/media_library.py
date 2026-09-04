@@ -17,6 +17,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from .library_match import build_scene_match_index, match_local_scene
+from .library_scanner import load_states, normalized_path, record_success, reconcile_missing, scandir_videos, unchanged
+from .status_console import emit_status
 from .models import (
     BackgroundJob,
     History,
@@ -228,25 +230,37 @@ def _match_local_scene(path: Path, scenes: list[Scene]) -> Scene | None:
 
 
 def _video_paths(root: Path):
-    if not root.exists() or not root.is_dir():
-        return
-    for path in root.rglob("*"):
-        try:
-            if path.is_file() and path.suffix.casefold() in VIDEO_EXTENSIONS:
-                yield path
-        except OSError:
-            continue
+    for path, _stat in scandir_videos((root,), VIDEO_EXTENSIONS):
+        yield path
 
 
-def scan_library(session_factory, job_id: int | None = None) -> dict[str, int]:
+def scan_library(
+    session_factory,
+    job_id: int | None = None,
+    *,
+    directories: list[str | Path] | None = None,
+) -> dict[str, Any]:
     stats = {"files": 0, "indexed": 0, "skipped": 0, "matched": 0, "unmatched": 0, "missing": 0, "errors": 0}
+    emit_status("Library Scan", "ACTIVE", "scanning configured scene roots", severity="active")
     to_index: list[int] = []
+    pending_states: dict[int, tuple[Path, os.stat_result]] = {}
     with session_factory() as db:
         job = db.get(BackgroundJob, job_id) if job_id else None
         if job:
             job.status = "running"
             db.commit()
         roots = db.scalars(select(RootFolder).where(RootFolder.content_type == "scene")).all()
+        root_paths = (
+            [Path(row.path).expanduser() for row in roots]
+            if directories is None
+            else [Path(path).expanduser() for path in directories]
+        )
+        scan_states = load_states(db, root_paths)
+        failed_directories: set[Path] = set()
+        scope_prefixes = tuple(normalized_path(path).rstrip(os.sep) + os.sep for path in root_paths)
+
+        def in_scope(path: str) -> bool:
+            return normalized_path(path).startswith(scope_prefixes)
         scenes = db.scalars(select(Scene).where(Scene.content_type == "scene")).all()
         scene_match_index = build_scene_match_index(scenes)
         probe_map = {probe.media_file_id: probe for probe in db.scalars(select(MediaProbe)).all()}
@@ -254,17 +268,22 @@ def scan_library(session_factory, job_id: int | None = None) -> dict[str, int]:
         seen: set[str] = set()
         unmatched_known = {str(Path(x.path).expanduser().resolve(strict=False)): x for x in db.scalars(select(UnmatchedMediaFile)).all()}
         try:
-            for root_row in roots:
-                root = Path(root_row.path).expanduser()
-                for path in _video_paths(root) or ():
+            for root in root_paths:
+                for path, stat in scandir_videos(
+                    (root,), VIDEO_EXTENSIONS,
+                    on_error=lambda directory, _exc: failed_directories.add(directory),
+                ):
                     stats["files"] += 1
-                    key = str(path.resolve(strict=False))
+                    key = normalized_path(path)
                     seen.add(key)
+                    if unchanged(scan_states.get(key), stat, path=path):
+                        stats["skipped"] += 1
+                        continue
                     media = known.get(key)
                     if media is None:
                         scene = match_local_scene(path, scene_match_index)
                         if scene is not None:
-                            media = MediaFile(scene_id=scene.id, path=str(path), size_bytes=path.stat().st_size, quality=None, release_title=path.stem)
+                            media = MediaFile(scene_id=scene.id, path=key, size_bytes=stat.st_size, quality=None, release_title=path.stem)
                             db.add(media); db.flush(); known[key] = media
                             old_unmatched = unmatched_known.get(key)
                             if old_unmatched is not None:
@@ -272,28 +291,32 @@ def scan_library(session_factory, job_id: int | None = None) -> dict[str, int]:
                             stats["matched"] += 1
                         else:
                             item = unmatched_known.get(key)
-                            stat = path.stat()
                             if item is None:
-                                item = UnmatchedMediaFile(path=str(path), display_name=path.stem)
+                                item = UnmatchedMediaFile(path=key, display_name=path.stem)
                                 db.add(item); db.flush(); unmatched_known[key] = item
-                            if item.size_bytes != stat.st_size or not item.fingerprint:
-                                item.fingerprint = quick_fingerprint(path)
+                            # Reaching this branch means persistent size/mtime_ns
+                            # identity changed (or no state exists), so refresh the
+                            # fingerprint even when the byte count is unchanged.
+                            item.fingerprint = quick_fingerprint(path)
                             item.size_bytes = stat.st_size
                             item.missing = False
                             item.last_seen_at = utcnow()
+                            record_success(db, path, stat)
                             stats["unmatched"] += 1
                             continue
-                    stat = path.stat()
                     probe = probe_map.get(media.id)
                     if probe and probe.file_mtime == stat.st_mtime and probe.size_bytes == stat.st_size and probe.duration_seconds is not None and not probe.missing:
                         stats["skipped"] += 1
                     else:
                         to_index.append(media.id)
+                        pending_states[media.id] = (path, stat)
+                    if media.id not in pending_states:
+                        record_success(db, path, stat)
                     if stats["files"] % 20 == 0:
                         db.commit()
             # Mark DB media that disappeared from configured roots as missing.
             for key, media in known.items():
-                if key in seen:
+                if key in seen or not in_scope(key):
                     continue
                 probe = probe_map.get(media.id)
                 if probe is None:
@@ -305,8 +328,11 @@ def scan_library(session_factory, job_id: int | None = None) -> dict[str, int]:
                     probe.scanned_at = utcnow()
                     stats["missing"] += 1
             for key, item in unmatched_known.items():
-                if key not in seen and not Path(item.path).exists():
+                if in_scope(key) and key not in seen and not Path(item.path).exists():
                     item.missing = True
+            reconcile_missing(db, scan_states, seen, failed_directories)
+            stats["errors"] += len(failed_directories)
+            stats["failed_directories"] = [str(path) for path in sorted(failed_directories)]
             db.commit()
 
             # Probe changed/new files with separate DB sessions so ffprobe and
@@ -314,11 +340,19 @@ def scan_library(session_factory, job_id: int | None = None) -> dict[str, int]:
             if to_index:
                 workers = min(4, max(1, (os.cpu_count() or 2) // 2), len(to_index))
                 with concurrent.futures.ThreadPoolExecutor(max_workers=workers, thread_name_prefix="scarletx-media") as pool:
-                    futures = [pool.submit(index_media_file_by_id, session_factory, media_id, generate_art=True) for media_id in to_index]
+                    futures = {
+                        pool.submit(index_media_file_by_id, session_factory, media_id, generate_art=True): media_id
+                        for media_id in to_index
+                    }
                     for future in concurrent.futures.as_completed(futures):
                         try:
-                            if future.result(): stats["indexed"] += 1
-                            else: stats["errors"] += 1
+                            media_id = futures[future]
+                            if future.result():
+                                stats["indexed"] += 1
+                                path, stat = pending_states[media_id]
+                                record_success(db, path, stat)
+                            else:
+                                stats["errors"] += 1
                         except Exception:
                             stats["errors"] += 1
 
@@ -329,12 +363,19 @@ def scan_library(session_factory, job_id: int | None = None) -> dict[str, int]:
                 job.finished_at = utcnow()
             db.commit()
         except Exception as exc:
+            emit_status("Library Scan", "FAILED", exc.__class__.__name__, severity="error")
             if job:
                 job.status = "failed"
                 job.error = str(exc)[:2000]
                 job.finished_at = utcnow()
             db.commit()
             raise
+    emit_status(
+        "Library Scan",
+        "COMPLETED",
+        f"{stats['files']} files | {stats['indexed']} indexed | {stats['unmatched']} unmatched | {stats['errors']} errors",
+        severity="ok" if stats["errors"] == 0 else "warning",
+    )
     return stats
 
 

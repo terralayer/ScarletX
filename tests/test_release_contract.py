@@ -37,16 +37,22 @@ def test_release_version_is_consistent():
     values = text("packaging/truenas/scarletx/ix_values.yaml")
     assert f"app_version: {VERSION}" in app
     assert "version: 1.0.2" in app
-    assert f"RELEASE-NOTES-{VERSION}.md" in app
+    assert "changelog_url: https://github.com/terralayer/ScarletX/releases" in app
     assert re.search(rf"(?m)^\s+tag: {re.escape(VERSION)}$", values)
     assert "ghcr.io/terralayer/scarletx-web" in values
     assert (ROOT / f"RELEASE-NOTES-{VERSION}.md").exists()
 
 
+def test_truenas_changelog_url_is_not_version_pinned():
+    app = text("packaging/truenas/scarletx/app.yaml")
+    assert "changelog_url: https://github.com/terralayer/ScarletX/releases" in app
+    assert "RELEASE-NOTES-" not in re.search(r"(?m)^changelog_url:.*$", app).group(0)
+
+
 def test_shipped_application_metadata_reports_current_version():
     expected_by_file = {
         "scarletx/__init__.py": f'__version__ = "{VERSION}"',
-        "scarletx/main.py": f'version="{VERSION}"',
+        "scarletx/routes/application.py": f'version="{VERSION}"',
         "README.md": f"Current application version: **{VERSION}**.",
         "BUILD-INFO.txt": f"ScarletX {VERSION}",
         "start-scarletx.sh": f"ScarletX {VERSION}",
@@ -60,7 +66,7 @@ def test_shipped_application_metadata_reports_current_version():
     assert f"image: ghcr.io/terralayer/scarletx-web:{VERSION}" in truenas_compose
     assert 'SCARLETX_PORT: "8000"' in truenas_compose
     assert 'SCARLETX_WEB_PORT: ${SCARLETX_PORT:-8690}' in truenas_compose
-    assert f'"version": "{VERSION}"' in text("scarletx/main.py")
+    assert f'"version": "{VERSION}"' in text("scarletx/routes/application.py")
     assert f"RELEASE-NOTES-{VERSION}.md" in text("README.md")
 
 
@@ -69,7 +75,7 @@ def test_outbound_user_agents_report_current_version():
         "scarletx/tpdb.py",
         "scarletx/remote_art.py",
         "scarletx/newznab.py",
-        "scarletx/native_usenet.py",
+        "scarletx/usenet/worker.py",
     ):
         assert f"ScarletX/{VERSION}" in text(path), f"{path} has a stale User-Agent"
 
@@ -101,6 +107,27 @@ def test_truenas_validation_covers_application_changes():
         '"packaging/truenas/**"',
     ):
         assert required in workflow
+
+
+def test_truenas_test_values_do_not_inject_undocumented_environment_variables():
+    test_values = ROOT / "packaging" / "truenas" / "scarletx" / "templates" / "test_values"
+    for path in test_values.glob("*.yaml"):
+        contents = path.read_text(encoding="utf-8")
+        assert "SCARLETX_TEST_MODE" not in contents, f"{path.name} injects an undocumented environment variable"
+
+
+def test_truenas_basic_values_follow_community_block_order():
+    contents = text("packaging/truenas/scarletx/templates/test_values/basic-values.yaml")
+    top_level_keys = re.findall(r"(?m)^([a-z][a-z0-9_]*):", contents)
+    assert top_level_keys == [
+        "resources",
+        "scarletx",
+        "network",
+        "run_as",
+        "ix_volumes",
+        "storage",
+        "labels",
+    ]
 
 
 def test_truenas_full_deploy_is_release_tag_only():
@@ -138,10 +165,10 @@ def test_container_actions_use_node24_generations():
         assert deprecated not in workflow
 
 
-def test_container_includes_current_release_notes():
+def test_release_notes_stay_in_release_tree_but_not_runtime_image():
     dockerfile = text("Dockerfile")
-    assert "RELEASE-NOTES-*.md" in dockerfile
-    assert "RELEASE-NOTES-0.3.6.md" not in dockerfile
+    assert "RELEASE-NOTES-*.md" not in dockerfile
+    assert (ROOT / f"RELEASE-NOTES-{VERSION}.md").exists()
 
 
 def test_release_version_calculator_only_increments_third_component():
@@ -206,3 +233,46 @@ def test_readme_documents_two_container_nginx_deployment():
     ):
         assert required in readme
     assert f"Current application version: **{VERSION}**." in readme
+
+
+def test_release_calculator_promotes_beta_to_matching_stable_release():
+    module = load_release_version_module()
+    assert module.next_release_version("0.3.9") == "0.3.10"
+    assert module.next_release_version("0.3.10-beta.1") == "0.3.10"
+    assert module.next_release_version("0.3.10-beta.2") == "0.3.10"
+
+
+def test_release_apply_promotes_beta_without_incrementing_patch(tmp_path):
+    module = load_release_version_module()
+    current = "0.3.10-beta.1"
+    expected = "0.3.10"
+
+    for relative_path in module.VERSIONED_FILES:
+        path = tmp_path / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if relative_path == "pyproject.toml":
+            path.write_text(
+                f'[project]\nname = "scarletx"\nversion = "{current}"\n',
+                encoding="utf-8",
+            )
+        else:
+            path.write_text(f"release marker {current}\n", encoding="utf-8")
+
+    next_version = module.apply_release(tmp_path, "Stable 0.3.10 release notes.")
+    assert next_version == expected
+    for relative_path in module.VERSIONED_FILES:
+        updated = (tmp_path / relative_path).read_text(encoding="utf-8")
+        assert current not in updated
+        assert expected in updated
+
+    notes = (tmp_path / f"RELEASE-NOTES-{expected}.md").read_text(encoding="utf-8")
+    assert notes.startswith(f"# ScarletX {expected}\n")
+    assert "Stable 0.3.10 release notes." in notes
+
+
+def test_release_helper_tracks_current_version_bearing_modules():
+    module = load_release_version_module()
+    assert "scarletx/routes/application.py" in module.VERSIONED_FILES
+    assert "scarletx/usenet/worker.py" in module.VERSIONED_FILES
+    assert "scarletx/main.py" not in module.VERSIONED_FILES
+    assert "scarletx/native_usenet.py" not in module.VERSIONED_FILES

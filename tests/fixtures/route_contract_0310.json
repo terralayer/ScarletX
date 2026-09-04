@@ -1,0 +1,822 @@
+[
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/activity/queue"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/activity/stream"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/artwork/performers/{identifier}"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/artwork/scenes/{identifier}"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/artwork/studios/{identifier}"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/automation/search"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/automation/status"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/backups"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/backups"
+  },
+  {
+    "methods": [
+      "DELETE"
+    ],
+    "path": "/api/blocklist"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/blocklist"
+  },
+  {
+    "methods": [
+      "DELETE"
+    ],
+    "path": "/api/blocklist/{item_id}"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/calendar"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/download-client/status"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/download-client/test"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/download-clients/native/test"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/download-clients/status"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/downloads/completed"
+  },
+  {
+    "methods": [
+      "DELETE"
+    ],
+    "path": "/api/downloads/failed"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/downloads/failed"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/downloads/history"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/downloads/native/{job_id}/cancel"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/downloads/native/{job_id}/password"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/downloads/native/{job_id}/pause"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/downloads/native/{job_id}/reprocess"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/downloads/native/{job_id}/resume"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/downloads/process"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/downloads/queue"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/downloads/tracked"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/health"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/history"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/indexers/newznab/status"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/indexers/{name}/test"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/jobs"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/library/performers"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/library/performers/page"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/library/performers/{identifier}"
+  },
+  {
+    "methods": [
+      "DELETE"
+    ],
+    "path": "/api/library/performers/{item_id}"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/library/performers/{item_id}/detail"
+  },
+  {
+    "methods": [
+      "PATCH"
+    ],
+    "path": "/api/library/performers/{item_id}/monitor"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/library/rescan"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/library/scenes"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/library/scenes/page"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/library/scenes/{identifier}"
+  },
+  {
+    "methods": [
+      "DELETE"
+    ],
+    "path": "/api/library/scenes/{item_id}"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/library/scenes/{item_id}/detail"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/library/scenes/{item_id}/monitor"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/library/scenes/{item_id}/rename"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/library/scenes/{item_id}/search"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/library/scenes/{item_id}/settings"
+  },
+  {
+    "methods": [
+      "PATCH"
+    ],
+    "path": "/api/library/scenes/{item_id}/settings"
+  },
+  {
+    "methods": [
+      "PUT"
+    ],
+    "path": "/api/library/scenes/{item_id}/tags"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/library/scenes/{scene_id}/refresh"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/library/studios"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/library/studios/page"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/library/studios/{identifier}"
+  },
+  {
+    "methods": [
+      "DELETE"
+    ],
+    "path": "/api/library/studios/{item_id}"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/library/studios/{item_id}/detail"
+  },
+  {
+    "methods": [
+      "PATCH"
+    ],
+    "path": "/api/library/studios/{item_id}/monitor"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/manual-import"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/manual-import/scan"
+  },
+  {
+    "methods": [
+      "DELETE"
+    ],
+    "path": "/api/media-files/{media_id}"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/media-files/{media_id}/detail"
+  },
+  {
+    "methods": [
+      "PATCH"
+    ],
+    "path": "/api/media-files/{media_id}/playback"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/media-files/{media_id}/preview"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/media-files/{media_id}/preview"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/media-files/{media_id}/probe"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/media-files/{media_id}/rename"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/media-files/{media_id}/screengrab"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/media-files/{media_id}/stream"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/media-files/{media_id}/thumbnail"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/media-library/duplicates"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/media-library/files"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/media-library/files/page"
+  },
+  {
+    "methods": [
+      "DELETE"
+    ],
+    "path": "/api/media-library/missing"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/media-library/scan"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/media-library/status"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/media-library/unmatched"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/media-library/unmatched/{unmatched_id}/match/{scene_id}"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/metadata/performers/{identifier}"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/metadata/performers/{identifier}/scenes"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/metadata/scenes/{identifier}"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/metadata/scenes/{identifier}/monitor"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/metadata/studios/{identifier}"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/metadata/studios/{identifier}/scenes"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/quality-profiles"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/quality-profiles"
+  },
+  {
+    "methods": [
+      "DELETE"
+    ],
+    "path": "/api/quality-profiles/{profile_id}"
+  },
+  {
+    "methods": [
+      "PUT"
+    ],
+    "path": "/api/quality-profiles/{profile_id}"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/release-profiles"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/release-profiles"
+  },
+  {
+    "methods": [
+      "DELETE"
+    ],
+    "path": "/api/release-profiles/{profile_id}"
+  },
+  {
+    "methods": [
+      "PUT"
+    ],
+    "path": "/api/release-profiles/{profile_id}"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/root-folders"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/root-folders"
+  },
+  {
+    "methods": [
+      "DELETE"
+    ],
+    "path": "/api/root-folders/{folder_id}"
+  },
+  {
+    "methods": [
+      "PUT"
+    ],
+    "path": "/api/root-folders/{folder_id}"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/rss/history"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/rss/status"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/rss/sync"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/search/performers"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/search/releases"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/search/releases/grab"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/search/scenes"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/search/status"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/search/studios"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/settings"
+  },
+  {
+    "methods": [
+      "PATCH"
+    ],
+    "path": "/api/settings/automation"
+  },
+  {
+    "methods": [
+      "PATCH"
+    ],
+    "path": "/api/settings/backups"
+  },
+  {
+    "methods": [
+      "PATCH"
+    ],
+    "path": "/api/settings/file-management"
+  },
+  {
+    "methods": [
+      "PATCH"
+    ],
+    "path": "/api/settings/file-management/advanced"
+  },
+  {
+    "methods": [
+      "PATCH"
+    ],
+    "path": "/api/settings/general"
+  },
+  {
+    "methods": [
+      "PATCH"
+    ],
+    "path": "/api/settings/native-usenet"
+  },
+  {
+    "methods": [
+      "PATCH"
+    ],
+    "path": "/api/settings/newznab"
+  },
+  {
+    "methods": [
+      "PATCH"
+    ],
+    "path": "/api/settings/rss"
+  },
+  {
+    "methods": [
+      "PATCH"
+    ],
+    "path": "/api/settings/security"
+  },
+  {
+    "methods": [
+      "PATCH"
+    ],
+    "path": "/api/settings/theporndb"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/system/diskspace"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/system/health"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/system/status"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/tags"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/tags"
+  },
+  {
+    "methods": [
+      "DELETE"
+    ],
+    "path": "/api/tags/{tag_id}"
+  },
+  {
+    "methods": [
+      "PUT"
+    ],
+    "path": "/api/tags/{tag_id}"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/wanted/cutoff-unmet"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/wanted/missing"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/wanted/search"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/api/webhooks"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/webhooks"
+  },
+  {
+    "methods": [
+      "DELETE"
+    ],
+    "path": "/api/webhooks/{webhook_id}"
+  },
+  {
+    "methods": [
+      "PUT"
+    ],
+    "path": "/api/webhooks/{webhook_id}"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/api/webhooks/{webhook_id}/test"
+  },
+  {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "path": "/docs"
+  },
+  {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "path": "/docs/oauth2-redirect"
+  },
+  {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "path": "/openapi.json"
+  },
+  {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "path": "/redoc"
+  }
+]
