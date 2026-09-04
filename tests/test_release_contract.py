@@ -276,3 +276,9 @@ def test_release_helper_tracks_current_version_bearing_modules():
     assert "scarletx/usenet/worker.py" in module.VERSIONED_FILES
     assert "scarletx/main.py" not in module.VERSIONED_FILES
     assert "scarletx/native_usenet.py" not in module.VERSIONED_FILES
+
+
+def test_permanent_release_workflow_accepts_prerelease_source_version():
+    workflow = text(".github/workflows/release.yml")
+    assert 'NEXT_VERSION="$(python tools/release_version.py next "$CURRENT_VERSION")"' in workflow
+    assert 'test "${CURRENT_VERSION%.*}" = "0.3"' not in workflow
