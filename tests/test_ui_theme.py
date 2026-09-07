@@ -42,3 +42,23 @@ def test_dark_theme_covers_primary_ui_surfaces():
     ]
     for rule in required_rules:
         assert rule in page
+
+
+def test_activity_exposes_native_downloader_restart_control():
+    source = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    assert 'id="restartDownloader"' in source
+    assert "/api/download-client/restart" in source
+    assert "requeued" in source
+
+
+def test_library_media_list_and_player_omit_filename_and_audio_codec():
+    source = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    rows = source[source.index("function mediaFileRowsHtml"):source.index("function mediaFilesHtml")]
+    table = source[source.index("function mediaFilesHtml"):source.index("function mediaPageUrl")]
+    player = source[source.index("async function playMedia"):source.index("async function wanted")]
+
+    assert "x.filename" not in rows
+    assert "x.audio_codec" not in rows
+    assert "<th>File</th>" not in table
+    assert "x.missing" in rows
+    assert "<b>Audio</b>" not in player
