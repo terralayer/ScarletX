@@ -9,7 +9,7 @@ the Library media display.
 
 ## Scope
 
-This change covers four user-visible behaviors:
+This change covers five user-visible behaviors:
 
 1. The Activity page can restart only the built-in downloader worker.
 2. ScarletX rejects releases smaller than 500 MiB and rejects release titles
@@ -18,6 +18,8 @@ This change covers four user-visible behaviors:
    to complete a release when no eligible main video remains.
 4. The Library media list and player no longer display filenames or audio codec
    information.
+5. The first-run UI opens without account setup or login; optional UI
+   authentication can be configured and enabled later from Settings.
 
 The 500 MiB threshold is fixed policy for this change, not a new setting. It is
 exactly 524,288,000 bytes.
@@ -129,6 +131,36 @@ The player Media Information section removes the Audio fact. Backend response
 fields remain unchanged for API compatibility; this is a presentation-only
 change.
 
+## Optional UI Authentication
+
+Add a persisted `ui_auth_enabled` setting with a default of `false`. The upgrade
+default is also `false`, including installations that already contain an
+administrator account. Existing accounts and session records are retained so no
+credentials are destroyed, but they do not gate ScarletX while the setting is
+off.
+
+When UI authentication is disabled, the static application boots immediately,
+first-run setup does not create or request a setup token, and ScarletX API calls
+made by the UI do not require a session cookie. The independent API-key setting
+and credential mechanism remain stored for future integration use, but the
+browser UI does not ask for an API key.
+
+The Settings security area adds an Enable UI Authentication control plus
+username, password, and confirmation fields. Enabling authentication requires
+valid credentials in the same operation. ScarletX creates or updates the single
+administrator, creates a session for that administrator, persists the enabled
+setting, and keeps the current browser signed in as protection takes effect.
+
+Disabling UI authentication is allowed only from an authenticated session while
+the gate is enabled. Disabling preserves the administrator account, revokes old
+sessions, and makes subsequent UI visits open directly. Re-enabling later
+requires setting credentials again while ScarletX is open.
+
+The legacy token-based first-run setup flow and build-time login gate are removed
+from normal boot. Authentication core code remains because Settings can enable
+it later. Status responses explicitly report whether UI authentication is
+enabled so the frontend can either boot immediately or render the login form.
+
 ## Testing
 
 Tests will cover:
@@ -144,6 +176,9 @@ Tests will cover:
 - per-job completed-import exception isolation and webhook failure isolation;
 - Activity restart controls and the absence of filename/audio columns and player
   audio details; and
+- open first-run and upgrade behavior, optional enable/disable transitions,
+  credential validation, retained accounts, session continuity when enabling,
+  and immediate frontend boot while authentication is disabled; and
 - the existing downloader, queue-event, progress-persistence, route-contract,
   and UI contract suites.
 
