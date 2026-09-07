@@ -301,8 +301,25 @@ class BackupSettingsWrite(BaseModel):
 
 
 class SecuritySettingsWrite(BaseModel):
+    ui_auth_enabled: bool = False
     api_key_enabled: bool = False
     api_key: str | None = None
+    username: str | None = Field(default=None, max_length=100)
+    password: str | None = Field(default=None, max_length=1024)
+    password_confirm: str | None = Field(default=None, max_length=1024)
+
+    @model_validator(mode="after")
+    def validate_ui_auth_credentials(self):
+        if not self.ui_auth_enabled:
+            return self
+        if not (self.username or "").strip():
+            raise ValueError("Username is required when enabling UI authentication")
+        if len(self.password or "") < 12:
+            raise ValueError("Password must be at least 12 characters")
+        if self.password != self.password_confirm:
+            raise ValueError("Passwords do not match")
+        self.username = self.username.strip()
+        return self
 
 
 class AdminCredentialsWrite(BaseModel):
@@ -340,4 +357,3 @@ class LoginWrite(BaseModel):
         if not value:
             raise ValueError("Username is required")
         return value
-

@@ -37,7 +37,7 @@ LEGACY_KEYS={
 def default_setting_values():
     d=Settings()
     return {
-      "app_name":d.app_name,"theporndb_api_key":d.theporndb_api_key.get_secret_value(),"theporndb_base_url":d.theporndb_base_url,
+      "app_name":d.app_name,"ui_auth_enabled":"true" if d.ui_auth_enabled else "false","theporndb_api_key":d.theporndb_api_key.get_secret_value(),"theporndb_base_url":d.theporndb_base_url,
       "newznab_indexers_json":d.newznab_indexers_json.get_secret_value(),
       "native_usenet_enabled":"true" if d.native_usenet_enabled else "false",
       "native_usenet_providers_json":d.native_usenet_providers_json.get_secret_value(),"native_usenet_incomplete_dir":d.native_usenet_incomplete_dir,
@@ -340,7 +340,7 @@ def load_database_settings(db, *, force=False):
     if migrated:
         db.commit()
     settings=Settings(
-      app_name=v.get("app_name") or "ScarletX",theporndb_api_key=SecretStr(v.get("theporndb_api_key","")),theporndb_base_url=v.get("theporndb_base_url",d.theporndb_base_url),
+      app_name=v.get("app_name") or "ScarletX",ui_auth_enabled=_bool(v,"ui_auth_enabled",False),theporndb_api_key=SecretStr(v.get("theporndb_api_key","")),theporndb_base_url=v.get("theporndb_base_url",d.theporndb_base_url),
       newznab_indexers_json=SecretStr(v.get("newznab_indexers_json","[]")),
       native_usenet_enabled=_bool(v,"native_usenet_enabled",True),native_usenet_providers_json=SecretStr(v.get("native_usenet_providers_json","[]")),
       native_usenet_incomplete_dir=v.get("native_usenet_incomplete_dir",d.native_usenet_incomplete_dir),native_usenet_complete_dir=v.get("native_usenet_complete_dir",d.native_usenet_complete_dir),

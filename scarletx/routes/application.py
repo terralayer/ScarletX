@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session, selectinload
 from ..config import Settings
 from ..db import Base, SessionLocal, engine, get_session
 from ..models import (
-    AuthUser, BackgroundJob, BackupRecord, History, IndexerFeedItem, LibraryItemConfig,
+    BackgroundJob, BackupRecord, History, IndexerFeedItem, LibraryItemConfig,
     MediaFile, MediaProbe, NativeUsenetJob, Performer, PlaybackState, QualityProfile, ReleaseBlocklist, ReleaseProfile,
     RootFolder, Scene, Studio, TrackedDownload, TrackedDownloadMeta, UnmatchedMediaFile,
     UserTag, Webhook, library_user_tag, utcnow,
@@ -34,6 +34,7 @@ from ..library_management import (
     seed_quality_profiles,
 )
 from ..schemas import (
+    AdminCredentialsWrite,
     AutomationSettingsWrite,
     FileManagementSettingsWrite,
     GeneralSettingsWrite,
@@ -65,6 +66,8 @@ from ..schemas import (
     UserTagWrite,
     WebhookWrite,
 )
+from ..auth import SESSION_COOKIE_NAME, revoke_all_sessions, session_user
+from ..auth_routes import update_admin_credentials
 from ..download_clients import DownloadClientError, resolve_client, submit_release
 from ..native_usenet import (
     NativeUsenetError, UsenetProviderConfig, completed_rows as native_completed_rows,
@@ -79,7 +82,6 @@ from ..notifications import emit_webhooks
 from ..rss import rss_sync_cycle
 from ..wanted import calendar_items, cutoff_unmet, disk_space, missing_items
 from ..settings_store import load_database_settings, seed_database_settings, set_setting
-from ..setup_security import ensure_setup_token
 from ..studio_art import StudioArtworkError, cache_studio_artwork, cached_studio_artwork, download_and_prepare_studio_artwork
 from ..media_library import (
     MediaLibraryError, asset_for, duplicate_rows, index_media_file, index_media_file_by_id,
@@ -285,9 +287,6 @@ async def lifespan(_: FastAPI):
         with engine.begin() as connection:
             ensure_file_scan_state_table(connection)
             ensure_performance_indexes(connection)
-        setup_token = ensure_setup_token(admin_exists=db.scalar(select(AuthUser.id).limit(1)) is not None)
-        if setup_token:
-            print(f"ScarletX first-run setup token: {setup_token}", flush=True)
         seed_quality_profiles(db)
         default_media_root = os.getenv("SCARLETX_DEFAULT_MEDIA_ROOT", "").strip()
         if default_media_root and db.scalar(select(RootFolder.id).where(RootFolder.content_type == "scene").limit(1)) is None:
@@ -421,7 +420,7 @@ def database_settings(db: Session = Depends(get_session)):
         "automation": {"enabled": settings.automatic_search_enabled, "interval_minutes": settings.automatic_search_interval_minutes, "batch_size": settings.automatic_search_batch_size},
         "rss": {"enabled": settings.rss_sync_enabled, "interval_minutes": settings.rss_sync_interval_minutes, "max_releases_per_indexer": settings.rss_max_releases_per_indexer, "max_grabs_per_cycle": settings.rss_max_grabs_per_cycle},
         "backups": {"enabled": settings.backup_enabled, "directory": settings.backup_directory, "interval_hours": settings.backup_interval_hours, "keep": settings.backup_keep},
-        "security": {"api_key_enabled": settings.api_key_enabled, "api_key_configured": bool(settings.api_key.get_secret_value())},
+        "security": {"ui_auth_enabled": settings.ui_auth_enabled, "api_key_enabled": settings.api_key_enabled, "api_key_configured": bool(settings.api_key.get_secret_value())},
         "scarletx_log_level": settings.scarletx_log_level,
     }
 
@@ -569,18 +568,43 @@ def update_backup_settings(request: BackupSettingsWrite, db: Session = Depends(g
 
 
 @app.patch("/api/settings/security")
-def update_security_settings(request: SecuritySettingsWrite, db: Session = Depends(get_session)):
+def update_security_settings(
+    payload: SecuritySettingsWrite,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_session),
+):
     current = load_database_settings(db)
-    key = request.api_key or current.api_key.get_secret_value()
-    generated = bool(request.api_key_enabled and not key)
+    if payload.ui_auth_enabled:
+        update_admin_credentials(
+            AdminCredentialsWrite(
+                username=payload.username or "",
+                password=payload.password or "",
+                password_confirm=payload.password_confirm or "",
+            ),
+            request,
+            response,
+            db,
+        )
+    elif current.ui_auth_enabled:
+        token = request.cookies.get(SESSION_COOKIE_NAME) or ""
+        user = session_user(db, token)
+        if user is None:
+            raise HTTPException(401, "An authenticated browser session is required to disable UI authentication")
+        revoke_all_sessions(db, user.id)
+        response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+
+    key = payload.api_key or current.api_key.get_secret_value()
+    generated = bool(payload.api_key_enabled and not key)
     if generated:
         import secrets
         key = secrets.token_urlsafe(32)
-    set_setting(db, "api_key_enabled", "true" if request.api_key_enabled else "false", commit=False)
+    set_setting(db, "ui_auth_enabled", "true" if payload.ui_auth_enabled else "false", commit=False)
+    set_setting(db, "api_key_enabled", "true" if payload.api_key_enabled else "false", commit=False)
     set_setting(db, "api_key", key, commit=False)
     db.commit()
     result = database_settings(db)["security"]
-    if request.api_key_enabled and (request.api_key or generated):
+    if payload.api_key_enabled and (payload.api_key or generated):
         result["api_key"] = key
     return result
 

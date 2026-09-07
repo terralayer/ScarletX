@@ -8,9 +8,7 @@
     <form id="authForm" hidden>
       <div class="sx-auth-fields">
         <div class="sx-auth-field"><label for="authUsername">Username</label><input id="authUsername" name="username" autocomplete="username" maxlength="100" required></div>
-        <div class="sx-auth-field" id="authSetupTokenField" hidden><label for="authSetupToken">First-run setup token</label><input id="authSetupToken" name="setup_token" autocomplete="off" maxlength="512"><span class="sx-auth-hint">Copy the token printed in the ScarletX backend startup log.</span></div>
         <div class="sx-auth-field"><label for="authPassword">Password</label><input id="authPassword" name="password" type="password" autocomplete="current-password" maxlength="1024" required></div>
-        <div class="sx-auth-field" id="authConfirmField" hidden><label for="authPasswordConfirm">Confirm password</label><input id="authPasswordConfirm" name="password_confirm" type="password" autocomplete="new-password" maxlength="1024"></div>
       </div>
       <div class="sx-auth-error" id="authError"></div>
       <button class="sx-auth-submit" id="authSubmit" type="submit">Continue</button>
@@ -36,7 +34,7 @@
   </div>
 </dialog>`);
 
-const state = {setupRequired:false, username:'', appStarted:false, appBoot:null, queueSource:null, queueFailures:0, queueRetryTimer:null, queueLastEventId:0};
+const state = {username:'', appStarted:false, appBoot:null, queueSource:null, queueFailures:0, queueRetryTimer:null, queueLastEventId:0};
 const el = id => document.getElementById(id);
 const QUEUE_KINDS = ['snapshot','progress','transition','history','resync'];
 
@@ -104,25 +102,29 @@ function startQueueStream() {
     return data;
   }
 
-  function setGate(mode, message='') {
-    const setup = mode === 'setup';
+  function setGate(message='') {
     el('authGate').hidden = false;
     el('authForm').hidden = false;
-    el('authSetupTokenField').hidden = !setup;
-    el('authSetupToken').required = setup;
-    el('authConfirmField').hidden = !setup;
-    el('authPasswordConfirm').required = setup;
-    el('authPassword').autocomplete = setup ? 'new-password' : 'current-password';
-    el('authTitle').textContent = setup ? 'Create your administrator' : 'Sign in to ScarletX';
-    el('authSubtitle').textContent = setup
-      ? 'Create the single local administrator account before ScarletX can be used.'
-      : 'Enter the local administrator credentials for this ScarletX server.';
-    el('authSubmit').textContent = setup ? 'Create administrator' : 'Sign in';
+    el('authTitle').textContent = 'Sign in to ScarletX';
+    el('authSubtitle').textContent = 'Enter the administrator credentials for this ScarletX server.';
+    el('authSubmit').textContent = 'Sign in';
     el('authError').textContent = message;
-    el('authSetupToken').value = '';
     el('authPassword').value = '';
-    el('authPasswordConfirm').value = '';
     setTimeout(() => el('authUsername').focus(), 0);
+  }
+
+  function bootApp() {
+    startQueueStream();
+    if (!state.appStarted && state.appBoot) {
+      state.appStarted = true;
+      Promise.resolve(state.appBoot()).catch(error => console.error('ScarletX boot failed', error));
+    }
+  }
+
+  function showOpenApp() {
+    el('authGate').hidden = true;
+    el('authAccount').hidden = true;
+    bootApp();
   }
 
   function showApp(status) {
@@ -131,20 +133,15 @@ function startQueueStream() {
     el('authAccount').hidden = false;
     el('authAccountButton').textContent = state.username;
     el('authAccountUsername').value = state.username;
-    startQueueStream();
-    if (!state.appStarted && state.appBoot) {
-      state.appStarted = true;
-      Promise.resolve(state.appBoot()).catch(error => console.error('ScarletX boot failed', error));
-    }
+    bootApp();
   }
 
   async function refresh() {
     el('authError').textContent = '';
     try {
       const status = await request('/api/auth/status');
-      state.setupRequired = !!status.setup_required;
-      if (status.setup_required) return setGate('setup');
-      if (!status.authenticated) return setGate('login');
+      if (!status.enabled) return showOpenApp(status);
+      if (!status.authenticated) return setGate();
       showApp(status);
     } catch (error) {
       el('authTitle').textContent = 'ScarletX is unavailable';
@@ -162,16 +159,7 @@ function startQueueStream() {
     try {
       const username = el('authUsername').value.trim();
       const password = el('authPassword').value;
-      if (state.setupRequired) {
-        const setupToken = el('authSetupToken').value.trim();
-        const passwordConfirm = el('authPasswordConfirm').value;
-        if (!setupToken) throw new Error('The first-run setup token is required.');
-        if (password.length < 12) throw new Error('Password must be at least 12 characters.');
-        if (password !== passwordConfirm) throw new Error('Passwords do not match.');
-        await request('/api/setup/admin', {method:'POST', body:JSON.stringify({username, password, password_confirm:passwordConfirm, setup_token:setupToken})});
-      } else {
-        await request('/api/auth/login', {method:'POST', body:JSON.stringify({username, password})});
-      }
+      await request('/api/auth/login', {method:'POST', body:JSON.stringify({username, password})});
       await refresh();
     } catch (error) {
       el('authError').textContent = error.message;

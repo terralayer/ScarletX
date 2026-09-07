@@ -66,11 +66,13 @@ def install_authentication(
         authenticated = False
         try:
             with session_factory() as db:
+                settings = settings_loader(db)
+                if not settings.ui_auth_enabled:
+                    return await call_next(request)
                 token = request.cookies.get(SESSION_COOKIE_NAME) or ""
                 if token and session_user(db, token) is not None:
                     authenticated = True
                 else:
-                    settings = settings_loader(db)
                     if settings.api_key_enabled:
                         expected = settings.api_key.get_secret_value()
                         supplied = _supplied_api_key(request)

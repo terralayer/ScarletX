@@ -13,13 +13,12 @@ def test_static_frontend_is_outside_backend_package():
     assert not (ROOT / "scarletx/web/index.html").exists()
 
 
-def test_static_auth_assets_contain_gate_and_account_controls():
+def test_static_auth_assets_contain_optional_login_and_account_controls():
     script = text("frontend/auth.js")
     styles = text("frontend/auth.css")
     assert 'id="authGate"' in script
     assert 'id="authUsername"' in script
     assert 'id="authPassword"' in script
-    assert 'id="authPasswordConfirm"' in script
     assert 'id="authAccountButton"' in script
     assert 'id="authLogoutButton"' in script
     assert 'id="authAccountDialog"' in script
@@ -31,7 +30,6 @@ def test_static_auth_script_uses_same_origin_api_and_gates_app_boot():
     script = text("frontend/auth.js")
     for endpoint in (
         "/api/auth/status",
-        "/api/setup/admin",
         "/api/auth/login",
         "/api/auth/logout",
         "/api/auth/admin",
@@ -39,6 +37,21 @@ def test_static_auth_script_uses_same_origin_api_and_gates_app_boot():
         assert endpoint in script
     assert "credentials:'same-origin'" in script or 'credentials: "same-origin"' in script
     assert "window.authGateBoot" in script
+
+
+def test_auth_gate_boots_application_immediately_when_disabled():
+    script = text("frontend/auth.js")
+    assert "if (!status.enabled)" in script
+    assert "showOpenApp(status)" in script
+    assert "/api/setup/admin" not in script
+
+
+def test_security_settings_expose_ui_auth_credentials():
+    script = text("frontend/app.js")
+    assert "ui_auth_enabled" in script
+    assert 'id="securityUsername"' in script
+    assert 'id="securityPassword"' in script
+    assert 'id="securityPasswordConfirm"' in script
 
 
 def test_web_image_injects_static_auth_assets_and_delays_legacy_boot():

@@ -95,6 +95,9 @@
   "sceneRoot",
   "sceneTemplate",
   "searchWanted",
+  "securityPassword",
+  "securityPasswordConfirm",
+  "securityUsername",
   "settingsBody",
   "stats",
   "statusDot",
@@ -105,6 +108,7 @@
   "systemSettings",
   "tpdbKey",
   "tpdbUrl",
+  "uiAuthEnabled",
   "versionSide",
   "wantedBody"
 ]

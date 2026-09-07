@@ -21,6 +21,7 @@ from .auth import (
 )
 from .db import get_session
 from .models import AuthUser
+from .settings_store import load_database_settings
 from .setup_security import consume_setup_token, verify_setup_token
 from .schemas import AdminCredentialsWrite, AdminSetupWrite, LoginWrite
 
@@ -127,9 +128,11 @@ def setup_admin(
 
 @router.get("/api/auth/status")
 def auth_status(request: Request, db: Session = Depends(get_session)):
+    enabled = load_database_settings(db).ui_auth_enabled
     setup_required = not _admin_exists(db)
     user = None if setup_required else _current_user(request, db)
     return {
+        "enabled": enabled,
         "setup_required": setup_required,
         "authenticated": user is not None,
         "username": user.username if user else None,
@@ -187,8 +190,27 @@ def update_admin_credentials(
 ):
     token = request.cookies.get(SESSION_COOKIE_NAME) or ""
     user = session_user(db, token)
-    if user is None:
+    if user is None and load_database_settings(db).ui_auth_enabled:
         raise HTTPException(401, "Authentication required")
+
+    if user is None:
+        user = db.scalar(select(AuthUser).order_by(AuthUser.id).limit(1))
+    if user is None:
+        user = AuthUser(
+            username=payload.username,
+            username_normalized=normalize_username(payload.username),
+            password_hash=hash_password(payload.password),
+        )
+        db.add(user)
+        try:
+            db.commit()
+            db.refresh(user)
+        except IntegrityError as exc:
+            db.rollback()
+            raise HTTPException(409, "Username is already in use") from exc
+        replacement = create_session(db, user.id)
+        _set_session_cookie(response, request, replacement)
+        return {"username": user.username}
 
     user.username = payload.username
     user.username_normalized = normalize_username(payload.username)

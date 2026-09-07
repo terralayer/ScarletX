@@ -33,7 +33,7 @@ def make_client():
     def private():
         return {"private": True}
 
-    settings = SimpleNamespace(api_key_enabled=False, api_key=SecretStr(""))
+    settings = SimpleNamespace(ui_auth_enabled=True, api_key_enabled=False, api_key=SecretStr(""))
     install_authentication(app, session_factory=factory, settings_loader=lambda _db: settings)
     install_security_headers(app)
     return TestClient(app)

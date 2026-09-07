@@ -13,7 +13,7 @@ from scarletx.http_security import install_authentication
 from scarletx.models import AuthUser
 
 
-def make_app(*, api_key_enabled=False, api_key="", raise_server_exceptions=True):
+def make_app(*, ui_auth_enabled=False, api_key_enabled=False, api_key="", raise_server_exceptions=True):
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -40,6 +40,7 @@ def make_app(*, api_key_enabled=False, api_key="", raise_server_exceptions=True)
         raise RuntimeError("downstream failure")
 
     settings = SimpleNamespace(
+        ui_auth_enabled=ui_auth_enabled,
         api_key_enabled=api_key_enabled,
         api_key=SecretStr(api_key),
     )
@@ -67,29 +68,36 @@ def test_health_remains_anonymous_during_first_run():
     assert response.json()["app"] == "ScarletX"
 
 
-def test_private_api_is_blocked_during_setup_and_after_setup_without_auth():
-    client, factory = make_app()
+def test_private_api_is_open_when_ui_auth_is_disabled():
+    client, factory = make_app(ui_auth_enabled=False)
+    assert client.get("/api/private").status_code == 200
+    create_admin(factory)
+    assert client.get("/api/private").status_code == 200
+
+
+def test_private_api_is_blocked_when_ui_auth_is_enabled_without_session():
+    client, factory = make_app(ui_auth_enabled=True)
     assert client.get("/api/private").status_code == 401
     create_admin(factory)
     assert client.get("/api/private").status_code == 401
 
 
 def test_activity_stream_requires_authenticated_session():
-    client, factory = make_app()
+    client, factory = make_app(ui_auth_enabled=True)
     create_admin(factory)
 
     assert client.get("/api/activity/stream").status_code == 401
 
 
 def test_valid_browser_session_authenticates_private_api():
-    client, factory = make_app()
+    client, factory = make_app(ui_auth_enabled=True)
     token = create_admin(factory)
     client.cookies.set("scarletx_session", token)
     assert client.get("/api/private").status_code == 200
 
 
 def test_existing_api_key_authenticates_when_enabled():
-    client, factory = make_app(api_key_enabled=True, api_key="automation-key")
+    client, factory = make_app(ui_auth_enabled=True, api_key_enabled=True, api_key="automation-key")
     create_admin(factory)
     assert client.get("/api/private", headers={"X-Api-Key": "automation-key"}).status_code == 200
     assert client.get("/api/private", headers={"Authorization": "Bearer automation-key"}).status_code == 200
@@ -98,20 +106,20 @@ def test_existing_api_key_authenticates_when_enabled():
 
 
 def test_non_api_spa_shell_remains_public():
-    client, _factory = make_app()
+    client, _factory = make_app(ui_auth_enabled=True)
     response = client.get("/")
     assert response.status_code == 404
 
 
 def test_framework_docs_and_openapi_are_not_anonymous():
-    client, _factory = make_app()
+    client, _factory = make_app(ui_auth_enabled=True)
     assert client.get("/docs").status_code == 401
     assert client.get("/redoc").status_code == 401
     assert client.get("/openapi.json").status_code == 401
 
 
 def test_authenticated_downstream_failure_is_not_misreported_as_auth_outage():
-    client, factory = make_app(raise_server_exceptions=False)
+    client, factory = make_app(ui_auth_enabled=True, raise_server_exceptions=False)
     token = create_admin(factory)
     client.cookies.set("scarletx_session", token)
 

@@ -104,6 +104,7 @@ def _default_indexers() -> str:
 
 class Settings(BaseModel):
     app_name: str = "ScarletX"
+    ui_auth_enabled: bool = False
     theporndb_api_key: SecretStr = SecretStr(os.getenv("SCARLETX_TPDB_API_KEY", ""))
     theporndb_base_url: str = os.getenv("SCARLETX_TPDB_BASE_URL", "https://api.theporndb.net")
     newznab_indexers_json: SecretStr = SecretStr(_default_indexers())

@@ -61,6 +61,7 @@ def test_first_run_setup_creates_one_admin_and_logs_in():
 
     assert client.get("/api/setup/status").json() == {"setup_required": False}
     assert client.get("/api/auth/status").json() == {
+        "enabled": False,
         "setup_required": False,
         "authenticated": True,
         "username": "admin",
