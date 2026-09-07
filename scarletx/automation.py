@@ -11,6 +11,7 @@ from .newznab import NewznabClient,NewznabError,NewznabRelease
 from .notifications import emit_webhooks
 from .release_profiles import apply_release_profiles
 from .download_clients import DownloadClientError, submit_release
+from .release_policy import release_rejection_reason
 ACTIVE_DOWNLOAD_STATES={"queued","downloading","paused","postprocessing","import_pending"}
 @dataclass(frozen=True)
 class GrabResult:
@@ -56,7 +57,7 @@ def _blocked(db,release):
 def choose_best_release(scene,releases,profile,current=None,*,db=None):
     current_resolution=detect_quality(current.quality).resolution if current and current.quality else "unknown";ranked=[]
     for release in releases:
-        if (db is not None and _blocked(db,release)) or not adult_studio_release_allowed(scene,release.title):continue
+        if release_rejection_reason(release.title,release.size) or (db is not None and _blocked(db,release)) or not adult_studio_release_allowed(scene,release.title):continue
         qs=score_release(release.title,release.size,profile);bonus=title_match_bonus(scene,release.title)
         if qs is None or bonus is None:continue
         extra=0
@@ -89,6 +90,8 @@ async def grab_specific_release(session_factory,settings,*,scene_id,release,quer
         scene=db.get(Scene,scene_id)
         if not scene or scene.content_type!="scene":return GrabResult("not_found",scene_id,query,error="Scene not found")
         if _blocked(db,release):return GrabResult("blocked",scene_id,query,title=scene.title,error="Release is blocklisted")
+        policy_reason=release_rejection_reason(release.title,release.size)
+        if policy_reason:return GrabResult("blocked",scene_id,query,title=scene.title,error=policy_reason)
         if not adult_studio_release_allowed(scene,release.title):return GrabResult("blocked",scene_id,query,title=scene.title,error="Release is not a matching studio release")
         if db.scalar(select(TrackedDownload.id).where(TrackedDownload.scene_id==scene.id,TrackedDownload.status.in_(ACTIVE_DOWNLOAD_STATES)).limit(1)):return GrabResult("already_downloading",scene.id,query,title=scene.title)
         title=scene.title

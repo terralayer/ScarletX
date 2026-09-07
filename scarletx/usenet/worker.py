@@ -38,6 +38,7 @@ from ..status_console import emit_status
 from ..models import History, NativeUsenetJob, TrackedDownload, utcnow
 from ..progress import ProgressCheckpointGate
 from ..download_metrics import SegmentResultBuffer, download_phase_metrics
+from ..release_policy import MIN_RELEASE_BYTES, payload_name_is_ignored
 
 
 class NativeUsenetError(RuntimeError):
@@ -593,6 +594,17 @@ def _file_download_priority(item: NZBFile, index: int) -> tuple[int, bool]:
         return 70, False
     return 30, False
 
+
+def nzb_file_is_ignored(item: NZBFile, index: int) -> bool:
+    return payload_name_is_ignored(f"{item.subject} {_subject_filename(item.subject, index)}")
+
+
+def validate_nzb_release_size(files: list[NZBFile]) -> int:
+    total = sum(segment.bytes for item in files for segment in item.segments)
+    if total < MIN_RELEASE_BYTES:
+        raise NativeUsenetError("Release is smaller than 500 MiB")
+    return total
+
 def _safe_filename(value: str, fallback: str) -> str:
     name = Path(value or fallback).name.strip().replace("\x00", "")
     name = re.sub(r"[\\/:*?\"<>|]", "_", name)
@@ -847,7 +859,7 @@ def recover_unknown_videos(payload_dir: Path, max_candidates: int = 4) -> list[s
 def _playable_videos(payload_dir: Path) -> list[Path]:
     rows = [p for p in payload_dir.rglob("*") if p.is_file() and p.suffix.casefold() in _VIDEO_EXTENSIONS]
     non_samples = [p for p in rows if not re.search(r"(?:^|[. _-])(sample|trailer)(?:[. _-]|$)", p.name, re.I)]
-    return sorted(non_samples or rows, key=lambda p: p.stat().st_size, reverse=True)
+    return sorted(non_samples, key=lambda p: p.stat().st_size, reverse=True)
 
 
 class _ProviderConnectionPool:
@@ -1803,6 +1815,7 @@ async def process_job(session_factory, settings, job_id: str) -> None:
             nzb_payload = await _fetch_nzb(url)
             nzb_file.write_bytes(nzb_payload)
         files = parse_nzb(nzb_payload)
+        validate_nzb_release_size(files)
 
         file_states: dict[int, dict] = {}
         primary_indices: list[int] = []
@@ -1810,6 +1823,8 @@ async def process_job(session_factory, settings, job_id: str) -> None:
         optional_indices: list[int] = []
 
         for file_index, item in enumerate(files, 1):
+            if nzb_file_is_ignored(item, file_index):
+                continue
             priority, deferred = _file_download_priority(item, file_index)
             state_dir = state_root / f"{file_index:04d}"
             state_dir.mkdir(parents=True, exist_ok=True)
@@ -1851,6 +1866,9 @@ async def process_job(session_factory, settings, job_id: str) -> None:
                 optional_indices.append(file_index)
             else:
                 primary_indices.append(file_index)
+
+        if not file_states:
+            raise NativeUsenetError("Release contains only sample or image payloads")
 
         # An unusual NZB containing only support/recovery files should still be downloadable.
         if not primary_indices:

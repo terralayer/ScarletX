@@ -210,3 +210,28 @@ def test_import_failure_path_remains_retryable():
     assert "except (FileImportError, MetadataProviderError) as exc:" in source
     failure_block = source[source.index("except (FileImportError, MetadataProviderError) as exc:") :]
     assert 'tracked.status = "import_pending"' in failure_block
+
+
+def test_nzb_policy_ignores_images_and_sample_entries_but_keeps_archives():
+    from scarletx.native_usenet import NZBFile, NZBSegment, nzb_file_is_ignored
+
+    segment = (NZBSegment(number=1, bytes=600 * 1024 * 1024, message_id="x"),)
+    assert nzb_file_is_ignored(NZBFile('"cover.jpg"', (), segment), 1) is True
+    assert nzb_file_is_ignored(NZBFile('"scene.sample.mkv"', (), segment), 1) is True
+    assert nzb_file_is_ignored(NZBFile('"scene.part01.rar"', (), segment), 1) is False
+
+
+def test_nzb_policy_rejects_advertised_total_below_500_mib():
+    from scarletx.native_usenet import NativeUsenetError, NZBFile, NZBSegment, validate_nzb_release_size
+
+    files = [NZBFile("scene.mkv", (), (NZBSegment(1, 499 * 1024 * 1024, "x"),))]
+    with pytest.raises(NativeUsenetError, match="smaller than 500 MiB"):
+        validate_nzb_release_size(files)
+
+
+def test_primary_video_never_falls_back_to_sample(tmp_path):
+    from scarletx.library_management import FileImportError, select_primary_video
+
+    (tmp_path / "scene.sample.mkv").write_bytes(b"video")
+    with pytest.raises(FileImportError, match="sample or trailer"):
+        select_primary_video(str(tmp_path))

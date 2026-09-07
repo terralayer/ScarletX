@@ -123,8 +123,9 @@ def select_primary_video(storage_path: str) -> Path:
     if not candidates:
         raise FileImportError(f"No supported video file found under {source}")
     non_samples = [p for p in candidates if not re.search(r"(?:^|[. _-])(sample|trailer)(?:[. _-]|$)", p.name, re.I)]
-    pool = non_samples or candidates
-    return max(pool, key=lambda p: p.stat().st_size)
+    if not non_samples:
+        raise FileImportError(f"Completed download contains only sample or trailer videos: {source}")
+    return max(non_samples, key=lambda p: p.stat().st_size)
 
 
 def unique_destination(path: Path) -> Path:
