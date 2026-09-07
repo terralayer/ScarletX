@@ -79,6 +79,12 @@
   },
   {
     "methods": [
+      "POST"
+    ],
+    "path": "/api/download-client/restart"
+  },
+  {
+    "methods": [
       "GET"
     ],
     "path": "/api/download-client/status"

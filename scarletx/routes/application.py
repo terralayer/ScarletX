@@ -72,12 +72,13 @@ from ..download_clients import DownloadClientError, resolve_client, submit_relea
 from ..native_usenet import (
     NativeUsenetError, UsenetProviderConfig, completed_rows as native_completed_rows,
     history_rows as native_history_rows, failed_rows as native_failed_rows, job_dict as native_job_dict,
-    native_client_ready, native_worker_loop, queue_rows as native_queue_rows, request_cancel as request_native_cancel,
+    native_client_ready, queue_rows as native_queue_rows, request_cancel as request_native_cancel,
     test_provider as test_native_provider, tool_status as native_tool_status, reprocess_completed_job as reprocess_native_completed_job,
 )
 from ..services import repair_legacy_auto_monitored_adult_entities, sync_adult_scene_entities_to_library, upsert_performer, upsert_scene, upsert_studio
 from ..backups import BackupError, create_backup, list_backups
 from ..download_processing import process_completed_downloads as process_downloads_core
+from ..downloader_supervisor import DownloaderSupervisor
 from ..notifications import emit_webhooks
 from ..rss import rss_sync_cycle
 from ..wanted import calendar_items, cutoff_unmet, disk_space, missing_items
@@ -258,6 +259,14 @@ def migrate_to_scarletx(db: Session) -> None:
             raw.close()
 
 
+def _runtime_settings_loader():
+    with SessionLocal() as runtime_db:
+        return load_database_settings(runtime_db)
+
+
+downloader_supervisor = DownloaderSupervisor(SessionLocal, _runtime_settings_loader)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(engine)
@@ -300,12 +309,8 @@ async def lifespan(_: FastAPI):
             print(render_dashboard(collect_startup_status(db, runtime), version="0.3.10-beta.1"), flush=True)
         except Exception as exc:
             emit_status("Status Console", "FAILED", exc.__class__.__name__, severity="error")
-    def _runtime_settings_loader():
-        with SessionLocal() as runtime_db:
-            return load_database_settings(runtime_db)
-
+    await downloader_supervisor.start()
     watchers = [
-        asyncio.create_task(native_worker_loop(SessionLocal, _runtime_settings_loader)),
         asyncio.create_task(completed_download_import_loop()),
         asyncio.create_task(automatic_search_loop()),
         asyncio.create_task(rss_sync_loop()),
@@ -313,7 +318,7 @@ async def lifespan(_: FastAPI):
         asyncio.create_task(media_watch_loop(SessionLocal)),
         asyncio.create_task(queue_event_pump(_load_cached_activity_queue_data)),
     ]
-    emit_status("Background Workers", "ACTIVE", f"{len(watchers)} workers", severity="active")
+    emit_status("Background Workers", "ACTIVE", f"{len(watchers) + 1} workers", severity="active")
     try:
         yield
     finally:
@@ -324,6 +329,7 @@ async def lifespan(_: FastAPI):
                 await watcher
             except asyncio.CancelledError:
                 pass
+        await downloader_supervisor.stop()
         await close_shared_tpdb_clients()
         await close_shared_newznab_clients()
         await close_remote_art_client()
@@ -874,7 +880,16 @@ async def download_client_status(settings: Settings = Depends(get_runtime_settin
         "id": "scarletx", "provider": "ScarletX Built-In",
         "configured": bool(providers), "connected": bool(providers), "selected": True,
         "providers": len(providers), "tools": native_tool_status(),
+        "worker": downloader_supervisor.status(),
     }
+
+
+@app.post("/api/download-client/restart")
+async def restart_download_client():
+    try:
+        return await downloader_supervisor.restart()
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
 
 
 @app.post("/api/download-client/test")
