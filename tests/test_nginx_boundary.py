@@ -1,9 +1,12 @@
 from pathlib import Path
+import tomllib
 
 from fastapi.testclient import TestClient
 
 
 ROOT = Path(__file__).resolve().parents[1]
+with (ROOT / "pyproject.toml").open("rb") as handle:
+    VERSION = tomllib.load(handle)["project"]["version"]
 
 
 def text(path: str) -> str:
@@ -98,8 +101,8 @@ def test_truenas_template_routes_public_port_through_nginx():
     template = text("packaging/truenas/scarletx/templates/docker-compose.yaml")
     assert "backend_image:" in values
     assert "web_image:" in values
-    assert "scarletx_backend_container_name: backend" in values
-    assert "scarletx_web_container_name: web" in values
+    assert f"scarletx_backend_container_name: scarletx-{VERSION}-backend" in values
+    assert f"scarletx_web_container_name: scarletx-{VERSION}-web" in values
     assert "backend_port: 8000" in values
     assert 'tpl.add_container(values.consts.scarletx_backend_container_name, "backend_image")' in template
     assert 'web.environment.add_env("SCARLETX_BACKEND_HOST", values.consts.scarletx_backend_container_name)' in template
@@ -138,10 +141,10 @@ def test_truenas_environment_paths_derive_from_constants():
 def test_truenas_metadata_uses_rendered_service_names():
     app = text("packaging/truenas/scarletx/app.yaml")
     questions = text("packaging/truenas/scarletx/questions.yaml")
-    assert "Container [backend]" in app
-    assert "Container [web]" in app
+    assert f"Container [scarletx-{VERSION}-backend]" in app
+    assert f"Container [scarletx-{VERSION}-web]" in app
     assert "Container [scarletx-backend]" not in app
     assert "Container [scarletx-web]" not in app
-    assert "- value: backend" in questions
-    assert "- value: web" in questions
-    assert "- value: scarletx" not in questions
+    assert f"- value: scarletx-{VERSION}-backend" in questions
+    assert f"- value: scarletx-{VERSION}-web" in questions
+    assert "- value: scarletx\n" not in questions

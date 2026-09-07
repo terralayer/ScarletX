@@ -36,7 +36,7 @@ def test_release_version_is_consistent():
     app = text("packaging/truenas/scarletx/app.yaml")
     values = text("packaging/truenas/scarletx/ix_values.yaml")
     assert f"app_version: {VERSION}" in app
-    assert "version: 1.0.2" in app
+    assert "version: 1.0.3" in app
     assert "changelog_url: https://github.com/terralayer/ScarletX/releases" in app
     assert re.search(rf"(?m)^\s+tag: {re.escape(VERSION)}$", values)
     assert "ghcr.io/terralayer/scarletx-web" in values
@@ -68,6 +68,16 @@ def test_shipped_application_metadata_reports_current_version():
     assert 'SCARLETX_WEB_PORT: ${SCARLETX_PORT:-8690}' in truenas_compose
     assert f'"version": "{VERSION}"' in text("scarletx/routes/application.py")
     assert f"RELEASE-NOTES-{VERSION}.md" in text("README.md")
+
+
+def test_truenas_container_names_include_the_release_version():
+    compose = text("docker-compose.truenas.yml")
+    values = text("packaging/truenas/scarletx/ix_values.yaml")
+
+    for role in ("permissions", "backend", "web"):
+        expected = f"scarletx-{VERSION}-{role}"
+        assert f"container_name: {expected}" in compose
+        assert f"_container_name: {expected}" in values
 
 
 def test_outbound_user_agents_report_current_version():

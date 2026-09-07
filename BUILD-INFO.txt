@@ -1,1 +1,1 @@
-ScarletX 0.3.10-beta.1 Local
+ScarletX 0.3.10-beta.2 Local
