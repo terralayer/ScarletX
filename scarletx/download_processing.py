@@ -8,7 +8,7 @@ from sqlalchemy import select
 from .config import Settings
 from .download_metrics import download_phase_metrics
 from .library_management import FileImportError, ensure_library_config, import_media_file
-from .metadata import MetadataProviderError, metadata_client
+from .metadata import metadata_client
 from .media_library import index_media_file_by_id
 from .models import (
     History,
@@ -237,7 +237,7 @@ async def process_completed_downloads(
                 emit_status("Import", "COMPLETED", moved or release_title, severity="ok")
             if media_id is not None:
                 await asyncio.to_thread(index_media_file_by_id, session_factory, media_id, generate_art=True)
-        except (FileImportError, MetadataProviderError) as exc:
+        except Exception as exc:
             emit_status("Import", "FAILED", f"{release_title} | {exc.__class__.__name__}", severity="error")
             with session_factory() as db:
                 tracked = db.get(TrackedDownload, job["tracked_id"])
@@ -246,7 +246,13 @@ async def process_completed_downloads(
                     tracked.error = str(exc)[:2000]
                     tracked.last_checked_at = utcnow()
                     db.commit()
+            failed += 1
 
     for event, payload in notifications:
-        await emit_webhooks(session_factory, event, payload)
+        try:
+            await emit_webhooks(session_factory, event, payload)
+        except Exception:
+            # Notification transport is best effort and must not change durable
+            # download/import outcomes or turn Process Completed into HTTP 500.
+            continue
     return {"enabled": True, "checked": len(states), "imported": imported, "failed": failed, "poll_seconds": settings.download_poll_seconds}

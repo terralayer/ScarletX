@@ -6,6 +6,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -207,8 +209,8 @@ def test_corrupt_zip_extraction_fails_without_masking_error(tmp_path):
 
 def test_import_failure_path_remains_retryable():
     source = IMPORT_SOURCE.read_text(encoding="utf-8")
-    assert "except (FileImportError, MetadataProviderError) as exc:" in source
-    failure_block = source[source.index("except (FileImportError, MetadataProviderError) as exc:") :]
+    assert "except Exception as exc:" in source
+    failure_block = source[source.index("except Exception as exc:") :]
     assert 'tracked.status = "import_pending"' in failure_block
 
 
@@ -235,3 +237,67 @@ def test_primary_video_never_falls_back_to_sample(tmp_path):
     (tmp_path / "scene.sample.mkv").write_bytes(b"video")
     with pytest.raises(FileImportError, match="sample or trailer"):
         select_primary_video(str(tmp_path))
+
+
+@pytest.mark.asyncio
+async def test_completed_import_operational_error_is_recorded_instead_of_escaping(tmp_path, monkeypatch):
+    from scarletx.config import Settings
+    from scarletx.db import Base
+    from scarletx.download_processing import process_completed_downloads
+    from scarletx.models import NativeUsenetJob, Scene, TrackedDownload
+    import scarletx.download_processing as processing
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'completed.db'}")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, expire_on_commit=False)
+    with session() as db:
+        scene = Scene(tpdb_id="scene-1", title="Scene One")
+        db.add(scene)
+        db.flush()
+        db.add(NativeUsenetJob(
+            id="job-1", title="Scene One", nzb_url="https://example.invalid/one.nzb",
+            status="completed", output_path=str(tmp_path / "completed"),
+        ))
+        db.add(TrackedDownload(
+            nzo_id="job-1", release_title="Scene One 1080p", scene_tpdb_id="scene-1",
+            scene_title="Scene One", scene_id=scene.id, status="import_pending",
+        ))
+        db.commit()
+
+    monkeypatch.setattr(processing, "import_media_file", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("media disk offline")))
+    result = await process_completed_downloads(session, Settings())
+
+    assert result["checked"] == 1
+    assert result["failed"] == 1
+    with session() as db:
+        tracked = db.query(TrackedDownload).one()
+        assert tracked.status == "import_pending"
+        assert tracked.error == "media disk offline"
+
+
+@pytest.mark.asyncio
+async def test_download_failure_webhook_error_does_not_break_processing(tmp_path, monkeypatch):
+    from scarletx.config import Settings
+    from scarletx.db import Base
+    from scarletx.download_processing import process_completed_downloads
+    from scarletx.models import NativeUsenetJob, TrackedDownload
+    import scarletx.download_processing as processing
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'webhook.db'}")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, expire_on_commit=False)
+    with session() as db:
+        db.add(NativeUsenetJob(
+            id="job-1", title="Failed", nzb_url="https://example.invalid/fail.nzb",
+            status="failed", error="article missing",
+        ))
+        db.add(TrackedDownload(nzo_id="job-1", release_title="Failed", status="downloading"))
+        db.commit()
+
+    async def unavailable_webhook(*_args, **_kwargs):
+        raise OSError("webhook offline")
+
+    monkeypatch.setattr(processing, "emit_webhooks", unavailable_webhook)
+    result = await process_completed_downloads(session, Settings())
+    assert result["checked"] == 1
+    assert result["failed"] == 1
