@@ -75,6 +75,60 @@ async def test_unexpected_worker_exit_is_replaced(tmp_path):
     await supervisor.stop()
 
 
+@pytest.mark.asyncio
+async def test_process_job_propagates_supervisor_cancellation_after_preserving_state(
+    tmp_path, monkeypatch
+):
+    from scarletx.usenet import worker as worker_module
+
+    session = make_session(tmp_path)
+    with session() as db:
+        db.add(
+            NativeUsenetJob(
+                id="active",
+                title="Active",
+                nzb_url="https://example.invalid/a",
+                status="queued",
+            )
+        )
+        db.commit()
+
+    fetch_started = asyncio.Event()
+
+    async def blocked_fetch(_url):
+        fetch_started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(worker_module, "_fetch_nzb", blocked_fetch)
+
+    class Settings:
+        native_usenet_incomplete_dir = str(tmp_path / "incomplete")
+        native_usenet_complete_dir = str(tmp_path / "complete")
+
+        @staticmethod
+        def native_usenet_providers():
+            return [
+                worker_module.UsenetProviderConfig(
+                    name="test",
+                    host="example.invalid",
+                    username="user",
+                    password="password",
+                )
+            ]
+
+    task = asyncio.create_task(worker_module.process_job(session, Settings(), "active"))
+    await asyncio.wait_for(fetch_started.wait(), timeout=1)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=1)
+
+    with session() as db:
+        job = db.get(NativeUsenetJob, "active")
+        assert job.status == "cancelled"
+        assert job.postprocess_note == "Cancelled; partial data preserved for retry"
+
+
 def test_production_app_exposes_downloader_restart_route():
     from scarletx.main import app
 

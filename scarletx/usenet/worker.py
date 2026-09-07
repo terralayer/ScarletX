@@ -2221,6 +2221,9 @@ async def process_job(session_factory, settings, job_id: str) -> None:
                 tracked.completed_at = utcnow()
                 tracked.last_checked_at = utcnow()
                 db.commit()
+        task = asyncio.current_task()
+        if task is not None and task.cancelling():
+            raise
     except Exception as exc:
         message = str(exc)[:4000]
         failed_path = None
