@@ -167,3 +167,19 @@ class Settings(BaseModel):
                 item.pop(key, None)
             cleaned.append(item)
         return [NewznabIndexer.model_validate(item) for item in cleaned]
+
+
+def effective_native_usenet_connection_capacity(settings: Settings) -> int:
+    """Return the maximum NNTP connections ScarletX can actually use right now."""
+    providers = [
+        provider for provider in settings.native_usenet_providers()
+        if provider.enabled and provider.host
+    ]
+    provider_capacity = sum(max(0, int(provider.connections)) for provider in providers)
+    if provider_capacity <= 0:
+        return 0
+    return min(
+        provider_capacity,
+        max(1, int(settings.native_usenet_max_connections)),
+        200,
+    )

@@ -1,8 +1,10 @@
+import json
 from pathlib import Path
 
 import pytest
+from pydantic import SecretStr
 
-from scarletx import library_management, status_console
+from scarletx import config, library_management, status_console
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,17 +19,51 @@ def test_all_main_library_pages_use_fifty_rows():
     assert "const MEDIA_LIBRARY_PAGE_SIZE=50" in overrides
 
 
-def test_connection_detail_reports_live_usage_instead_of_only_runtime_cap():
+def test_effective_connection_capacity_uses_provider_total_not_global_ceiling(monkeypatch):
+    monkeypatch.setattr(config, "_effective_cpu_count", lambda: 12)
+    settings = config.Settings(
+        native_usenet_providers_json=SecretStr(json.dumps([
+            {"name": "Astraweb", "host": "astra.example", "connections": 50, "enabled": True},
+            {"name": "Newshosting", "host": "news.example", "connections": 100, "enabled": True},
+        ])),
+        native_usenet_max_connections=200,
+    )
+
+    assert config.effective_native_usenet_connection_capacity(settings) == 150
+
+
+def test_effective_connection_capacity_still_honors_lower_global_ceiling(monkeypatch):
+    monkeypatch.setattr(config, "_effective_cpu_count", lambda: 12)
+    settings = config.Settings(
+        native_usenet_providers_json=SecretStr(json.dumps([
+            {"name": "Astraweb", "host": "astra.example", "connections": 50, "enabled": True},
+            {"name": "Newshosting", "host": "news.example", "connections": 100, "enabled": True},
+        ])),
+        native_usenet_max_connections=80,
+    )
+
+    assert config.effective_native_usenet_connection_capacity(settings) == 80
+
+
+def test_connection_detail_uses_effective_capacity_as_the_top_end():
     assert status_console._connection_detail(
         active_connections=73,
-        configured_connections=150,
-        runtime_cap=200,
-    ) == "73 active | 150 configured | cap 200"
+        connection_capacity=150,
+    ) == "73 / 150 connections"
 
     source = (ROOT / "scarletx" / "status_console.py").read_text(encoding="utf-8")
-    assert "native_job_dict" in source
-    assert "_connection_detail(" in source
-    assert "runtime cap {settings.native_usenet_max_connections}" not in source
+    assert "effective_native_usenet_connection_capacity" in source
+    assert "runtime_cap=" not in source
+
+
+def test_download_page_clamps_stale_runtime_cap_to_provider_capacity():
+    overrides = (ROOT / "frontend" / "ui_overrides.js").read_text(encoding="utf-8")
+
+    assert "function liveConnectionCapacity(x)" in overrides
+    assert "x.provider_stats||[]" in overrides
+    assert "x.connection_capacity||x.connection_cap||0" in overrides
+    assert "Math.min(providerTotal,reported)" in overrides
+    assert "capacity||x.active_connections" in overrides
 
 
 def test_unwritable_media_directory_reports_owner_and_mode(tmp_path, monkeypatch):
