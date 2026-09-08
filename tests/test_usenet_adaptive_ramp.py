@@ -12,6 +12,7 @@ def test_small_cap_never_exceeds_cap():
 def test_tuner_grows_aggressively_toward_provider_capacity():
     window = 32
     stable_drop_rounds = 0
+    observed = []
     for current_speed, baseline_speed in [
         (10.0, 0.0),
         (10.1, 10.0),
@@ -25,7 +26,8 @@ def test_tuner_grows_aggressively_toward_provider_capacity():
             tune_speed=baseline_speed,
             stable_drop_rounds=stable_drop_rounds,
         )
-    assert window == 150
+        observed.append(window)
+    assert observed == [48, 72, 108, 150]
 
 
 def test_single_short_speed_drop_does_not_back_off():
