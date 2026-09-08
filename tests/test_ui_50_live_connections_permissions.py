@@ -9,10 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_all_main_library_pages_use_fifty_rows():
-    app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
     overrides = (ROOT / "frontend" / "ui_overrides.js").read_text(encoding="utf-8")
 
-    assert "entityPageSize={scenes:50,performers:50,studios:50}" in app
+    assert "Object.assign(entityPageSize,{scenes:50,performers:50,studios:50})" in overrides
     assert "const ACTIVITY_QUEUE_PAGE_SIZE=50" in overrides
     assert "const MEDIA_LIBRARY_PAGE_SIZE=50" in overrides
 
