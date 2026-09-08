@@ -118,11 +118,12 @@ def test_truenas_containers_share_an_explicit_internal_network():
     assert "web.add_network(scarletx_net)" in template
 
 
-def test_truenas_uses_lightweight_http_healthchecks():
+def test_truenas_healthchecks_match_each_image_tooling():
     template = text("packaging/truenas/scarletx/templates/docker-compose.yaml")
     assert 'backend.healthcheck.set_test("http", {"port": values.consts.backend_port, "path": "/api/health"})' in template
-    assert 'web.healthcheck.set_test("http", {"port": values.network.web_port.port_number, "path": "/api/health"})' in template
-    assert "set_custom_test" not in template
+    assert 'web.healthcheck.set_custom_test(["CMD", "wget"' in template
+    assert '"http://127.0.0.1:%d/api/health"|format(values.network.web_port.port_number)' in template
+    assert "web.healthcheck.set_test" not in template
     assert "urllib.request" not in template
 
 
