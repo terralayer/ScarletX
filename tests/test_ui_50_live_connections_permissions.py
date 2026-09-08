@@ -19,7 +19,8 @@ def test_all_main_library_pages_use_fifty_rows():
     assert "const MEDIA_LIBRARY_PAGE_SIZE=50" in overrides
 
 
-def test_effective_connection_capacity_uses_provider_total_not_global_ceiling():
+def test_effective_connection_capacity_uses_provider_total_not_global_ceiling(monkeypatch):
+    monkeypatch.setattr(config, "_effective_cpu_count", lambda: 12)
     settings = config.Settings(
         native_usenet_providers_json=SecretStr(json.dumps([
             {"name": "Astraweb", "host": "astra.example", "connections": 50, "enabled": True},
@@ -31,7 +32,8 @@ def test_effective_connection_capacity_uses_provider_total_not_global_ceiling():
     assert config.effective_native_usenet_connection_capacity(settings) == 150
 
 
-def test_effective_connection_capacity_still_honors_lower_global_ceiling():
+def test_effective_connection_capacity_still_honors_lower_global_ceiling(monkeypatch):
+    monkeypatch.setattr(config, "_effective_cpu_count", lambda: 12)
     settings = config.Settings(
         native_usenet_providers_json=SecretStr(json.dumps([
             {"name": "Astraweb", "host": "astra.example", "connections": 50, "enabled": True},
