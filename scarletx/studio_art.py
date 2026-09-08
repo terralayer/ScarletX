@@ -9,9 +9,11 @@ from PIL import Image, ImageChops, ImageFilter, ImageOps
 
 TARGET_SIZE = (800, 350)  # 16:7, matching the ScarletX studio cards/detail panel.
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
-STUDIO_ART_CACHE_VERSION = "v3"
+STUDIO_ART_CACHE_VERSION = "v4"
 LIGHT_CANVAS = (244, 244, 245, 255)
 DARK_CANVAS = (24, 24, 27, 255)
+LOGO_MAX_WIDTH_RATIO = 0.72
+LOGO_MAX_HEIGHT_RATIO = 0.58
 _ART_CACHE: dict[str, bytes] = {}
 _ART_CACHE_DIR = Path(os.getenv("SCARLETX_CACHE_DIR", "./cache")).expanduser() / "tpdb" / "studios"
 
@@ -53,7 +55,7 @@ def cache_studio_artwork(identifier: str, image: bytes) -> None:
         pass
 
 
-def _edge_background(image: Image.Image) -> tuple[int, int, int]:
+def _edge_pixels(image: Image.Image) -> list[tuple[int, int, int]]:
     rgb = image.convert("RGB")
     w, h = rgb.size
     band = max(1, min(w, h) // 60)
@@ -65,6 +67,11 @@ def _edge_background(image: Image.Image) -> tuple[int, int, int]:
         rgb.crop((w - band, 0, w, h)),
     ):
         pixels.extend(strip.get_flattened_data() if hasattr(strip, "get_flattened_data") else strip.getdata())
+    return pixels
+
+
+def _edge_background(image: Image.Image) -> tuple[int, int, int]:
+    pixels = _edge_pixels(image)
     if not pixels:
         return (255, 255, 255)
     channels = list(zip(*pixels, strict=False))
@@ -73,25 +80,87 @@ def _edge_background(image: Image.Image) -> tuple[int, int, int]:
     return tuple(int(channel[midpoint]) for channel in ordered)
 
 
+def _max_rgb_difference(image: Image.Image, background_rgb: tuple[int, int, int]) -> Image.Image:
+    rgb = image.convert("RGB")
+    background = Image.new("RGB", rgb.size, background_rgb)
+    red, green, blue = ImageChops.difference(rgb, background).split()
+    return ImageChops.lighter(ImageChops.lighter(red, green), blue)
+
+
+def _has_uniform_edge_background(image: Image.Image, background_rgb: tuple[int, int, int]) -> bool:
+    pixels = _edge_pixels(image)
+    if not pixels:
+        return False
+    close = 0
+    for red, green, blue in pixels:
+        distance = max(
+            abs(red - background_rgb[0]),
+            abs(green - background_rgb[1]),
+            abs(blue - background_rgb[2]),
+        )
+        if distance <= 18:
+            close += 1
+    return (close / len(pixels)) >= 0.85
+
+
+def _remove_uniform_edge_background(image: Image.Image) -> Image.Image:
+    """Turn a flat TPDB logo canvas into alpha so only the actual brand mark remains."""
+    rgba = image.convert("RGBA")
+    background_rgb = _edge_background(rgba)
+    if not _has_uniform_edge_background(rgba, background_rgb):
+        return rgba
+
+    distance = _max_rgb_difference(rgba, background_rgb)
+
+    # Keep antialiased logo edges while removing near-identical canvas pixels.
+    # A short ramp avoids the jagged edge that a hard binary threshold creates.
+    foreground_alpha = distance.point(
+        lambda value: 0
+        if value <= 8
+        else 255
+        if value >= 28
+        else int(round(((value - 8) / 20) * 255))
+    ).filter(ImageFilter.MaxFilter(3))
+
+    rgba.putalpha(foreground_alpha)
+    bbox = foreground_alpha.point(lambda value: 255 if value > 12 else 0).getbbox()
+    if bbox:
+        candidate = rgba.crop(bbox)
+        if candidate.width >= 8 and candidate.height >= 8:
+            return candidate
+    return rgba
+
+
 def trim_logo_whitespace(image: Image.Image) -> Image.Image:
-    """Trim transparent or near-uniform outer padding without erasing logo detail."""
+    """Isolate the actual logo mark from transparent or uniform TPDB canvas padding."""
     rgba = image.convert("RGBA")
     alpha = rgba.getchannel("A")
-    if alpha.getextrema()[0] < 250:
-        bbox = alpha.point(lambda p: 255 if p > 12 else 0).getbbox()
+    had_transparency = alpha.getextrema()[0] < 250
+
+    # If TPDB already supplied real transparency, trust it. Cropping by alpha is
+    # sufficient and avoids mistaking a single-color logo edge for a flat canvas.
+    if had_transparency:
+        bbox = alpha.point(lambda value: 255 if value > 12 else 0).getbbox()
         if bbox:
             rgba = rgba.crop(bbox)
+        return rgba
 
+    # Fully opaque TPDB logo images often arrive on white, black, or another flat
+    # rectangular canvas. Remove that canvas before contrast scoring and sizing.
+    stripped = _remove_uniform_edge_background(rgba)
+    if stripped.getchannel("A").getextrema()[0] < 250:
+        return stripped
+
+    # Non-uniform opaque images (for example poster fallback art) still benefit
+    # from conservative outer-padding trimming without background deletion.
     rgb = rgba.convert("RGB")
-    bg = _edge_background(rgb)
-    background = Image.new("RGB", rgb.size, bg)
-    diff = ImageChops.difference(rgb, background)
-    # MaxFilter retains antialiased logo edges while ignoring near-identical padding.
-    mask = diff.convert("L").point(lambda p: 255 if p > 14 else 0).filter(ImageFilter.MaxFilter(3))
+    background_rgb = _edge_background(rgb)
+    mask = _max_rgb_difference(rgb, background_rgb).point(
+        lambda value: 255 if value > 14 else 0
+    ).filter(ImageFilter.MaxFilter(3))
     bbox = mask.getbbox()
     if bbox:
         candidate = rgba.crop(bbox)
-        # Ignore pathological trims that would collapse almost the entire image.
         if candidate.width >= 8 and candidate.height >= 8:
             rgba = candidate
     return rgba
@@ -124,8 +193,8 @@ def _choose_contrast_canvas(logo: Image.Image) -> tuple[int, int, int, int]:
         bg_luminance = _relative_luminance(canvas[:3])
         weighted_total = 0.0
         alpha_total = 0.0
-        for r, g, b, alpha in visible:
-            weight = alpha / 255.0
+        for r, g, b, alpha_value in visible:
+            weight = alpha_value / 255.0
             weighted_total += _contrast_ratio(_relative_luminance((r, g, b)), bg_luminance) * weight
             alpha_total += weight
         return weighted_total / max(alpha_total, 1e-9)
@@ -156,19 +225,19 @@ def prepare_studio_artwork(image_bytes: bytes, target_size: tuple[int, int] = TA
 
     logo = trim_logo_whitespace(source).convert("RGBA")
     target_w, target_h = target_size
-    padding = max(20, int(round(min(target_w, target_h) * 0.08)))
-    inner_size = (max(1, target_w - (padding * 2)), max(1, target_h - (padding * 2)))
+    inner_size = (
+        max(1, int(round(target_w * LOGO_MAX_WIDTH_RATIO))),
+        max(1, int(round(target_h * LOGO_MAX_HEIGHT_RATIO))),
+    )
 
-    # Studio marks vary wildly in aspect ratio. Always contain the complete TPDB
-    # logo/poster inside the same 16:7 canvas so no card is cropped or stretched.
+    # Fit the actual isolated brand mark into a consistent safe area. This keeps
+    # wide and square studio logos visually balanced instead of filling the card.
     fitted = ImageOps.contain(logo, inner_size, method=Image.Resampling.LANCZOS)
     x = (target_w - fitted.width) // 2
     y = (target_h - fitted.height) // 2
     logo_layer = Image.new("RGBA", target_size, (0, 0, 0, 0))
     logo_layer.alpha_composite(fitted, (x, y))
 
-    # Pick light or charcoal based on the actual visible TPDB logo colors. Keeping
-    # the canvas in the normalized PNG also makes inline logos readable everywhere.
     canvas = _choose_contrast_canvas(fitted)
     rendered = Image.new("RGBA", target_size, canvas)
     _add_logo_halo(rendered, logo_layer, canvas)

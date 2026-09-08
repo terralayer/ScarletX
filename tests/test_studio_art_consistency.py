@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from scarletx.studio_art import TARGET_SIZE, prepare_studio_artwork
+from scarletx.studio_art import TARGET_SIZE, prepare_studio_artwork, trim_logo_whitespace
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -18,23 +18,48 @@ def test_studio_artwork_is_contained_with_consistent_padding():
     rendered = Image.open(BytesIO(prepare_studio_artwork(_png(source)))).convert("RGBA")
     assert rendered.size == TARGET_SIZE
 
-    # The standardized renderer now paints an opaque contrast-aware background,
-    # so locate the logo by looking for pixels that differ materially from a corner.
     background = rendered.getpixel((0, 0))[:3]
-    diff = Image.new("L", rendered.size)
-    diff.putdata(
-        [
-            max(abs(r - background[0]), abs(g - background[1]), abs(b - background[2]))
-            for r, g, b, _a in rendered.getdata()
-        ]
-    )
-    bbox = diff.point(lambda p: 255 if p > 24 else 0).getbbox()
+    bbox = _mark_bbox(rendered, background)
     assert bbox is not None
     left, top, right, bottom = bbox
-    assert left >= 20
-    assert top >= 20
-    assert TARGET_SIZE[0] - right >= 20
-    assert TARGET_SIZE[1] - bottom >= 20
+    assert left >= 90
+    assert top >= 60
+    assert TARGET_SIZE[0] - right >= 90
+    assert TARGET_SIZE[1] - bottom >= 60
+
+
+def test_opaque_white_tpdb_background_is_removed_before_contrast_analysis():
+    source = Image.new("RGBA", (420, 180), (255, 255, 255, 255))
+    draw = ImageDraw.Draw(source)
+    draw.rectangle((55, 50, 170, 130), fill=(10, 10, 10, 255))
+    draw.rectangle((250, 50, 365, 130), fill=(10, 10, 10, 255))
+
+    trimmed = trim_logo_whitespace(source).convert("RGBA")
+    center = trimmed.getpixel((trimmed.width // 2, trimmed.height // 2))
+
+    assert center[3] == 0
+
+    rendered = Image.open(BytesIO(prepare_studio_artwork(_png(source)))).convert("RGBA")
+    r, g, b, a = rendered.getpixel((0, 0))
+    assert a == 255
+    assert min(r, g, b) >= 225
+
+
+def test_opaque_dark_tpdb_background_is_removed_before_contrast_analysis():
+    source = Image.new("RGBA", (420, 180), (18, 18, 20, 255))
+    draw = ImageDraw.Draw(source)
+    draw.rectangle((55, 50, 170, 130), fill=(248, 248, 248, 255))
+    draw.rectangle((250, 50, 365, 130), fill=(248, 248, 248, 255))
+
+    trimmed = trim_logo_whitespace(source).convert("RGBA")
+    center = trimmed.getpixel((trimmed.width // 2, trimmed.height // 2))
+
+    assert center[3] == 0
+
+    rendered = Image.open(BytesIO(prepare_studio_artwork(_png(source)))).convert("RGBA")
+    r, g, b, a = rendered.getpixel((0, 0))
+    assert a == 255
+    assert max(r, g, b) <= 45
 
 
 def test_dark_studio_logo_gets_light_background():
@@ -66,7 +91,7 @@ def test_studio_cards_always_request_standardized_tpdb_artwork():
     css = (ROOT / "frontend" / "ui_overrides.css").read_text(encoding="utf-8")
 
     assert "let renderImg=type==='studios'||!!img" in source
-    assert "STUDIO_ART_HTTP_VERSION='v3'" in source
+    assert "STUDIO_ART_HTTP_VERSION='v4'" in source
     assert "studioArtUrl=function(id)" in source
     assert "?v=${STUDIO_ART_HTTP_VERSION}" in source
     assert "let logo=id?`<span class=\"studio-logo\"><img src=\"${studioArtUrl(id)}\"" in source
@@ -97,10 +122,22 @@ def test_studio_art_route_uses_tpdb_logo_then_poster_fallback():
     assert "urls = [value for value in (studio.logo_url, studio.poster_url) if value]" in block
 
 
-def test_studio_art_cache_is_versioned_for_contrast_backgrounds():
+def test_studio_art_cache_is_versioned_for_background_removal_and_safe_area():
     source = (ROOT / "scarletx" / "studio_art.py").read_text(encoding="utf-8")
-    assert 'STUDIO_ART_CACHE_VERSION = "v3"' in source
+    assert 'STUDIO_ART_CACHE_VERSION = "v4"' in source
     assert 'f"{STUDIO_ART_CACHE_VERSION}-{identifier}.png"' in source
+
+
+def _mark_bbox(image: Image.Image, background: tuple[int, int, int]):
+    diff = Image.new("L", image.size)
+    pixels = image.get_flattened_data() if hasattr(image, "get_flattened_data") else image.getdata()
+    diff.putdata(
+        [
+            max(abs(r - background[0]), abs(g - background[1]), abs(b - background[2]))
+            for r, g, b, _a in pixels
+        ]
+    )
+    return diff.point(lambda p: 255 if p > 24 else 0).getbbox()
 
 
 def _png(image: Image.Image) -> bytes:
