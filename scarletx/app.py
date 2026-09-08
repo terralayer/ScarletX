@@ -27,12 +27,18 @@ def _remove_legacy_api_route(path: str, method: str) -> None:
     ]
 
 
+def _fixed_runtime_settings(db, *args, **kwargs):
+    settings = load_database_settings(db, *args, **kwargs)
+    return settings.model_copy(update={"app_name": "ScarletX"})
+
+
 # The legacy module still owns most domain API routes. Nginx owns the public web
 # surface, while small corrected contracts are composed here without rewriting the
 # legacy route monolith.
 _remove_legacy_web_route()
 _remove_legacy_api_route("/api/library/scenes/page", "GET")
 _remove_legacy_api_route("/api/settings/general", "PATCH")
+legacy_application.load_database_settings = _fixed_runtime_settings
 install_runtime_dedup(legacy_application)
 remove_legacy_api_key_middleware(app)
 app.include_router(runtime_overrides_router)
@@ -40,6 +46,6 @@ app.include_router(auth_router)
 install_authentication(
     app,
     session_factory=SessionLocal,
-    settings_loader=load_database_settings,
+    settings_loader=_fixed_runtime_settings,
 )
 install_security_headers(app)
