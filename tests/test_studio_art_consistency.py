@@ -28,7 +28,7 @@ def test_studio_artwork_is_contained_with_consistent_padding():
     assert TARGET_SIZE[1] - bottom >= 20
 
 
-def test_studio_cards_always_request_tpdb_artwork_and_use_uniform_canvas():
+def test_studio_cards_always_request_standardized_tpdb_artwork():
     override_path = ROOT / "frontend" / "studio_art_overrides.js"
     assert override_path.exists()
     source = override_path.read_text(encoding="utf-8")
@@ -36,6 +36,7 @@ def test_studio_cards_always_request_tpdb_artwork_and_use_uniform_canvas():
 
     assert "let renderImg=type==='studios'||!!img" in source
     assert "/api/artwork/studios/" in source
+    assert "?size=card" not in source
     assert "renderImg?`<img" in source
     assert ".studio-card .media-poster{aspect-ratio:16/7" in css
     assert ".studio-card .media-poster img{object-fit:contain" in css
@@ -48,16 +49,17 @@ def test_studio_art_override_is_loaded_and_packaged():
     assert "COPY frontend/studio_art_overrides.js /usr/share/nginx/html/studio_art_overrides.js" in dockerfile
 
 
-def test_studio_art_route_prefers_tpdb_metadata_before_local_fallback():
+def test_studio_art_route_uses_tpdb_logo_then_poster_fallback():
     routes = (ROOT / "scarletx" / "routes" / "application.py").read_text(encoding="utf-8")
     start = routes.index('@app.get("/api/artwork/studios/{identifier}")')
     end = routes.index("\n\n@app.", start + 10)
     block = routes[start:end]
 
-    assert "tpdb_identifier = local.tpdb_id if local and local.tpdb_id else identifier" in block
-    assert "studio = await tpdb.get_studio(tpdb_identifier)" in block
+    assert "local.logo_url if local else None" in block
+    assert "local.poster_url if local else None" in block
+    assert block.index("local.logo_url if local else None") < block.index("local.poster_url if local else None")
+    assert "studio = await tpdb.get_studio(identifier)" in block
     assert "urls = [value for value in (studio.logo_url, studio.poster_url) if value]" in block
-    assert block.index("studio = await tpdb.get_studio(tpdb_identifier)") < block.index("local_urls =")
 
 
 def test_studio_art_cache_is_versioned_for_new_normalization():
