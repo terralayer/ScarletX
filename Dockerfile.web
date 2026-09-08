@@ -21,6 +21,8 @@ COPY frontend/auth.css /usr/share/nginx/html/auth.css
 COPY frontend/auth.js /usr/share/nginx/html/auth.js
 COPY frontend/styles.css /usr/share/nginx/html/styles.css
 COPY frontend/app.js /usr/share/nginx/html/app.js
+COPY frontend/ui_overrides.css /usr/share/nginx/html/ui_overrides.css
+COPY frontend/ui_overrides.js /usr/share/nginx/html/ui_overrides.js
 
 # Bake the authentication assets into the static HTML at image-build time.
 # Nginx serves the finished page directly; Python never renders or rewrites UI.
@@ -31,7 +33,9 @@ RUN set -eux; \
     grep -q '/auth.css' /usr/share/nginx/html/index.html; \
     grep -q '/auth.js' /usr/share/nginx/html/index.html; \
     grep -q '/styles.css' /usr/share/nginx/html/index.html; \
+    grep -q '/ui_overrides.css' /usr/share/nginx/html/index.html; \
     grep -q '/app.js' /usr/share/nginx/html/index.html; \
+    grep -q '/ui_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q 'authGateBoot(boot);' /usr/share/nginx/html/app.js
 
 EXPOSE 8690
