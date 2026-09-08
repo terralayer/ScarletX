@@ -288,7 +288,10 @@ async def process_completed_downloads(
                 tracked = db.get(TrackedDownload, job["tracked_id"])
                 if tracked:
                     attempt = min(_retry_attempt_for(tracked) + 1, IMPORT_MAX_ATTEMPTS)
-                    tracked.status = "import_failed" if attempt >= IMPORT_MAX_ATTEMPTS else "import_pending"
+                    if attempt >= IMPORT_MAX_ATTEMPTS:
+                        tracked.status = "import_failed"
+                    else:
+                        tracked.status = "import_pending"
                     tracked.error = f"[import-attempt {attempt}/{IMPORT_MAX_ATTEMPTS}] {detail}"[:2000]
                     tracked.last_checked_at = utcnow()
                     db.add(History(
@@ -297,12 +300,7 @@ async def process_completed_downloads(
                         message=f"Import failed ({attempt}/{IMPORT_MAX_ATTEMPTS}): {release_title} | {detail}"[:1000],
                     ))
                     db.commit()
-                    emit_status(
-                        "Import",
-                        "FAILED",
-                        f"{release_title} | attempt {attempt}/{IMPORT_MAX_ATTEMPTS} | {detail}",
-                        severity="error",
-                    )
+                    emit_status("Import", "FAILED", f"{release_title} | attempt {attempt}/{IMPORT_MAX_ATTEMPTS} | {detail}", severity="error")
             failed += 1
 
     for event, payload in notifications:
