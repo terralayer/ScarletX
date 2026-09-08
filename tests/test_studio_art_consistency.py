@@ -18,14 +18,45 @@ def test_studio_artwork_is_contained_with_consistent_padding():
     rendered = Image.open(BytesIO(prepare_studio_artwork(_png(source)))).convert("RGBA")
     assert rendered.size == TARGET_SIZE
 
-    alpha = rendered.getchannel("A")
-    bbox = alpha.getbbox()
+    # The standardized renderer now paints an opaque contrast-aware background,
+    # so locate the logo by looking for pixels that differ materially from a corner.
+    background = rendered.getpixel((0, 0))[:3]
+    diff = Image.new("L", rendered.size)
+    diff.putdata(
+        [
+            max(abs(r - background[0]), abs(g - background[1]), abs(b - background[2]))
+            for r, g, b, _a in rendered.getdata()
+        ]
+    )
+    bbox = diff.point(lambda p: 255 if p > 24 else 0).getbbox()
     assert bbox is not None
     left, top, right, bottom = bbox
     assert left >= 20
     assert top >= 20
     assert TARGET_SIZE[0] - right >= 20
     assert TARGET_SIZE[1] - bottom >= 20
+
+
+def test_dark_studio_logo_gets_light_background():
+    source = Image.new("RGBA", (320, 120), (0, 0, 0, 0))
+    ImageDraw.Draw(source).rounded_rectangle((20, 20, 300, 100), radius=12, fill=(8, 8, 8, 255))
+
+    rendered = Image.open(BytesIO(prepare_studio_artwork(_png(source)))).convert("RGBA")
+    r, g, b, a = rendered.getpixel((0, 0))
+
+    assert a == 255
+    assert min(r, g, b) >= 225
+
+
+def test_light_studio_logo_gets_dark_background():
+    source = Image.new("RGBA", (320, 120), (0, 0, 0, 0))
+    ImageDraw.Draw(source).rounded_rectangle((20, 20, 300, 100), radius=12, fill=(248, 248, 248, 255))
+
+    rendered = Image.open(BytesIO(prepare_studio_artwork(_png(source)))).convert("RGBA")
+    r, g, b, a = rendered.getpixel((0, 0))
+
+    assert a == 255
+    assert max(r, g, b) <= 45
 
 
 def test_studio_cards_always_request_standardized_tpdb_artwork():
@@ -62,9 +93,9 @@ def test_studio_art_route_uses_tpdb_logo_then_poster_fallback():
     assert "urls = [value for value in (studio.logo_url, studio.poster_url) if value]" in block
 
 
-def test_studio_art_cache_is_versioned_for_new_normalization():
+def test_studio_art_cache_is_versioned_for_contrast_backgrounds():
     source = (ROOT / "scarletx" / "studio_art.py").read_text(encoding="utf-8")
-    assert 'STUDIO_ART_CACHE_VERSION = "v2"' in source
+    assert 'STUDIO_ART_CACHE_VERSION = "v3"' in source
     assert 'f"{STUDIO_ART_CACHE_VERSION}-{identifier}.png"' in source
 
 
