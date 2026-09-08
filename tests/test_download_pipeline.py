@@ -272,7 +272,7 @@ async def test_completed_import_operational_error_is_recorded_instead_of_escapin
     with session() as db:
         tracked = db.query(TrackedDownload).one()
         assert tracked.status == "import_pending"
-        assert tracked.error == "media disk offline"
+        assert tracked.error == "[import-attempt 1/3] OSError: media disk offline"
 
 
 @pytest.mark.asyncio

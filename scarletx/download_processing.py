@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import shutil
+from datetime import UTC, timedelta
 from pathlib import Path
 from sqlalchemy import select
 
@@ -25,6 +27,9 @@ from .services import upsert_scene
 from .status_console import emit_status
 
 PENDING = {"queued", "downloading", "paused", "postprocessing", "import_pending"}
+IMPORT_MAX_ATTEMPTS = 3
+IMPORT_RETRY_DELAYS_SECONDS = (30, 120)
+_IMPORT_ATTEMPT_RE = re.compile(r"^\[import-attempt\s+(\d+)/(\d+)\]\s*")
 
 
 def _history_status(slot):
@@ -36,6 +41,47 @@ def _history_path(slot):
         if slot.get(key):
             return str(slot[key])
     return None
+
+
+def _import_failure_attempt(error: str | None) -> int:
+    if not error:
+        return 0
+    match = _IMPORT_ATTEMPT_RE.match(str(error))
+    if not match:
+        return 0
+    try:
+        return max(0, min(int(match.group(1)), IMPORT_MAX_ATTEMPTS))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _retry_attempt_for(tracked: TrackedDownload) -> int:
+    attempt = _import_failure_attempt(tracked.error)
+    # Existing databases can contain pre-backoff import errors without an attempt
+    # prefix. Treat those as one prior failure so an upgrade immediately stops the
+    # old one-second retry storm without requiring a schema migration.
+    if attempt == 0 and tracked.status == "import_pending" and tracked.error:
+        return 1
+    return attempt
+
+
+def _aware(value):
+    if value is None or value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=UTC)
+
+
+def _import_retry_ready(tracked: TrackedDownload, *, now=None) -> bool:
+    attempt = _retry_attempt_for(tracked)
+    if attempt <= 0:
+        return True
+    if attempt >= IMPORT_MAX_ATTEMPTS:
+        return False
+    if tracked.last_checked_at is None:
+        return True
+    delay_index = min(attempt - 1, len(IMPORT_RETRY_DELAYS_SECONDS) - 1)
+    retry_after = _aware(tracked.last_checked_at) + timedelta(seconds=IMPORT_RETRY_DELAYS_SECONDS[delay_index])
+    return _aware(now or utcnow()) >= retry_after
 
 
 def _block_failed(db, tracked, meta, reason):
@@ -130,8 +176,8 @@ async def process_completed_downloads(
             if not state or not tracked:
                 continue
             tracked.client_status = state["status"]
-            tracked.last_checked_at = utcnow()
             if state["failed"]:
+                tracked.last_checked_at = utcnow()
                 tracked.status = "failed"
                 tracked.error = state["error"] or f"Download status: {state['status']}"
                 _block_failed(db, tracked, metadata_by_tracked.get(tracked.id), tracked.error)
@@ -140,7 +186,10 @@ async def process_completed_downloads(
                 notifications.append(("failed", {"scene_id": tracked.scene_id, "release_title": tracked.release_title, "error": tracked.error}))
                 continue
             if not state["completed"]:
+                tracked.last_checked_at = utcnow()
                 tracked.status = "downloading" if state["status"] not in {"queued", "paused"} else state["status"]
+                continue
+            if tracked.status == "import_pending" and not _import_retry_ready(tracked):
                 continue
             completed_jobs.append(job)
         db.commit()
@@ -167,11 +216,7 @@ async def process_completed_downloads(
             local_scene_id = local_scene.id if local_scene and local_scene.content_type == "scene" else None
             if local_scene_id is None:
                 if not metadata_id:
-                    with session_factory() as db:
-                        tracked = db.get(TrackedDownload, job["tracked_id"])
-                        tracked.error = "Completed download is not linked to a scene"
-                        db.commit()
-                    continue
+                    raise FileImportError("Completed download is not linked to a scene")
                 remote = await _fetch(settings, metadata_id, metadata_factory)
                 with session_factory() as db:
                     local_scene = upsert_scene(db, remote, True, "scene")
@@ -238,14 +283,24 @@ async def process_completed_downloads(
             if media_id is not None:
                 await asyncio.to_thread(index_media_file_by_id, session_factory, media_id, generate_art=True)
         except Exception as exc:
-            emit_status("Import", "FAILED", f"{release_title} | {exc.__class__.__name__}", severity="error")
+            detail = f"{exc.__class__.__name__}: {exc}"[:1200]
             with session_factory() as db:
                 tracked = db.get(TrackedDownload, job["tracked_id"])
                 if tracked:
-                    tracked.status = "import_pending"
-                    tracked.error = str(exc)[:2000]
+                    attempt = min(_retry_attempt_for(tracked) + 1, IMPORT_MAX_ATTEMPTS)
+                    if attempt >= IMPORT_MAX_ATTEMPTS:
+                        tracked.status = "import_failed"
+                    else:
+                        tracked.status = "import_pending"
+                    tracked.error = f"[import-attempt {attempt}/{IMPORT_MAX_ATTEMPTS}] {detail}"[:2000]
                     tracked.last_checked_at = utcnow()
+                    db.add(History(
+                        event_type="download_import_failed",
+                        scene_id=tracked.scene_id,
+                        message=f"Import failed ({attempt}/{IMPORT_MAX_ATTEMPTS}): {release_title} | {detail}"[:1000],
+                    ))
                     db.commit()
+                    emit_status("Import", "FAILED", f"{release_title} | attempt {attempt}/{IMPORT_MAX_ATTEMPTS} | {detail}", severity="error")
             failed += 1
 
     for event, payload in notifications:
