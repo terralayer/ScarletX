@@ -9,6 +9,7 @@ from PIL import Image, ImageChops, ImageFilter, ImageOps
 
 TARGET_SIZE = (800, 350)  # 16:7, matching the ScarletX studio cards/detail panel.
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
+STUDIO_ART_CACHE_VERSION = "v2"
 _ART_CACHE: dict[str, bytes] = {}
 _ART_CACHE_DIR = Path(os.getenv("SCARLETX_CACHE_DIR", "./cache")).expanduser() / "tpdb" / "studios"
 
@@ -17,10 +18,14 @@ class StudioArtworkError(RuntimeError):
     pass
 
 
+def _cache_path(identifier: str) -> Path:
+    return _ART_CACHE_DIR / f"{STUDIO_ART_CACHE_VERSION}-{identifier}.png"
+
+
 def cached_studio_artwork(identifier: str) -> bytes | None:
     if identifier in _ART_CACHE:
         return _ART_CACHE[identifier]
-    path = _ART_CACHE_DIR / f"{identifier}.png"
+    path = _cache_path(identifier)
     try:
         if path.exists():
             data = path.read_bytes()
@@ -38,9 +43,10 @@ def cache_studio_artwork(identifier: str, image: bytes) -> None:
     _ART_CACHE[identifier] = image
     try:
         _ART_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        path = _ART_CACHE_DIR / f"{identifier}.png"
+        path = _cache_path(identifier)
         temp = path.with_suffix(".tmp")
-        temp.write_bytes(image); temp.replace(path)
+        temp.write_bytes(image)
+        temp.replace(path)
     except OSError:
         pass
 
@@ -96,24 +102,19 @@ def prepare_studio_artwork(image_bytes: bytes, target_size: tuple[int, int] = TA
     except Exception as exc:  # Pillow raises several format-specific exceptions.
         raise StudioArtworkError("Studio artwork is not a readable image") from exc
 
-    logo = trim_logo_whitespace(source)
+    logo = trim_logo_whitespace(source).convert("RGBA")
     target_w, target_h = target_size
-    target_ratio = target_w / target_h
-    ratio = logo.width / max(logo.height, 1)
+    padding = max(20, int(round(min(target_w, target_h) * 0.08)))
+    inner_size = (max(1, target_w - (padding * 2)), max(1, target_h - (padding * 2)))
 
-    # Ordinary horizontal/square-ish logos can be safely filled. Very wide/tall marks
-    # are contained so the full logo remains visible, per the requested fallback rule.
-    if 1.45 <= ratio <= 3.4:
-        rendered = ImageOps.fit(
-            logo.convert("RGBA"),
-            target_size,
-            method=Image.Resampling.LANCZOS,
-            centering=(0.5, 0.5),
-        )
-    else:
-        rendered = Image.new("RGBA", target_size, (0, 0, 0, 0))
-        fitted = ImageOps.contain(logo.convert("RGBA"), target_size, method=Image.Resampling.LANCZOS)
-        rendered.alpha_composite(fitted, ((target_w - fitted.width) // 2, (target_h - fitted.height) // 2))
+    # Studio marks vary wildly in aspect ratio. Always contain the complete TPDB
+    # logo/poster inside the same 16:7 canvas so no card is cropped or stretched.
+    rendered = Image.new("RGBA", target_size, (0, 0, 0, 0))
+    fitted = ImageOps.contain(logo, inner_size, method=Image.Resampling.LANCZOS)
+    rendered.alpha_composite(
+        fitted,
+        ((target_w - fitted.width) // 2, (target_h - fitted.height) // 2),
+    )
 
     out = BytesIO()
     rendered.save(out, "PNG", optimize=True)
