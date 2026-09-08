@@ -223,6 +223,22 @@ def _check_free_space(root_path: Path, source_size: int, settings: Settings) -> 
         )
 
 
+def _require_writable_directory(path: Path) -> None:
+    if os.access(path, os.W_OK):
+        return
+    try:
+        info = path.stat()
+        owner_detail = f"uid={info.st_uid} gid={info.st_gid} mode={info.st_mode & 0o777:o}"
+    except OSError:
+        owner_detail = "uid=? gid=? mode=?"
+    current_uid = getattr(os, "geteuid", lambda: -1)()
+    current_gid = getattr(os, "getegid", lambda: -1)()
+    raise FileImportError(
+        f"Media destination directory is not writable: {path} "
+        f"({owner_detail}; ScarletX uid={current_uid} gid={current_gid})"
+    )
+
+
 def _place_file(source: Path, destination: Path, mode: str) -> None:
     if source.resolve() == destination.resolve(strict=False):
         return
@@ -274,6 +290,7 @@ def import_specific_media_file(
     root_resolved = root_path.resolve()
     if not destination.parent.resolve().is_relative_to(root_resolved):
         raise FileImportError("Rendered media path escaped the configured root folder")
+    _require_writable_directory(destination.parent)
     source_resolved = source.resolve()
     final = destination if source_resolved == destination.resolve(strict=False) else unique_destination(destination)
     size = source.stat().st_size
