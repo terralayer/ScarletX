@@ -41,6 +41,8 @@ def test_provider_order_fills_pools_in_configured_capacity_ratio():
 
     assert fetcher.pools["Astraweb"].leased == 50
     assert fetcher.pools["Newshosting"].leased == 100
+    assert fetcher.pools["Astraweb"].utilization() == 1.0
+    assert fetcher.pools["Newshosting"].utilization() == 1.0
 
 
 def test_saturated_provider_is_not_selected_as_primary():
