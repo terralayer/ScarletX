@@ -3,7 +3,7 @@ dashboard=async function(){
   await baseDashboardRender();
   if(view!=='dashboard')return;
   try{
-    let recent=await api('/api/library/scenes/page?limit=8&downloaded_only=true');
+    let recent=await api('/api/dashboard/scenes?limit=8');
     if(view!=='dashboard')return;
     let scenes=recent.items||[];
     let sceneStat=[...document.querySelectorAll('#stats .stat')].find(card=>card.querySelector('small')?.textContent==='Scenes');
