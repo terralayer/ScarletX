@@ -29,12 +29,13 @@ def test_route_and_method_contract_is_stable():
     from scarletx.app import app
 
     current = route_contract(app)
-    activity_extensions = [
+    runtime_extensions = [
         {"path": "/api/activity/count", "methods": ["GET"]},
         {"path": "/api/activity/page", "methods": ["GET"]},
+        {"path": "/api/dashboard/scenes", "methods": ["GET"]},
     ]
-    assert all(route in current for route in activity_extensions)
-    stable_contract = [route for route in current if route not in activity_extensions]
+    assert all(route in current for route in runtime_extensions)
+    stable_contract = [route for route in current if route not in runtime_extensions]
     assert stable_contract == json.loads(ROUTES.read_text())
     assert any(isinstance(route, APIRoute) for route in app.routes)
 
