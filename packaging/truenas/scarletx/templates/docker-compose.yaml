@@ -26,7 +26,7 @@
 {% do web.environment.add_env("SCARLETX_WEB_PORT", values.network.web_port.port_number) %}
 {% do web.environment.add_env("SCARLETX_BACKEND_HOST", values.consts.scarletx_backend_container_name) %}
 {% do web.environment.add_env("SCARLETX_BACKEND_PORT", values.consts.backend_port) %}
-{% do web.healthcheck.set_test("http", {"port": values.network.web_port.port_number, "path": "/api/health"}) %}
+{% do web.healthcheck.set_custom_test(["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:%d/api/health"|format(values.network.web_port.port_number)]) %}
 {% do web.depends.add_dependency(values.consts.scarletx_backend_container_name, "service_healthy") %}
 {% do web.add_port(values.network.web_port) %}
 
