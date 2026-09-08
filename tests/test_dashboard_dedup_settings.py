@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from scarletx.config import Settings
+from scarletx.dashboard_data import downloaded_scene_page
 from scarletx.db import Base
-from scarletx.library_management import import_specific_media_file
-from scarletx.models import History, MediaFile, RootFolder, Scene
-from scarletx.schemas import GeneralSettingsWrite
-from scarletx import list_queries, media_library
+from scarletx.models import History, MediaFile, MediaProbe, RootFolder, Scene
+from scarletx.routes.runtime_overrides import GeneralSettingsRuntimeWrite
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,36 +21,61 @@ def _session_factory(tmp_path: Path):
     return engine, sessionmaker(bind=engine, expire_on_commit=False)
 
 
-def test_downloaded_scene_page_filters_metadata_only_scenes(tmp_path):
-    assert "downloaded_only" in inspect.signature(list_queries.scene_summary_page).parameters
-
+def test_downloaded_scene_page_filters_metadata_only_and_missing_scenes(tmp_path):
     engine, factory = _session_factory(tmp_path)
     with factory() as db:
         downloaded = Scene(tpdb_id="downloaded", title="Downloaded", content_type="scene")
         wanted = Scene(tpdb_id="wanted", title="Wanted", content_type="scene", monitored=True)
-        db.add_all([downloaded, wanted])
+        missing = Scene(tpdb_id="missing", title="Missing", content_type="scene")
+        db.add_all([downloaded, wanted, missing])
         db.flush()
-        db.add(MediaFile(scene_id=downloaded.id, path=str(tmp_path / "downloaded.mp4"), size_bytes=5))
+        good_media = MediaFile(scene_id=downloaded.id, path=str(tmp_path / "downloaded.mp4"), size_bytes=5)
+        missing_media = MediaFile(scene_id=missing.id, path=str(tmp_path / "missing.mp4"), size_bytes=5)
+        db.add_all([good_media, missing_media])
+        db.flush()
+        db.add(MediaProbe(media_file_id=missing_media.id, missing=True))
         db.commit()
 
-        page = list_queries.scene_summary_page(db, limit=10, downloaded_only=True)
+        page = downloaded_scene_page(db, limit=10)
 
         assert page["total"] == 1
         assert [item["id"] for item in page["items"]] == [downloaded.id]
         assert page["items"][0]["has_file"] is True
+        assert page["items"][0]["media_id"] == good_media.id
     engine.dispose()
 
 
-def test_dashboard_uses_downloaded_scene_count_and_recent_page():
-    source = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
-    routes = (ROOT / "scarletx" / "routes" / "application.py").read_text(encoding="utf-8")
+def test_dashboard_uses_downloaded_scene_total_and_recent_page():
+    source = (ROOT / "frontend" / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
+    index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+    dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
 
     assert "/api/library/scenes/page?limit=8&downloaded_only=true" in source
-    assert "sys.library?.downloaded_scene" in source
-    assert '"downloaded_scene"' in routes
+    assert "recent.total" in source
+    assert "detail.textContent='Downloaded'" in source
+    assert "No downloaded scenes yet." in source
+    assert '<script src="/dashboard_settings_overrides.js"></script>' in index
+    assert "COPY frontend/dashboard_settings_overrides.js /usr/share/nginx/html/dashboard_settings_overrides.js" in dockerfile
+
+
+def test_downloaded_only_scene_route_replaces_legacy_route_once():
+    from scarletx.app import app
+
+    routes = [
+        route
+        for route in app.router.routes
+        if getattr(route, "path", None) == "/api/library/scenes/page"
+        and "GET" in (getattr(route, "methods", set()) or set())
+    ]
+    assert len(routes) == 1
+    assert "downloaded_only" in routes[0].endpoint.__annotations__ or "downloaded_only" in routes[0].endpoint.__code__.co_varnames
 
 
 def test_exact_duplicate_import_is_removed_but_same_size_different_content_is_kept(tmp_path):
+    # Importing the composed app installs the exact-dedup wrapper at the real import boundary.
+    import scarletx.app  # noqa: F401
+    from scarletx import library_management
+
     engine, factory = _session_factory(tmp_path)
     media_root = tmp_path / "media"
     media_root.mkdir()
@@ -85,7 +108,7 @@ def test_exact_duplicate_import_is_removed_but_same_size_different_content_is_ke
         )
         db.commit()
 
-        first = import_specific_media_file(
+        first = library_management.import_specific_media_file(
             db,
             scene=scene,
             source=first_source,
@@ -93,7 +116,7 @@ def test_exact_duplicate_import_is_removed_but_same_size_different_content_is_ke
             settings=settings,
         )
         db.commit()
-        duplicate = import_specific_media_file(
+        duplicate = library_management.import_specific_media_file(
             db,
             scene=scene,
             source=duplicate_source,
@@ -109,7 +132,7 @@ def test_exact_duplicate_import_is_removed_but_same_size_different_content_is_ke
         history = db.scalars(select(History).where(History.event_type == "duplicate_removed")).all()
         assert len(history) == 1
 
-        import_specific_media_file(
+        library_management.import_specific_media_file(
             db,
             scene=scene,
             source=different_source,
@@ -122,23 +145,34 @@ def test_exact_duplicate_import_is_removed_but_same_size_different_content_is_ke
     engine.dispose()
 
 
-def test_scanner_runs_exact_duplicate_cleanup():
-    source = (ROOT / "scarletx" / "media_library.py").read_text(encoding="utf-8")
-    assert "remove_exact_duplicates(db" in source
-    assert "duplicates_removed" in source
-    assert hasattr(media_library, "remove_exact_duplicates")
+def test_scanner_boundary_runs_exact_duplicate_cleanup():
+    import scarletx.app  # noqa: F401
+    from scarletx import media_library
+
+    assert getattr(media_library.scan_library, "_scarletx_exact_dedup", False) is True
+    source = (ROOT / "scarletx" / "media_dedup.py").read_text(encoding="utf-8")
+    assert "remove_exact_duplicates(db)" in source
+    assert 'stats["duplicates_removed"]' in source
+    assert "full_sha256" in source
 
 
-def test_general_settings_no_longer_exposes_or_stores_application_name():
-    assert "app_name" not in GeneralSettingsWrite.model_fields
+def test_general_settings_no_longer_exposes_application_name():
+    assert "app_name" not in GeneralSettingsRuntimeWrite.model_fields
 
-    frontend = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
-    routes = (ROOT / "scarletx" / "routes" / "application.py").read_text(encoding="utf-8")
-    store = (ROOT / "scarletx" / "settings_store.py").read_text(encoding="utf-8")
-
+    frontend = (ROOT / "frontend" / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
+    app_source = (ROOT / "scarletx" / "app.py").read_text(encoding="utf-8")
     assert "Application name" not in frontend
     assert 'id="appName"' not in frontend
-    assert "app_name:val('#appName')" not in frontend
-    assert '"general": {"app_name": settings.app_name' not in routes
-    assert '"app_name":d.app_name' not in store
-    assert '"app_name"' in store and "LEGACY_KEYS" in store
+    assert "app_name:" not in frontend
+    assert "{log_level:val('#logLevel')}" in frontend
+    assert 'model_copy(update={"app_name": "ScarletX"})' in app_source
+
+    from scarletx.app import app
+
+    routes = [
+        route
+        for route in app.router.routes
+        if getattr(route, "path", None) == "/api/settings/general"
+        and "PATCH" in (getattr(route, "methods", set()) or set())
+    ]
+    assert len(routes) == 1
