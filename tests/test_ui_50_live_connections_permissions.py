@@ -31,6 +31,18 @@ def test_effective_connection_capacity_uses_provider_total_not_global_ceiling():
     assert config.effective_native_usenet_connection_capacity(settings) == 150
 
 
+def test_effective_connection_capacity_still_honors_lower_global_ceiling():
+    settings = config.Settings(
+        native_usenet_providers_json=SecretStr(json.dumps([
+            {"name": "Astraweb", "host": "astra.example", "connections": 50, "enabled": True},
+            {"name": "Newshosting", "host": "news.example", "connections": 100, "enabled": True},
+        ])),
+        native_usenet_max_connections=80,
+    )
+
+    assert config.effective_native_usenet_connection_capacity(settings) == 80
+
+
 def test_connection_detail_uses_effective_capacity_as_the_top_end():
     assert status_console._connection_detail(
         active_connections=73,
@@ -39,18 +51,17 @@ def test_connection_detail_uses_effective_capacity_as_the_top_end():
 
     source = (ROOT / "scarletx" / "status_console.py").read_text(encoding="utf-8")
     assert "effective_native_usenet_connection_capacity" in source
-    assert "cap {" not in source
+    assert "runtime_cap=" not in source
 
 
-def test_download_surfaces_prefer_effective_capacity_over_runtime_cap():
-    route = (ROOT / "scarletx" / "routes" / "application.py").read_text(encoding="utf-8")
-    app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+def test_download_page_clamps_stale_runtime_cap_to_provider_capacity():
     overrides = (ROOT / "frontend" / "ui_overrides.js").read_text(encoding="utf-8")
 
-    assert '"connection_capacity"' in route
-    assert "effective_native_usenet_connection_capacity" in route
-    assert "x.connection_capacity||x.connection_cap" in app
-    assert "x.connection_capacity||x.connection_cap" in overrides
+    assert "function liveConnectionCapacity(x)" in overrides
+    assert "x.provider_stats||[]" in overrides
+    assert "x.connection_capacity||x.connection_cap||0" in overrides
+    assert "Math.min(providerTotal,reported)" in overrides
+    assert "capacity||x.active_connections" in overrides
 
 
 def test_unwritable_media_directory_reports_owner_and_mode(tmp_path, monkeypatch):
