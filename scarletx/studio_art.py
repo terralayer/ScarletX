@@ -135,20 +135,21 @@ def trim_logo_whitespace(image: Image.Image) -> Image.Image:
     """Isolate the actual logo mark from transparent or uniform TPDB canvas padding."""
     rgba = image.convert("RGBA")
     alpha = rgba.getchannel("A")
+    had_transparency = alpha.getextrema()[0] < 250
 
-    # First honor transparency already supplied by TPDB.
-    if alpha.getextrema()[0] < 250:
+    # If TPDB already supplied real transparency, trust it. Cropping by alpha is
+    # sufficient and avoids mistaking a single-color logo edge for a flat canvas.
+    if had_transparency:
         bbox = alpha.point(lambda value: 255 if value > 12 else 0).getbbox()
         if bbox:
             rgba = rgba.crop(bbox)
+        return rgba
 
-    # Some TPDB logos are opaque JPEG/PNG rectangles with a white, black, or
-    # other flat canvas. Remove that canvas before contrast scoring and sizing.
-    alpha = rgba.getchannel("A")
-    if alpha.getextrema()[0] >= 250:
-        stripped = _remove_uniform_edge_background(rgba)
-        if stripped.getchannel("A").getextrema()[0] < 250:
-            return stripped
+    # Fully opaque TPDB logo images often arrive on white, black, or another flat
+    # rectangular canvas. Remove that canvas before contrast scoring and sizing.
+    stripped = _remove_uniform_edge_background(rgba)
+    if stripped.getchannel("A").getextrema()[0] < 250:
+        return stripped
 
     # Non-uniform opaque images (for example poster fallback art) still benefit
     # from conservative outer-padding trimming without background deletion.
