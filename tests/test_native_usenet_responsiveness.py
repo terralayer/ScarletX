@@ -17,3 +17,21 @@ def test_large_machine_can_still_use_full_configured_limit(monkeypatch):
     monkeypatch.setattr(config, "_effective_cpu_count", lambda: 16, raising=False)
     settings = config.Settings(native_usenet_max_connections=120)
     assert settings.native_usenet_max_connections == 120
+
+
+def test_twelve_cpu_nas_can_use_two_hundred_connection_ceiling(monkeypatch):
+    monkeypatch.setattr(config, "_effective_cpu_count", lambda: 12, raising=False)
+    settings = config.Settings(native_usenet_max_connections=200)
+    assert settings.native_usenet_max_connections == 200
+
+
+def test_provider_configuration_accepts_two_hundred_connections():
+    from scarletx.native_usenet import UsenetProviderConfig
+
+    provider = UsenetProviderConfig(
+        name="large-provider",
+        host="news.invalid",
+        connections=200,
+    )
+
+    assert provider.connections == 200

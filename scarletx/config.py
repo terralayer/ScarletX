@@ -55,7 +55,8 @@ def _interactive_connection_cap(requested: int, *, effective_cpus: int | None = 
     """Limit NNTP oversubscription so the web/API thread keeps CPU headroom."""
     requested = max(1, int(requested))
     cpus = max(1, int(effective_cpus if effective_cpus is not None else _effective_cpu_count()))
-    return min(requested, max(8, cpus * 8))
+    cpu_cap = 200 if cpus >= 12 else max(8, cpus * 8)
+    return min(requested, cpu_cap, 200)
 
 
 def _default_indexers() -> str:
@@ -112,7 +113,7 @@ class Settings(BaseModel):
     native_usenet_providers_json: SecretStr = SecretStr(os.getenv("SCARLETX_USENET_PROVIDERS_JSON", "[]"))
     native_usenet_incomplete_dir: str = os.getenv("SCARLETX_USENET_INCOMPLETE_DIR", "./downloads/incomplete")
     native_usenet_complete_dir: str = os.getenv("SCARLETX_USENET_COMPLETE_DIR", "./downloads/complete")
-    native_usenet_max_connections: int = _interactive_connection_cap(int(os.getenv("SCARLETX_USENET_MAX_CONNECTIONS", "120")))
+    native_usenet_max_connections: int = _interactive_connection_cap(int(os.getenv("SCARLETX_USENET_MAX_CONNECTIONS", "200")))
     native_usenet_max_retries: int = int(os.getenv("SCARLETX_USENET_MAX_RETRIES", "2"))
     native_usenet_speed_limit_mb_s: float = float(os.getenv("SCARLETX_USENET_SPEED_LIMIT_MB_S", "0"))
     native_usenet_repair_enabled: bool = os.getenv("SCARLETX_USENET_REPAIR", "true").strip().lower() not in {"0","false","no","off"}

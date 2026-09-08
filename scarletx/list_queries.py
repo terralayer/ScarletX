@@ -95,11 +95,14 @@ def scene_summary_page(
             )
         )
 
-    has_file = (
+    media_id = (
         select(MediaFile.id)
         .where(MediaFile.scene_id == Scene.id)
-        .exists()
-        .label("has_file")
+        .order_by(MediaFile.id.asc())
+        .limit(1)
+        .correlate(Scene)
+        .scalar_subquery()
+        .label("media_id")
     )
     stmt = (
         select(
@@ -114,7 +117,7 @@ def scene_summary_page(
             Studio.name.label("studio"),
             Studio.tpdb_id.label("studio_id"),
             Scene.imported_at.label("imported_at"),
-            has_file,
+            media_id,
         )
         .outerjoin(Studio, Scene.studio_id == Studio.id)
         .where(*filters)
@@ -157,7 +160,8 @@ def scene_summary_page(
             "studio": row["studio"],
             "studio_id": row["studio_id"],
             "performers": performers_by_scene[int(row["id"])],
-            "has_file": bool(row["has_file"]),
+            "has_file": row["media_id"] is not None,
+            "media_id": row["media_id"],
         }
         for row in page_rows
     ]

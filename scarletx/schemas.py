@@ -155,7 +155,7 @@ class UsenetProviderWrite(BaseModel):
     username: str = Field(default="", max_length=500)
     password: str | None = None
     use_ssl: Literal[True] = True
-    connections: int = Field(default=8, ge=1, le=150)
+    connections: int = Field(default=8, ge=1, le=200)
     enabled: bool = True
     priority: int = Field(default=25, ge=1, le=50)
 
@@ -172,7 +172,7 @@ class NativeUsenetSettingsWrite(BaseModel):
     providers: list[UsenetProviderWrite] = Field(default_factory=list)
     incomplete_dir: str = "./downloads/incomplete"
     complete_dir: str = "./downloads/complete"
-    max_connections: int = Field(default=60, ge=1, le=200)
+    max_connections: int = Field(default=200, ge=1, le=200)
     max_retries: int = Field(default=2, ge=0, le=3)
     speed_limit_mb_s: float = Field(default=0, ge=0, le=10000)
     repair_enabled: bool = True

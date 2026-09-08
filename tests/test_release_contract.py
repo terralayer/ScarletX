@@ -36,7 +36,7 @@ def test_release_version_is_consistent():
     app = text("packaging/truenas/scarletx/app.yaml")
     values = text("packaging/truenas/scarletx/ix_values.yaml")
     assert f"app_version: {VERSION}" in app
-    assert "version: 1.0.4" in app
+    assert "version: 1.0.5" in app
     assert "changelog_url: https://github.com/terralayer/ScarletX/releases" in app
     assert re.search(rf"(?m)^\s+tag: {re.escape(VERSION)}$", values)
     assert "ghcr.io/terralayer/scarletx-web" in values

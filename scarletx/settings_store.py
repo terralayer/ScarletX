@@ -285,8 +285,8 @@ def seed_database_settings(db):
         cap_item=db.get(AppSetting,"native_usenet_max_connections")
         try: current_cap=int(cap_item.value if cap_item else 0)
         except Exception: current_cap=0
-        if current_cap in {0, 20, 60, 150}:
-            set_setting(db,"native_usenet_max_connections","120",commit=False)
+        if current_cap in {0, 20, 60, 120, 150}:
+            set_setting(db,"native_usenet_max_connections","200",commit=False)
         set_setting(db,"dev_native_perf_cap_032_applied","true",commit=False)
 
     retry_marker=db.get(AppSetting,"dev_native_retry_policy_033_applied")
@@ -344,7 +344,7 @@ def load_database_settings(db, *, force=False):
       newznab_indexers_json=SecretStr(v.get("newznab_indexers_json","[]")),
       native_usenet_enabled=_bool(v,"native_usenet_enabled",True),native_usenet_providers_json=SecretStr(v.get("native_usenet_providers_json","[]")),
       native_usenet_incomplete_dir=v.get("native_usenet_incomplete_dir",d.native_usenet_incomplete_dir),native_usenet_complete_dir=v.get("native_usenet_complete_dir",d.native_usenet_complete_dir),
-      native_usenet_max_connections=_int(v,"native_usenet_max_connections",60,1),native_usenet_max_retries=_int(v,"native_usenet_max_retries",2,0),native_usenet_speed_limit_mb_s=_float(v,"native_usenet_speed_limit_mb_s",0.0,0),
+      native_usenet_max_connections=_int(v,"native_usenet_max_connections",200,1),native_usenet_max_retries=_int(v,"native_usenet_max_retries",2,0),native_usenet_speed_limit_mb_s=_float(v,"native_usenet_speed_limit_mb_s",0.0,0),
       native_usenet_repair_enabled=_bool(v,"native_usenet_repair_enabled",True),native_usenet_unpack_enabled=_bool(v,"native_usenet_unpack_enabled",True),
       completed_download_import_enabled=_bool(v,"completed_download_import_enabled",True),
       download_poll_seconds=_int(v,"download_poll_seconds",30,10),file_management_enabled=_bool(v,"file_management_enabled",False),scene_naming_template=v.get("scene_naming_template",d.scene_naming_template),

@@ -306,7 +306,7 @@ async def lifespan(_: FastAPI):
         runtime = load_database_settings(db)
         app.title = f"{runtime.app_name} API"
         try:
-            print(render_dashboard(collect_startup_status(db, runtime), version="0.3.10-beta.3"), flush=True)
+            print(render_dashboard(collect_startup_status(db, runtime), version="0.3.10-beta.4"), flush=True)
         except Exception as exc:
             emit_status("Status Console", "FAILED", exc.__class__.__name__, severity="error")
     await downloader_supervisor.start()
@@ -336,7 +336,7 @@ async def lifespan(_: FastAPI):
         emit_status("Background Workers", "STOPPED", "shutdown complete", severity="ok")
 
 
-app = FastAPI(title="ScarletX API", version="0.3.10-beta.3", lifespan=lifespan, default_response_class=ORJSONResponse)
+app = FastAPI(title="ScarletX API", version="0.3.10-beta.4", lifespan=lifespan, default_response_class=ORJSONResponse)
 app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=5)
 
 
@@ -346,8 +346,7 @@ async def optional_api_key_auth(request, call_next):
     if not path.startswith("/api/") or path in {"/api/health"}:
         return await call_next(request)
     try:
-        with SessionLocal() as db:
-            settings = load_database_settings(db)
+        settings = await _load_request_settings()
     except Exception:
         # Database bootstrap/upgrade must remain reachable during startup failures.
         return await call_next(request)
@@ -363,6 +362,16 @@ async def optional_api_key_auth(request, call_next):
         from fastapi.responses import JSONResponse
         return JSONResponse({"detail": "ScarletX API key is required"}, status_code=401)
     return await call_next(request)
+
+
+def _load_request_settings_sync():
+    with SessionLocal() as db:
+        return load_database_settings(db)
+
+
+async def _load_request_settings():
+    """Keep database pool waits out of the ASGI event-loop thread."""
+    return await asyncio.to_thread(_load_request_settings_sync)
 
 
 
@@ -817,7 +826,7 @@ def delete_release_profile(profile_id: int, db: Session = Depends(get_session)):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "app": "ScarletX", "version": "0.3.10-beta.3", "upstream": "SceneCore 0.7.16"}
+    return {"status": "ok", "app": "ScarletX", "version": "0.3.10-beta.4", "upstream": "SceneCore 0.7.16"}
 
 
 @app.get("/api/search/status")
@@ -1367,12 +1376,15 @@ async def performer_detail(identifier: str, name: str | None = None, settings: S
 
 def _remote_scene_local_state(db: Session, remote: RemoteScene) -> dict:
     data = remote.model_dump()
+    data["media_id"] = None
     local = db.scalar(select(Scene).where(Scene.tpdb_id == remote.id, Scene.content_type == "scene").limit(1))
     state = "Available"
     if local is not None:
         data["local_id"] = local.id
         data["monitored"] = bool(local.monitored)
-        if db.scalar(select(MediaFile.id).where(MediaFile.scene_id == local.id).limit(1)):
+        media_id = db.scalar(select(MediaFile.id).where(MediaFile.scene_id == local.id).order_by(MediaFile.id).limit(1))
+        data["media_id"] = media_id
+        if media_id:
             state = "Downloaded"
         else:
             tracked = db.scalar(select(TrackedDownload).where(TrackedDownload.scene_id == local.id).order_by(TrackedDownload.created_at.desc()).limit(1))
@@ -1434,15 +1446,40 @@ async def performer_artwork(identifier: str, size: str = Query("full", pattern="
 
 
 @app.get("/api/artwork/scenes/{identifier}")
-async def scene_artwork(identifier: str, settings: Settings = Depends(get_runtime_settings)):
+async def scene_artwork(
+    identifier: str,
+    size: str = Query("full", pattern="^(full|card)$"),
+    db: Session = Depends(get_session),
+    settings: Settings = Depends(get_runtime_settings),
+):
     try:
-        async with client(settings) as tpdb:
-            scene = await tpdb.get_scene(identifier)
-        urls = [value for value in (scene.back_image_url, scene.image_url, scene.poster_url) if value]
+        local = db.scalar(select(Scene).where(Scene.tpdb_id == identifier).limit(1))
+        if local is None and identifier.isdigit():
+            local = db.get(Scene, int(identifier))
+        urls = [
+            value
+            for value in (
+                local.back_image_url if local else None,
+                local.image_url if local else None,
+                local.poster_url if local else None,
+            )
+            if value
+        ]
+        if not urls:
+            async with client(settings) as tpdb:
+                scene = await tpdb.get_scene(identifier)
+            urls = [value for value in (scene.back_image_url, scene.image_url, scene.poster_url) if value]
         if not urls:
             raise HTTPException(404, "Scene artwork not found")
-        image, media_type = await cached_remote_image(f"scene:{identifier}", urls)
-        return Response(content=image, media_type=media_type, headers={"Cache-Control": "private, max-age=86400"})
+        if size == "card":
+            image, media_type = await cached_remote_thumbnail(
+                f"scene:{identifier}", urls, (320, 180)
+            )
+            cache_control = "private, max-age=604800, immutable"
+        else:
+            image, media_type = await cached_remote_image(f"scene:{identifier}", urls)
+            cache_control = "private, max-age=86400"
+        return Response(content=image, media_type=media_type, headers={"Cache-Control": cache_control})
     except MetadataProviderError as exc:
         raise HTTPException(502, str(exc)) from exc
     except RemoteArtworkError as exc:
@@ -2590,42 +2627,46 @@ def media_file_detail(media_id: int, db: Session = Depends(get_session)):
 
 
 @app.get("/api/media-files/{media_id}/stream")
-def stream_media(media_id: int, db: Session = Depends(get_session)):
-    media = db.get(MediaFile, media_id)
-    if media is None:
-        raise HTTPException(404, "Media file not found")
-    path = Path(media.path)
+def stream_media(media_id: int):
+    with SessionLocal() as db:
+        media = db.get(MediaFile, media_id)
+        if media is None:
+            raise HTTPException(404, "Media file not found")
+        path = Path(media.path)
     if not path.exists() or not path.is_file():
         raise HTTPException(404, "Media file is missing")
     return FileResponse(path, media_type=media_type_for(path), filename=path.name, content_disposition_type="inline", headers={"Accept-Ranges": "bytes", "Cache-Control": "private, max-age=3600"})
 
 
 @app.get("/api/media-files/{media_id}/thumbnail")
-def media_thumbnail(media_id: int, db: Session = Depends(get_session)):
+def media_thumbnail(media_id: int):
     try:
-        path = asset_for(db, media_id, "thumbnail")
-        db.commit()
+        with SessionLocal() as db:
+            path = asset_for(db, media_id, "thumbnail")
+            db.commit()
         return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
     except MediaLibraryError as exc:
         raise HTTPException(404, str(exc)) from exc
 
 
 @app.get("/api/media-files/{media_id}/screengrab")
-def media_screengrab(media_id: int, db: Session = Depends(get_session)):
+def media_screengrab(media_id: int):
     try:
-        path = asset_for(db, media_id, "screengrab")
-        db.commit()
+        with SessionLocal() as db:
+            path = asset_for(db, media_id, "screengrab")
+            db.commit()
         return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
     except MediaLibraryError as exc:
         raise HTTPException(404, str(exc)) from exc
 
 
 @app.get("/api/media-files/{media_id}/preview")
-def media_preview(media_id: int, db: Session = Depends(get_session)):
-    probe = db.get(MediaProbe, media_id)
-    if probe is None or not probe.preview_path or not Path(probe.preview_path).exists():
-        raise HTTPException(404, "Preview has not been generated")
-    path = Path(probe.preview_path)
+def media_preview(media_id: int):
+    with SessionLocal() as db:
+        probe = db.get(MediaProbe, media_id)
+        if probe is None or not probe.preview_path or not Path(probe.preview_path).exists():
+            raise HTTPException(404, "Preview has not been generated")
+        path = Path(probe.preview_path)
     return FileResponse(path, media_type="video/mp4", filename=path.name, content_disposition_type="inline", headers={"Accept-Ranges": "bytes", "Cache-Control": "private, max-age=86400"})
 
 

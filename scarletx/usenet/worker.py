@@ -52,7 +52,7 @@ class UsenetProviderConfig(BaseModel):
     username: str = ""
     password: SecretStr = SecretStr("")
     use_ssl: Literal[True] = True
-    connections: int = Field(default=8, ge=1, le=150)
+    connections: int = Field(default=8, ge=1, le=200)
     enabled: bool = True
     priority: int = Field(default=25, ge=1, le=50)
 
@@ -1756,7 +1756,7 @@ def _publish_progress(session_factory, job_id: str, *, total_bytes: int, downloa
 
 async def _fetch_nzb(url: str) -> bytes:
     try:
-        async with httpx.AsyncClient(timeout=45, follow_redirects=True, headers={"User-Agent": "ScarletX/0.3.10-beta.3"}) as client:
+        async with httpx.AsyncClient(timeout=45, follow_redirects=True, headers={"User-Agent": "ScarletX/0.3.10-beta.4"}) as client:
             response = await client.get(url)
             response.raise_for_status()
             payload = response.content
@@ -1930,7 +1930,7 @@ async def process_job(session_factory, settings, job_id: str) -> None:
         hard_cap = min(
             max(1, int(settings.native_usenet_max_connections)),
             max(1, sum(p.connections for p in providers)),
-            150,
+            200,
         )
         # Start modestly and ramp quickly. This reaches 100+ sessions in seconds when
         # throughput keeps improving but avoids paying TLS/thread overhead unnecessarily.

@@ -62,3 +62,18 @@ def test_library_media_list_and_player_omit_filename_and_audio_codec():
     assert "<th>File</th>" not in table
     assert "x.missing" in rows
     assert "<b>Audio</b>" not in player
+
+
+def test_scene_rows_show_tpdb_artwork_studio_logo_and_play_control():
+    source = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    styles = STYLES.read_text(encoding="utf-8")
+    rows = source[source.index("function sceneRowsHtml"):source.index("function sceneTable")]
+    actions = source[source.index("function bindSceneTableActions"):source.index("async function renderEntities")]
+
+    assert "/api/artwork/scenes/" in rows
+    assert "/api/artwork/studios/" in source
+    assert "?size=card" in rows
+    assert 'data-play-scene' in rows
+    assert "playMedia(Number(" in actions
+    assert ".scene-thumb" in styles
+    assert ".studio-logo" in styles

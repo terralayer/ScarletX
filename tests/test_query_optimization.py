@@ -253,6 +253,10 @@ def test_scene_list_uses_summary_projection(tmp_path):
     data_query = next(statement for statement in statements if "ORDER BY scenes.imported_at" in statement)
     assert "scenes.description" not in data_query
     assert payload["items"][0]["image_url"] == "https://example.invalid/scene-1.jpg"
+    downloaded = next(item for item in payload["items"] if item["has_file"])
+    missing = next(item for item in payload["items"] if not item["has_file"])
+    assert downloaded["media_id"] is not None
+    assert missing["media_id"] is None
     assert set(payload["items"][0]) == {
         "id",
         "tpdb_id",
@@ -264,6 +268,7 @@ def test_scene_list_uses_summary_projection(tmp_path):
         "studio_id",
         "performers",
         "has_file",
+        "media_id",
     }
 
 
