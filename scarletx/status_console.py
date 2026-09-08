@@ -216,11 +216,10 @@ def _path_row(component: str, path_value: str | Path, *, missing_warning: bool =
     return StatusRow(component, "WRITABLE" if writable else "READ-ONLY", str(path), "ok" if writable else "warning")
 
 
-def _connection_detail(*, active_connections: int, configured_connections: int, runtime_cap: int) -> str:
+def _connection_detail(*, active_connections: int, connection_capacity: int) -> str:
     active = max(0, int(active_connections))
-    configured = max(0, int(configured_connections))
-    cap = max(1, int(runtime_cap))
-    return f"{active} active | {configured} configured | cap {cap}"
+    capacity = max(0, int(connection_capacity))
+    return f"{active} / {capacity} connections"
 
 
 def _pool_detail(db: Session) -> str:
@@ -253,6 +252,7 @@ def _group_error(name: str, exc: Exception) -> StatusGroup:
 
 def collect_startup_status(db: Session, settings: Settings) -> list[StatusGroup]:
     """Collect a read-only, no-network startup snapshot for the console."""
+    from .config import effective_native_usenet_connection_capacity
     from .models import AuthUser, NativeUsenetJob, Performer, RootFolder, Scene, Studio, TrackedDownload
     from .usenet.worker import job_dict as native_job_dict
 
@@ -326,15 +326,14 @@ def collect_startup_status(db: Session, settings: Settings) -> list[StatusGroup]
                 f"TLS :{provider.port} | {provider.connections} connections",
                 "ok" if provider.enabled else "warning",
             ))
-        total_connections = sum(provider.connections for provider in enabled_providers)
+        connection_capacity = effective_native_usenet_connection_capacity(settings)
         usenet_rows.extend([
             StatusRow(
                 "Connections",
                 "READY",
                 _connection_detail(
                     active_connections=active_connections,
-                    configured_connections=total_connections,
-                    runtime_cap=settings.native_usenet_max_connections,
+                    connection_capacity=connection_capacity,
                 ),
                 "ok",
             ),
