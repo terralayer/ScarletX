@@ -66,6 +66,28 @@ def test_download_page_clamps_stale_runtime_cap_to_provider_capacity():
     assert "capacity||x.active_connections" in overrides
 
 
+def test_activity_header_uses_true_count_instead_of_capped_snapshot_length():
+    downloads = (ROOT / "scarletx" / "routes" / "downloads.py").read_text(encoding="utf-8")
+    overrides = (ROOT / "frontend" / "ui_overrides.js").read_text(encoding="utf-8")
+
+    assert '"/api/activity/count"' in downloads
+    assert "func.count(TrackedDownload.id)" in downloads
+    assert "async function refreshActivityQueueTotal" in overrides
+    assert "api('/api/activity/count')" in overrides
+    assert "$('#queueBadge').textContent=activityQueueTotal" in overrides
+    assert "$('#queueBadge').textContent=rows.length" not in overrides
+
+
+def test_activity_pages_are_server_paged_beyond_two_hundred_rows():
+    downloads = (ROOT / "scarletx" / "routes" / "downloads.py").read_text(encoding="utf-8")
+    overrides = (ROOT / "frontend" / "ui_overrides.js").read_text(encoding="utf-8")
+
+    assert '"/api/activity/page"' in downloads
+    assert ".offset((page - 1) * limit).limit(limit)" in downloads
+    assert "async function loadActivityQueuePage" in overrides
+    assert "activityQueuePagerHtml(activityQueueTotal)" in overrides
+
+
 def test_unwritable_media_directory_reports_owner_and_mode(tmp_path, monkeypatch):
     target = tmp_path / "Studio"
     target.mkdir()
