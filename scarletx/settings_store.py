@@ -289,6 +289,18 @@ def seed_database_settings(db):
             set_setting(db,"native_usenet_max_connections","200",commit=False)
         set_setting(db,"dev_native_perf_cap_032_applied","true",commit=False)
 
+    # 0.3.10 beta.3 could persist 50 as the runtime cap. The original performance
+    # migration omitted that legacy default and may already be marked as applied,
+    # so repair it with a new one-time marker without touching explicit other values.
+    cap_200_marker=db.get(AppSetting,"native_usenet_connection_cap_200_migrated")
+    if cap_200_marker is None:
+        cap_item=db.get(AppSetting,"native_usenet_max_connections")
+        try: current_cap=int(cap_item.value if cap_item else 0)
+        except Exception: current_cap=0
+        if current_cap == 50:
+            set_setting(db,"native_usenet_max_connections","200",commit=False)
+        set_setting(db,"native_usenet_connection_cap_200_migrated","true",commit=False)
+
     retry_marker=db.get(AppSetting,"dev_native_retry_policy_033_applied")
     if retry_marker is None:
         retry_item=db.get(AppSetting,"native_usenet_max_retries")
