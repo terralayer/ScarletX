@@ -9,7 +9,6 @@ from scarletx.config import Settings
 from scarletx.dashboard_data import downloaded_scene_page
 from scarletx.db import Base
 from scarletx.models import History, MediaFile, MediaProbe, RootFolder, Scene
-from scarletx.routes.runtime_overrides import GeneralSettingsRuntimeWrite
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,7 +49,7 @@ def test_dashboard_uses_downloaded_scene_total_and_recent_page():
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
 
-    assert "/api/library/scenes/page?limit=8&downloaded_only=true" in source
+    assert "/api/dashboard/scenes?limit=8" in source
     assert "recent.total" in source
     assert "detail.textContent='Downloaded'" in source
     assert "No downloaded scenes yet." in source
@@ -58,17 +57,17 @@ def test_dashboard_uses_downloaded_scene_total_and_recent_page():
     assert "COPY frontend/dashboard_settings_overrides.js /usr/share/nginx/html/dashboard_settings_overrides.js" in dockerfile
 
 
-def test_downloaded_only_scene_route_replaces_legacy_route_once():
+def test_dashboard_downloaded_scene_route_is_registered_once():
     from scarletx.app import app
 
     routes = [
         route
         for route in app.router.routes
-        if getattr(route, "path", None) == "/api/library/scenes/page"
+        if getattr(route, "path", None) == "/api/dashboard/scenes"
         and "GET" in (getattr(route, "methods", set()) or set())
     ]
     assert len(routes) == 1
-    assert "downloaded_only" in routes[0].endpoint.__annotations__ or "downloaded_only" in routes[0].endpoint.__code__.co_varnames
+    assert routes[0].endpoint.__name__ == "dashboard_scenes_runtime"
 
 
 def test_exact_duplicate_import_is_removed_but_same_size_different_content_is_kept(tmp_path):
@@ -157,15 +156,15 @@ def test_scanner_boundary_runs_exact_duplicate_cleanup():
 
 
 def test_general_settings_no_longer_exposes_application_name():
-    assert "app_name" not in GeneralSettingsRuntimeWrite.model_fields
-
     frontend = (ROOT / "frontend" / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
     app_source = (ROOT / "scarletx" / "app.py").read_text(encoding="utf-8")
+    runtime_source = (ROOT / "scarletx" / "routes" / "runtime_overrides.py").read_text(encoding="utf-8")
     assert "Application name" not in frontend
     assert 'id="appName"' not in frontend
     assert "app_name:" not in frontend
     assert "{log_level:val('#logLevel')}" in frontend
     assert 'model_copy(update={"app_name": "ScarletX"})' in app_source
+    assert 'set_setting(db, "app_name"' not in runtime_source
 
     from scarletx.app import app
 
@@ -176,3 +175,4 @@ def test_general_settings_no_longer_exposes_application_name():
         and "PATCH" in (getattr(route, "methods", set()) or set())
     ]
     assert len(routes) == 1
+    assert routes[0].dependant.call.__name__ == "update_general_settings_runtime"
