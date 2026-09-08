@@ -216,6 +216,13 @@ def _path_row(component: str, path_value: str | Path, *, missing_warning: bool =
     return StatusRow(component, "WRITABLE" if writable else "READ-ONLY", str(path), "ok" if writable else "warning")
 
 
+def _connection_detail(*, active_connections: int, configured_connections: int, runtime_cap: int) -> str:
+    active = max(0, int(active_connections))
+    configured = max(0, int(configured_connections))
+    cap = max(1, int(runtime_cap))
+    return f"{active} active | {configured} configured | cap {cap}"
+
+
 def _pool_detail(db: Session) -> str:
     try:
         pool = db.get_bind().pool
@@ -247,6 +254,7 @@ def _group_error(name: str, exc: Exception) -> StatusGroup:
 def collect_startup_status(db: Session, settings: Settings) -> list[StatusGroup]:
     """Collect a read-only, no-network startup snapshot for the console."""
     from .models import AuthUser, NativeUsenetJob, Performer, RootFolder, Scene, Studio, TrackedDownload
+    from .usenet.worker import job_dict as native_job_dict
 
     groups: list[StatusGroup] = []
 
@@ -302,6 +310,12 @@ def collect_startup_status(db: Session, settings: Settings) -> list[StatusGroup]
         active_states = {"queued", "downloading", "verifying", "repairing", "extracting", "processing", "postprocessing"}
         active_jobs = [job for job in jobs if str(job.status).casefold() in active_states]
         speed_bps = sum(float(job.speed_bps or 0) for job in active_jobs)
+        active_connections = 0
+        for job in active_jobs:
+            try:
+                active_connections += max(0, int(native_job_dict(job).get("active_connections") or 0))
+            except Exception:
+                continue
         usenet_rows = [
             StatusRow("Native Downloader", "READY" if settings.native_usenet_enabled and enabled_providers else ("DISABLED" if not settings.native_usenet_enabled else "DEGRADED"), f"{len(enabled_providers)} providers", "ok" if settings.native_usenet_enabled and enabled_providers else "warning"),
         ]
@@ -314,7 +328,16 @@ def collect_startup_status(db: Session, settings: Settings) -> list[StatusGroup]
             ))
         total_connections = sum(provider.connections for provider in enabled_providers)
         usenet_rows.extend([
-            StatusRow("Connections", "READY", f"{total_connections} configured | runtime cap {settings.native_usenet_max_connections}", "ok"),
+            StatusRow(
+                "Connections",
+                "READY",
+                _connection_detail(
+                    active_connections=active_connections,
+                    configured_connections=total_connections,
+                    runtime_cap=settings.native_usenet_max_connections,
+                ),
+                "ok",
+            ),
             StatusRow("Download Queue", "ACTIVE" if active_jobs else "CLEAR", f"{len(active_jobs)} active | {speed_bps / (1024 * 1024):.1f} MB/s", "active" if active_jobs else "ok"),
             StatusRow("Failed Queue", "CLEAR" if failed == 0 else "WARNING", f"{failed} failed", "ok" if failed == 0 else "warning"),
             StatusRow("Speed Limit", "UNLIMITED" if settings.native_usenet_speed_limit_mb_s <= 0 else "READY", "no limit" if settings.native_usenet_speed_limit_mb_s <= 0 else f"{settings.native_usenet_speed_limit_mb_s:g} MB/s", "ok"),
