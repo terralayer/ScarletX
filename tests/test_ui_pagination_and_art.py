@@ -23,7 +23,8 @@ def test_web_image_copies_ui_override_assets():
 def test_queue_override_paginates_50_rows_and_moves_eta_to_own_line():
     source = (FRONTEND / "ui_overrides.js").read_text(encoding="utf-8")
     assert "const ACTIVITY_QUEUE_PAGE_SIZE=50" in source
-    assert "rows.slice(start,start+ACTIVITY_QUEUE_PAGE_SIZE)" in source
+    assert "/api/activity/page?page=${activityQueuePage}&limit=${ACTIVITY_QUEUE_PAGE_SIZE}" in source
+    assert "activityQueuePagerHtml(activityQueueTotal)" in source
     assert 'class="live-eta-row"' in source
     assert "Speed / ETA" not in source
     assert 'data-queue-page="first"' in source
