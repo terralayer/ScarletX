@@ -14,6 +14,12 @@ def test_ui_overrides_are_loaded_after_main_frontend_assets():
     assert html.index('src="/app.js"') < html.index('src="/ui_overrides.js"')
 
 
+def test_web_image_copies_ui_override_assets():
+    dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
+    assert "COPY frontend/ui_overrides.css /usr/share/nginx/html/ui_overrides.css" in dockerfile
+    assert "COPY frontend/ui_overrides.js /usr/share/nginx/html/ui_overrides.js" in dockerfile
+
+
 def test_queue_override_paginates_50_rows_and_moves_eta_to_own_line():
     source = (FRONTEND / "ui_overrides.js").read_text(encoding="utf-8")
     assert "const ACTIVITY_QUEUE_PAGE_SIZE=50" in source
