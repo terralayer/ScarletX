@@ -9,7 +9,9 @@ from PIL import Image, ImageChops, ImageFilter, ImageOps
 
 TARGET_SIZE = (800, 350)  # 16:7, matching the ScarletX studio cards/detail panel.
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
-STUDIO_ART_CACHE_VERSION = "v2"
+STUDIO_ART_CACHE_VERSION = "v3"
+LIGHT_CANVAS = (244, 244, 245, 255)
+DARK_CANVAS = (24, 24, 27, 255)
 _ART_CACHE: dict[str, bytes] = {}
 _ART_CACHE_DIR = Path(os.getenv("SCARLETX_CACHE_DIR", "./cache")).expanduser() / "tpdb" / "studios"
 
@@ -95,6 +97,56 @@ def trim_logo_whitespace(image: Image.Image) -> Image.Image:
     return rgba
 
 
+def _relative_luminance(rgb: tuple[int, int, int]) -> float:
+    channels: list[float] = []
+    for value in rgb:
+        component = value / 255.0
+        channels.append(component / 12.92 if component <= 0.04045 else ((component + 0.055) / 1.055) ** 2.4)
+    return (0.2126 * channels[0]) + (0.7152 * channels[1]) + (0.0722 * channels[2])
+
+
+def _contrast_ratio(foreground_luminance: float, background_luminance: float) -> float:
+    lighter = max(foreground_luminance, background_luminance)
+    darker = min(foreground_luminance, background_luminance)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def _choose_contrast_canvas(logo: Image.Image) -> tuple[int, int, int, int]:
+    """Choose the neutral canvas that best preserves visibility of the logo's real colors."""
+    sample = logo.convert("RGBA").copy()
+    sample.thumbnail((128, 128), Image.Resampling.LANCZOS)
+    pixels = sample.get_flattened_data() if hasattr(sample, "get_flattened_data") else sample.getdata()
+    visible = [(r, g, b, a) for r, g, b, a in pixels if a >= 48]
+    if not visible:
+        return LIGHT_CANVAS
+
+    def score(canvas: tuple[int, int, int, int]) -> float:
+        bg_luminance = _relative_luminance(canvas[:3])
+        weighted_total = 0.0
+        alpha_total = 0.0
+        for r, g, b, alpha in visible:
+            weight = alpha / 255.0
+            weighted_total += _contrast_ratio(_relative_luminance((r, g, b)), bg_luminance) * weight
+            alpha_total += weight
+        return weighted_total / max(alpha_total, 1e-9)
+
+    light_score = score(LIGHT_CANVAS)
+    dark_score = score(DARK_CANVAS)
+    return LIGHT_CANVAS if light_score >= dark_score else DARK_CANVAS
+
+
+def _add_logo_halo(rendered: Image.Image, logo_layer: Image.Image, canvas: tuple[int, int, int, int]) -> None:
+    """Add subtle outer separation without changing any pixels inside the brand mark."""
+    mask = logo_layer.getchannel("A")
+    blur_radius = max(2.0, min(rendered.size) * 0.012)
+    expanded = mask.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+    outer = ImageChops.subtract(expanded, mask).point(lambda value: int(value * 0.34))
+    halo_rgb = (18, 18, 20) if canvas == LIGHT_CANVAS else (250, 250, 250)
+    halo = Image.new("RGBA", rendered.size, (*halo_rgb, 0))
+    halo.putalpha(outer)
+    rendered.alpha_composite(halo)
+
+
 def prepare_studio_artwork(image_bytes: bytes, target_size: tuple[int, int] = TARGET_SIZE) -> bytes:
     try:
         source = Image.open(BytesIO(image_bytes))
@@ -109,12 +161,18 @@ def prepare_studio_artwork(image_bytes: bytes, target_size: tuple[int, int] = TA
 
     # Studio marks vary wildly in aspect ratio. Always contain the complete TPDB
     # logo/poster inside the same 16:7 canvas so no card is cropped or stretched.
-    rendered = Image.new("RGBA", target_size, (0, 0, 0, 0))
     fitted = ImageOps.contain(logo, inner_size, method=Image.Resampling.LANCZOS)
-    rendered.alpha_composite(
-        fitted,
-        ((target_w - fitted.width) // 2, (target_h - fitted.height) // 2),
-    )
+    x = (target_w - fitted.width) // 2
+    y = (target_h - fitted.height) // 2
+    logo_layer = Image.new("RGBA", target_size, (0, 0, 0, 0))
+    logo_layer.alpha_composite(fitted, (x, y))
+
+    # Pick light or charcoal based on the actual visible TPDB logo colors. Keeping
+    # the canvas in the normalized PNG also makes inline logos readable everywhere.
+    canvas = _choose_contrast_canvas(fitted)
+    rendered = Image.new("RGBA", target_size, canvas)
+    _add_logo_halo(rendered, logo_layer, canvas)
+    rendered.alpha_composite(logo_layer)
 
     out = BytesIO()
     rendered.save(out, "PNG", optimize=True)
