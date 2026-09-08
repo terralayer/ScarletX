@@ -216,12 +216,7 @@ async def process_completed_downloads(
             local_scene_id = local_scene.id if local_scene and local_scene.content_type == "scene" else None
             if local_scene_id is None:
                 if not metadata_id:
-                    with session_factory() as db:
-                        tracked = db.get(TrackedDownload, job["tracked_id"])
-                        tracked.error = "Completed download is not linked to a scene"
-                        tracked.last_checked_at = utcnow()
-                        db.commit()
-                    continue
+                    raise FileImportError("Completed download is not linked to a scene")
                 remote = await _fetch(settings, metadata_id, metadata_factory)
                 with session_factory() as db:
                     local_scene = upsert_scene(db, remote, True, "scene")
