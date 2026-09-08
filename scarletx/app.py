@@ -4,6 +4,9 @@ from .auth_routes import router as auth_router
 from .db import SessionLocal
 from .http_security import install_authentication, install_security_headers, remove_legacy_api_key_middleware
 from .main import app
+from .media_dedup import install_runtime_dedup
+from .routes import application as legacy_application
+from .routes.runtime_overrides import router as runtime_overrides_router
 from .settings_store import load_database_settings
 
 
@@ -12,11 +15,27 @@ def _remove_legacy_web_route() -> None:
     app.router.routes = [route for route in app.router.routes if getattr(route, "path", None) != "/"]
 
 
-# The legacy module still owns the domain API routes. The public web surface is
-# now Nginx, so remove its old root HTML route and API-key-only middleware before
-# composing the current authentication/security layers.
+def _remove_legacy_api_route(path: str, method: str) -> None:
+    method = method.upper()
+    app.router.routes = [
+        route
+        for route in app.router.routes
+        if not (
+            getattr(route, "path", None) == path
+            and method in (getattr(route, "methods", set()) or set())
+        )
+    ]
+
+
+# The legacy module still owns most domain API routes. Nginx owns the public web
+# surface, while small corrected contracts are composed here without rewriting the
+# legacy route monolith.
 _remove_legacy_web_route()
+_remove_legacy_api_route("/api/library/scenes/page", "GET")
+_remove_legacy_api_route("/api/settings/general", "PATCH")
+install_runtime_dedup(legacy_application)
 remove_legacy_api_key_middleware(app)
+app.include_router(runtime_overrides_router)
 app.include_router(auth_router)
 install_authentication(
     app,
