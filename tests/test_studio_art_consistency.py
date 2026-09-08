@@ -29,17 +29,23 @@ def test_studio_artwork_is_contained_with_consistent_padding():
 
 
 def test_studio_cards_always_request_tpdb_artwork_and_use_uniform_canvas():
-    app_js = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    override_path = ROOT / "frontend" / "studio_art_overrides.js"
+    assert override_path.exists()
+    source = override_path.read_text(encoding="utf-8")
     css = (ROOT / "frontend" / "ui_overrides.css").read_text(encoding="utf-8")
-    start = app_js.index("function entityCard")
-    end = app_js.index("function bindEntityActions", start)
-    card = app_js[start:end]
 
-    assert "let renderImg=type==='studios'||!!img" in card
-    assert "/api/artwork/studios/" in card
-    assert "renderImg?`<img" in card
+    assert "let renderImg=type==='studios'||!!img" in source
+    assert "/api/artwork/studios/" in source
+    assert "renderImg?`<img" in source
     assert ".studio-card .media-poster{aspect-ratio:16/7" in css
     assert ".studio-card .media-poster img{object-fit:contain" in css
+
+
+def test_studio_art_override_is_loaded_and_packaged():
+    index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+    dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
+    assert '<script src="/studio_art_overrides.js"></script>' in index
+    assert "COPY frontend/studio_art_overrides.js /usr/share/nginx/html/studio_art_overrides.js" in dockerfile
 
 
 def test_studio_art_route_prefers_tpdb_metadata_before_local_fallback():
@@ -52,6 +58,12 @@ def test_studio_art_route_prefers_tpdb_metadata_before_local_fallback():
     assert "studio = await tpdb.get_studio(tpdb_identifier)" in block
     assert "urls = [value for value in (studio.logo_url, studio.poster_url) if value]" in block
     assert block.index("studio = await tpdb.get_studio(tpdb_identifier)") < block.index("local_urls =")
+
+
+def test_studio_art_cache_is_versioned_for_new_normalization():
+    source = (ROOT / "scarletx" / "studio_art.py").read_text(encoding="utf-8")
+    assert 'STUDIO_ART_CACHE_VERSION = "v2"' in source
+    assert 'f"{STUDIO_ART_CACHE_VERSION}-{identifier}.png"' in source
 
 
 def _png(image: Image.Image) -> bytes:
