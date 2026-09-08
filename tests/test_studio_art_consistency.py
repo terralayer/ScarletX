@@ -66,7 +66,11 @@ def test_studio_cards_always_request_standardized_tpdb_artwork():
     css = (ROOT / "frontend" / "ui_overrides.css").read_text(encoding="utf-8")
 
     assert "let renderImg=type==='studios'||!!img" in source
-    assert "type==='studios'?`/api/artwork/studios/${encodeURIComponent(id)}`" in source
+    assert "STUDIO_ART_HTTP_VERSION='v3'" in source
+    assert "studioArtUrl=function(id)" in source
+    assert "?v=${STUDIO_ART_HTTP_VERSION}" in source
+    assert "let logo=id?`<span class=\"studio-logo\"><img src=\"${studioArtUrl(id)}\"" in source
+    assert "type==='studios'?studioArtUrl(id):img" in source
     assert "/api/artwork/studios/${encodeURIComponent(id)}?size=card" not in source
     assert "renderImg?`<img" in source
     assert ".studio-card .media-poster{aspect-ratio:16/7" in css
