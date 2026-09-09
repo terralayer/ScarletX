@@ -64,6 +64,15 @@ def test_library_media_list_and_player_omit_filename_and_audio_codec():
     assert "<b>Audio</b>" not in player
 
 
+def test_library_runtime_media_spec_puts_duration_on_its_own_line():
+    source = (FRONTEND / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
+
+    assert "mediaFileRowsHtml=function(files)" in source
+    assert '<div class="media-spec">' in source
+    assert '</div><small>${durationText(x.duration_seconds)}</small>' in source
+    assert "x.audio_codec" not in source
+
+
 def test_scene_rows_show_tpdb_artwork_studio_logo_and_play_control():
     source = (FRONTEND / "app.js").read_text(encoding="utf-8")
     styles = STYLES.read_text(encoding="utf-8")
