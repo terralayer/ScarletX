@@ -9,6 +9,10 @@ def section(source: str, start: str, end: str) -> str:
     return source[source.index(start):source.index(end)]
 
 
+def compact(source: str) -> str:
+    return "".join(source.split())
+
+
 def test_entity_library_and_search_ignore_stale_navigation_results():
     source = (FRONTEND / "app.js").read_text(encoding="utf-8")
     library = section(source, "async function loadEntityLibrary", "async function searchEntity")
@@ -16,6 +20,15 @@ def test_entity_library_and_search_ignore_stale_navigation_results():
 
     assert "if(view!==type)return" in library
     assert "if(view!==type)return" in search
+
+
+def test_entity_library_and_search_ignore_stale_navigation_errors():
+    source = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    library = compact(section(source, "async function loadEntityLibrary", "async function searchEntity"))
+    search = compact(section(source, "async function searchEntity", "function entityCard"))
+
+    assert "catch(e){if(view!==type)return;notify(e.message,'error')}" in library
+    assert "catch(e){if(view!==type)return;$('#entityGrid').innerHTML=empty(e.message)}" in search
 
 
 def test_top_level_async_pages_ignore_results_after_navigation():
