@@ -7,6 +7,7 @@ from datetime import UTC, timedelta
 from pathlib import Path
 from sqlalchemy import select
 
+from .asset_cache import cache_scene_asset_bundle
 from .config import Settings
 from .download_metrics import download_phase_metrics
 from .library_management import FileImportError, ensure_library_config, import_media_file
@@ -57,9 +58,6 @@ def _import_failure_attempt(error: str | None) -> int:
 
 def _retry_attempt_for(tracked: TrackedDownload) -> int:
     attempt = _import_failure_attempt(tracked.error)
-    # Existing databases can contain pre-backoff import errors without an attempt
-    # prefix. Treat those as one prior failure so an upgrade immediately stops the
-    # old one-second retry storm without requiring a schema migration.
     if attempt == 0 and tracked.status == "import_pending" and tracked.error:
         return 1
     return attempt
@@ -230,11 +228,6 @@ async def process_completed_downloads(
                 ensure_library_config(db, scene)
                 moved = None
                 media_id = None
-                # ScarletX's built-in downloader owns its completed payload and should
-                # always finish the job by placing the primary scene in the configured
-                # library. The legacy File Management toggle remains meaningful for
-                # external clients, but must not leave native downloads as hash/PAR/RAR
-                # payload directories in Completed.
                 if settings.file_management_enabled or download_client == "scarletx":
                     if not storage_path:
                         raise FileImportError("Download client did not report a completed storage path")
@@ -265,11 +258,7 @@ async def process_completed_downloads(
                     try:
                         recent_imports.register(FileIdentity.from_path(moved))
                     except OSError:
-                        # The durable import is already complete. A disappearing
-                        # destination should be reconciled normally by the scanner.
                         pass
-                # Native Usenet has no seeding requirement. Once the selected video
-                # has been moved into the library, discard PAR2/RAR/hash support files.
                 if moved and storage_path and download_client == "scarletx":
                     source_root = Path(storage_path).expanduser()
                     try:
@@ -282,6 +271,19 @@ async def process_completed_downloads(
                 emit_status("Import", "COMPLETED", moved or release_title, severity="ok")
             if media_id is not None:
                 await asyncio.to_thread(index_media_file_by_id, session_factory, media_id, generate_art=True)
+                try:
+                    with session_factory() as db:
+                        await cache_scene_asset_bundle(db, local_scene_id)
+                except Exception as cache_exc:
+                    with session_factory() as db:
+                        db.add(
+                            History(
+                                event_type="artwork_cache_failed",
+                                scene_id=local_scene_id,
+                                message=f"Imported scene but could not finish artwork cache: {cache_exc}"[:1000],
+                            )
+                        )
+                        db.commit()
         except Exception as exc:
             detail = f"{exc.__class__.__name__}: {exc}"[:1200]
             with session_factory() as db:
@@ -307,7 +309,5 @@ async def process_completed_downloads(
         try:
             await emit_webhooks(session_factory, event, payload)
         except Exception:
-            # Notification transport is best effort and must not change durable
-            # download/import outcomes or turn Process Completed into HTTP 500.
             continue
     return {"enabled": True, "checked": len(states), "imported": imported, "failed": failed, "poll_seconds": settings.download_poll_seconds}
