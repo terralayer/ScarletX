@@ -9,6 +9,10 @@ def section(source: str, start: str, end: str) -> str:
     return source[source.index(start):source.index(end)]
 
 
+def compact(source: str) -> str:
+    return "".join(source.split())
+
+
 def test_entity_library_and_search_ignore_stale_navigation_results():
     source = (FRONTEND / "app.js").read_text(encoding="utf-8")
     library = section(source, "async function loadEntityLibrary", "async function searchEntity")
@@ -16,6 +20,22 @@ def test_entity_library_and_search_ignore_stale_navigation_results():
 
     assert "if(view!==type)return" in library
     assert "if(view!==type)return" in search
+
+
+def test_runtime_entity_library_and_search_ignore_stale_navigation_errors():
+    override_path = FRONTEND / "navigation_error_overrides.js"
+    assert override_path.exists(), "navigation error handling must be isolated in a runtime override"
+    source = compact(override_path.read_text(encoding="utf-8"))
+
+    assert "loadEntityLibrary=asyncfunction" in source
+    assert "searchEntity=asyncfunction" in source
+    assert "catch(e){if(view!==type)return;notify(e.message,'error')}" in source
+    assert "catch(e){if(view!==type)return;$('#entityGrid').innerHTML=empty(e.message)}" in source
+
+    index = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
+    assert '<script src="/navigation_error_overrides.js"></script>' in index
+    assert "COPY frontend/navigation_error_overrides.js /usr/share/nginx/html/navigation_error_overrides.js" in dockerfile
 
 
 def test_top_level_async_pages_ignore_results_after_navigation():

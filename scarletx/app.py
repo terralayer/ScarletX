@@ -7,6 +7,7 @@ from .main import app
 from .media_dedup import install_runtime_dedup
 from .routes import application as legacy_application
 from .routes.runtime_overrides import (
+    dashboard_performers_runtime,
     dashboard_scenes_runtime,
     dashboard_studios_runtime,
     update_general_settings_runtime,
@@ -43,6 +44,7 @@ def _add_dashboard_routes() -> None:
     definitions = (
         ("/api/dashboard/scenes", dashboard_scenes_runtime, "dashboard_downloaded_scenes"),
         ("/api/dashboard/studios", dashboard_studios_runtime, "dashboard_recent_studios"),
+        ("/api/dashboard/performers", dashboard_performers_runtime, "dashboard_recent_performers"),
     )
     existing = {getattr(route, "path", None) for route in app.router.routes}
     for path, endpoint, name in definitions:

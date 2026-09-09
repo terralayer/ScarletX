@@ -21,6 +21,7 @@ COPY frontend/auth.css /usr/share/nginx/html/auth.css
 COPY frontend/auth.js /usr/share/nginx/html/auth.js
 COPY frontend/styles.css /usr/share/nginx/html/styles.css
 COPY frontend/app.js /usr/share/nginx/html/app.js
+COPY frontend/navigation_error_overrides.js /usr/share/nginx/html/navigation_error_overrides.js
 COPY frontend/ui_overrides.css /usr/share/nginx/html/ui_overrides.css
 COPY frontend/ui_overrides.js /usr/share/nginx/html/ui_overrides.js
 COPY frontend/studio_art_overrides.js /usr/share/nginx/html/studio_art_overrides.js
@@ -37,6 +38,7 @@ RUN set -eux; \
     grep -q '/styles.css' /usr/share/nginx/html/index.html; \
     grep -q '/ui_overrides.css' /usr/share/nginx/html/index.html; \
     grep -q '/app.js' /usr/share/nginx/html/index.html; \
+    grep -q '/navigation_error_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/ui_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/studio_art_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/dashboard_settings_overrides.js' /usr/share/nginx/html/index.html; \

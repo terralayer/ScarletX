@@ -32,6 +32,7 @@ def test_route_and_method_contract_is_stable():
     runtime_extensions = [
         {"path": "/api/activity/count", "methods": ["GET"]},
         {"path": "/api/activity/page", "methods": ["GET"]},
+        {"path": "/api/dashboard/performers", "methods": ["GET"]},
         {"path": "/api/dashboard/scenes", "methods": ["GET"]},
         {"path": "/api/dashboard/studios", "methods": ["GET"]},
     ]

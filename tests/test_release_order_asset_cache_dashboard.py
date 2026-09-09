@@ -103,8 +103,64 @@ def test_recent_studios_follow_latest_downloaded_release(tmp_path):
     engine.dispose()
 
 
-def test_dashboard_removes_activity_panels_and_adds_recent_release_studios():
+def test_recent_performers_follow_latest_downloaded_release(tmp_path):
+    from scarletx import dashboard_data
+
+    assert hasattr(dashboard_data, "recent_performers")
+    engine, factory = _factory(tmp_path)
+    with factory() as db:
+        alice = Performer(tpdb_id="alice", name="Alice", image_url="https://img.example/alice.jpg", is_library=True)
+        beth = Performer(tpdb_id="beth", name="Beth", image_url="https://img.example/beth.jpg", is_library=True)
+        db.add_all([alice, beth])
+        db.flush()
+
+        alice_old = Scene(
+            tpdb_id="alice-old",
+            title="Alice Old",
+            content_type="scene",
+            release_date=date(2025, 1, 1),
+            performers=[alice],
+        )
+        alice_new = Scene(
+            tpdb_id="alice-new",
+            title="Alice New",
+            content_type="scene",
+            release_date=date(2026, 6, 1),
+            performers=[alice],
+        )
+        beth_new = Scene(
+            tpdb_id="beth-new",
+            title="Beth New",
+            content_type="scene",
+            release_date=date(2026, 8, 1),
+            performers=[beth],
+        )
+        metadata_only = Scene(
+            tpdb_id="alice-meta",
+            title="Alice Metadata Only",
+            content_type="scene",
+            release_date=date(2026, 9, 1),
+            performers=[alice],
+        )
+        db.add_all([alice_old, alice_new, beth_new, metadata_only])
+        db.flush()
+        for scene in (alice_old, alice_new, beth_new):
+            db.add(MediaFile(scene_id=scene.id, path=str(tmp_path / f"{scene.tpdb_id}.mp4")))
+        db.commit()
+
+        rows = dashboard_data.recent_performers(db, limit=8)
+        assert [row["name"] for row in rows] == ["Beth", "Alice"]
+        assert rows[0]["latest_title"] == "Beth New"
+        assert rows[0]["release_count"] == 1
+        assert rows[1]["latest_title"] == "Alice New"
+        assert rows[1]["release_count"] == 2
+        assert rows[1]["image_url"] == "https://img.example/alice.jpg"
+    engine.dispose()
+
+
+def test_dashboard_removes_activity_panels_and_adds_recent_release_studios_and_performers():
     source = (ROOT / "frontend" / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
+    app_source = (ROOT / "scarletx" / "app.py").read_text(encoding="utf-8")
 
     assert "Activity Queue" not in source
     assert "Recent Activity" not in source
@@ -112,7 +168,13 @@ def test_dashboard_removes_activity_panels_and_adds_recent_release_studios():
     assert "/api/history" not in source
     assert "Recently Released Scenes" in source
     assert "Studios with Recent Releases" in source
+    assert "Performers with Recent Releases" in source
     assert "/api/dashboard/studios?limit=8" in source
+    assert "/api/dashboard/performers?limit=8" in source
+    assert "data-dashboard-performer" in source
+    assert source.index("Studios with Recent Releases") < source.index("Performers with Recent Releases")
+    assert source.index("Performers with Recent Releases") < source.index("Upcoming")
+    assert '"/api/dashboard/performers"' in app_source
 
 
 def test_successful_import_boundary_precaches_complete_scene_asset_bundle():

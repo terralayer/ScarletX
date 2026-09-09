@@ -1,22 +1,25 @@
 dashboard=async function(){
-  $('#app').innerHTML=pageHead('Welcome back','Your downloaded ScarletX library.',`<button class="btn primary" id="addNew">＋ Add New</button>`)+`<div class="stats" id="stats"></div><div class="dashgrid"><div class="panel"><div class="panel-head"><h2>Studios with Recent Releases</h2><button class="linkbtn" data-go="studios">View studios</button></div><div class="rows" id="studioReleaseRows"></div></div><div class="panel"><div class="panel-head"><h2>Upcoming</h2><button class="linkbtn" data-go="calendar">View calendar</button></div><div class="rows" id="calendarRows"></div></div></div><div class="panel recent"><div class="panel-head"><h2>Recently Released Scenes</h2><button class="linkbtn" data-go="library">View library</button></div><div id="recentScenes" style="padding:0 12px 14px"></div></div>`;
+  $('#app').innerHTML=pageHead('Welcome back','Your downloaded ScarletX library.',`<button class="btn primary" id="addNew">＋ Add New</button>`)+`<div class="stats" id="stats"></div><div class="dashgrid"><div class="panel"><div class="panel-head"><h2>Studios with Recent Releases</h2><button class="linkbtn" data-go="studios">View studios</button></div><div class="rows" id="studioReleaseRows"></div></div><div class="panel"><div class="panel-head"><h2>Performers with Recent Releases</h2><button class="linkbtn" data-go="performers">View performers</button></div><div class="rows" id="performerReleaseRows"></div></div><div class="panel"><div class="panel-head"><h2>Upcoming</h2><button class="linkbtn" data-go="calendar">View calendar</button></div><div class="rows" id="calendarRows"></div></div></div><div class="panel recent"><div class="panel-head"><h2>Recently Released Scenes</h2><button class="linkbtn" data-go="library">View library</button></div><div id="recentScenes" style="padding:0 12px 14px"></div></div>`;
   $('#addNew').onclick=()=>{view='scenes';entityMode.scenes='search';nav();renderEntities('scenes')};
   $('#app').onclick=e=>{
     let st=e.target.closest('[data-dashboard-studio]');
     if(st)return studioProfile(st.dataset.dashboardStudio,null);
+    let performer=e.target.closest('[data-dashboard-performer]');
+    if(performer)return performerProfile(performer.dataset.dashboardPerformer,null);
     let b=e.target.closest('[data-go]');
     if(b){view=b.dataset.go;nav();render()}
   };
   try{
-    let [sys,recent,studioData,cal,disk]=await Promise.all([
+    let [sys,recent,studioData,performerData,cal,disk]=await Promise.all([
       api('/api/system/status'),
       api('/api/dashboard/scenes?limit=8'),
       api('/api/dashboard/studios?limit=8'),
+      api('/api/dashboard/performers?limit=8'),
       api('/api/calendar?limit=5'),
       api('/api/system/diskspace').catch(()=>[])
     ]);
     if(view!=='dashboard')return;
-    let scenes=recent.items||[],studios=studioData.items||[];
+    let scenes=recent.items||[],studios=studioData.items||[],performers=performerData.items||[];
     libraryCache=scenes;
     let total=0,used=0;
     disk.filter(x=>x.exists&&x.total_bytes).forEach(x=>{total+=x.total_bytes;used+=x.used_bytes});
@@ -31,11 +34,12 @@ dashboard=async function(){
     let sceneStat=[...document.querySelectorAll('#stats .stat')].find(card=>card.querySelector('small')?.textContent==='Scenes');
     if(sceneStat){let detail=sceneStat.querySelector('em');if(detail)detail.textContent='Downloaded'}
     $('#studioReleaseRows').innerHTML=studios.map(x=>`<div class="row"><div class="rowicon studio-logo"><img src="${studioArtUrl(x.tpdb_id||x.id)}" alt="" loading="lazy" onerror="this.remove()"></div><div><button class="studio-link" data-dashboard-studio="${esc(x.tpdb_id||x.id)}">${esc(x.name||'Studio')}</button><small>${esc(x.latest_title||'Latest downloaded release')} · ${fmtDate(x.latest_release_date)}</small></div><span class="badge soft">${Number(x.release_count||0)} ${Number(x.release_count||0)===1?'scene':'scenes'}</span></div>`).join('')||`<div class="row"><div class="rowicon">□</div><div><b>No downloaded studio releases yet</b><small>Studios appear here after scenes are added to the library.</small></div></div>`;
+    $('#performerReleaseRows').innerHTML=performers.map(x=>{let id=x.tpdb_id||x.id;return `<div class="row"><div class="rowicon"><img src="/api/artwork/performers/${encodeURIComponent(id)}?size=card" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:inherit" onerror="this.remove()"></div><div><button class="studio-link" data-dashboard-performer="${esc(id)}">${esc(x.name||'Performer')}</button><small>${esc(x.latest_title||'Latest downloaded release')} · ${fmtDate(x.latest_release_date)}</small></div><span class="badge soft">${Number(x.release_count||0)} ${Number(x.release_count||0)===1?'scene':'scenes'}</span></div>`}).join('')||`<div class="row"><div class="rowicon">□</div><div><b>No downloaded performer releases yet</b><small>Performers appear here after their scenes are added to the library.</small></div></div>`;
     $('#calendarRows').innerHTML=cal.slice(0,5).map(x=>`<div class="row"><div class="rowicon">${new Date(x.date).getDate()}</div><div><b>${esc(x.title)}</b><small>${fmtDate(x.date)}</small></div><span class="badge soft">Scene</span></div>`).join('')||`<div class="row"><div class="rowicon">□</div><div><b>No upcoming releases</b><small>Monitored release dates will appear here.</small></div></div>`;
     let recentRoot=$('#recentScenes');
     recentRoot.innerHTML=scenes.length?sceneTable(scenes,true):empty('No downloaded scenes yet.');
     bindSceneTableActions(recentRoot,true);
-  }catch(err){notify(err.message,'error')}
+  }catch(err){if(view!=='dashboard')return;notify(err.message,'error')}
 };
 
 mediaFileRowsHtml=function(files){

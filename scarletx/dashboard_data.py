@@ -167,3 +167,76 @@ def recent_studios(db: Session, *, limit: int = 8) -> list[dict]:
             }
         )
     return result
+
+
+def recent_performers(db: Session, *, limit: int = 8) -> list[dict]:
+    """Performers ranked by the newest release date among their downloaded scenes."""
+    usable_media = _usable_media_id()
+    grouped = db.execute(
+        select(
+            Performer.id.label("id"),
+            Performer.tpdb_id.label("tpdb_id"),
+            Performer.name.label("name"),
+            Performer.image_url.label("image_url"),
+            func.count(Scene.id).label("release_count"),
+            func.max(Scene.release_date).label("latest_release_date"),
+        )
+        .join(scene_performer, scene_performer.c.performer_id == Performer.id)
+        .join(Scene, Scene.id == scene_performer.c.scene_id)
+        .where(
+            Scene.content_type == "scene",
+            usable_media.is_not(None),
+        )
+        .group_by(Performer.id, Performer.tpdb_id, Performer.name, Performer.image_url)
+        .order_by(
+            func.max(Scene.release_date).is_(None).asc(),
+            func.max(Scene.release_date).desc(),
+            Performer.id.desc(),
+        )
+        .limit(limit)
+    ).mappings().all()
+    if not grouped:
+        return []
+
+    performer_ids = [int(row["id"]) for row in grouped]
+    latest_rows = db.execute(
+        select(
+            scene_performer.c.performer_id,
+            Scene.tpdb_id,
+            Scene.title,
+            Scene.release_date,
+            Scene.id,
+        )
+        .join(Scene, Scene.id == scene_performer.c.scene_id)
+        .where(
+            scene_performer.c.performer_id.in_(performer_ids),
+            Scene.content_type == "scene",
+            _usable_media_id().is_not(None),
+        )
+        .order_by(
+            scene_performer.c.performer_id.asc(),
+            Scene.release_date.is_(None).asc(),
+            Scene.release_date.desc(),
+            Scene.id.desc(),
+        )
+    ).all()
+    latest_by_performer: dict[int, tuple] = {}
+    for row in latest_rows:
+        latest_by_performer.setdefault(int(row.performer_id), row)
+
+    result = []
+    for row in grouped:
+        latest = latest_by_performer.get(int(row["id"]))
+        result.append(
+            {
+                "id": int(row["id"]),
+                "tpdb_id": row["tpdb_id"],
+                "name": row["name"],
+                "image_url": row["image_url"],
+                "release_count": int(row["release_count"] or 0),
+                "latest_release_date": latest.release_date if latest else row["latest_release_date"],
+                "latest_scene_id": latest.tpdb_id if latest else None,
+                "latest_title": latest.title if latest else None,
+            }
+        )
+    return result
