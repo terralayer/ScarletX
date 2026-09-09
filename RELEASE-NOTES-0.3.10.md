@@ -1,0 +1,17 @@
+# ScarletX 0.3.10
+
+ScarletX 0.3.10 completes the whole-app optimization release with major reliability, performance, library, dashboard, artwork, downloader, and TrueNAS improvements.
+
+Highlights:
+- Optimizes large libraries with indexed/lightweight queries, bounded pagination, TPDB request coalescing, incremental scanning, and throttled progress persistence.
+- Improves the native Usenet downloader with adaptive concurrency, provider-aware connection capacity, persistent connection pools, stronger recovery, and bounded post-processing/import retries.
+- Makes Dashboard and Library downloaded-media driven: scenes are ordered by release date, recent-release Studios and Performers are surfaced, and Wanted remains separate from owned media.
+- Caches scene, performer, studio, poster, logo, and screenshot artwork at successful import so normal library use can stay local after the initial TPDB fetch.
+- Automatically removes byte-identical same-scene duplicate media only after full SHA-256 verification and records cleanup in History.
+- Normalizes Studio artwork for consistent sizing and contrast while preserving original logo colors.
+- Hardens frontend navigation against stale async success and error responses repainting a newer view.
+- Preserves authentication, security hardening, non-root containers, private FastAPI networking, persistent backups, and TrueNAS deployment compatibility.
+
+Upgrade notes:
+- Existing configuration, database, downloads, media, artwork caches, and backups are preserved.
+- Container deployments require matching backend and web 0.3.10 images.

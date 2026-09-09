@@ -1,3 +1,3 @@
 """ScarletX application package."""
 
-__version__ = "0.3.10-beta.4"
+__version__ = "0.3.10"

@@ -1,7 +1,7 @@
 services:
   scarletx-permissions:
-    image: ghcr.io/terralayer/scarletx:0.3.10-beta.4
-    container_name: scarletx-0.3.10-beta.4-permissions
+    image: ghcr.io/terralayer/scarletx:0.3.10
+    container_name: scarletx-0.3.10-permissions
     pull_policy: always
     user: "0:0"
     restart: "no"
@@ -18,8 +18,8 @@ services:
       - ${SCARLETX_BACKUPS_PATH:?Set SCARLETX_BACKUPS_PATH}:/backups
 
   scarletx-backend:
-    image: ghcr.io/terralayer/scarletx:0.3.10-beta.4
-    container_name: scarletx-0.3.10-beta.4-backend
+    image: ghcr.io/terralayer/scarletx:0.3.10
+    container_name: scarletx-0.3.10-backend
     restart: unless-stopped
     pull_policy: always
     depends_on:
@@ -56,8 +56,8 @@ services:
       retries: 3
 
   scarletx-web:
-    image: ghcr.io/terralayer/scarletx-web:0.3.10-beta.4
-    container_name: scarletx-0.3.10-beta.4-web
+    image: ghcr.io/terralayer/scarletx-web:0.3.10
+    container_name: scarletx-0.3.10-web
     restart: unless-stopped
     pull_policy: always
     environment:
