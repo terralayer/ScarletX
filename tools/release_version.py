@@ -24,6 +24,7 @@ VERSIONED_FILES = (
     "scarletx/usenet/worker.py",
     "packaging/truenas/scarletx/app.yaml",
     "packaging/truenas/scarletx/ix_values.yaml",
+    "packaging/truenas/scarletx/questions.yaml",
 )
 
 
