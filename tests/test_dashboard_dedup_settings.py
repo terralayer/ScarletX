@@ -57,6 +57,14 @@ def test_dashboard_uses_downloaded_scene_total_and_recent_page():
     assert "COPY frontend/dashboard_settings_overrides.js /usr/share/nginx/html/dashboard_settings_overrides.js" in dockerfile
 
 
+def test_dashboard_scene_links_open_media_library():
+    source = (ROOT / "frontend" / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
+
+    assert '<button class="linkbtn" data-go="library">View library</button>' in source
+    assert "['▣','Scenes',recent.total||0,'Downloaded','library']" in source
+    assert 'data-go="${x[4]}"' in source
+
+
 def test_dashboard_downloaded_scene_route_is_registered_once():
     from scarletx.app import app
 
