@@ -29,12 +29,14 @@ def test_route_and_method_contract_is_stable():
     from scarletx.app import app
 
     current = route_contract(app)
-    activity_extensions = [
+    runtime_extensions = [
         {"path": "/api/activity/count", "methods": ["GET"]},
         {"path": "/api/activity/page", "methods": ["GET"]},
+        {"path": "/api/dashboard/scenes", "methods": ["GET"]},
+        {"path": "/api/dashboard/studios", "methods": ["GET"]},
     ]
-    assert all(route in current for route in activity_extensions)
-    stable_contract = [route for route in current if route not in activity_extensions]
+    assert all(route in current for route in runtime_extensions)
+    stable_contract = [route for route in current if route not in runtime_extensions]
     assert stable_contract == json.loads(ROUTES.read_text())
     assert any(isinstance(route, APIRoute) for route in app.routes)
 
@@ -73,9 +75,6 @@ def test_usenet_subsystem_boundaries_expose_stable_interfaces():
 
 
 def test_frontend_dom_ids_are_stable():
-    # The pre-extraction fixture intentionally captured IDs appearing in both
-    # static markup and JavaScript-generated templates. Preserve that same source
-    # universe after moving the application script into app.js.
     source = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     source += "\n" + (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
     current = sorted(set(re.findall(r'\bid=["\']([^"\']+)["\']', source)))

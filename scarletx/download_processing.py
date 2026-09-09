@@ -7,6 +7,7 @@ from datetime import UTC, timedelta
 from pathlib import Path
 from sqlalchemy import select
 
+from .asset_cache import cache_scene_asset_bundle
 from .config import Settings
 from .download_metrics import download_phase_metrics
 from .library_management import FileImportError, ensure_library_config, import_media_file
@@ -282,6 +283,19 @@ async def process_completed_downloads(
                 emit_status("Import", "COMPLETED", moved or release_title, severity="ok")
             if media_id is not None:
                 await asyncio.to_thread(index_media_file_by_id, session_factory, media_id, generate_art=True)
+                try:
+                    with session_factory() as db:
+                        await cache_scene_asset_bundle(db, local_scene_id)
+                except Exception as cache_exc:
+                    with session_factory() as db:
+                        db.add(
+                            History(
+                                event_type="artwork_cache_failed",
+                                scene_id=local_scene_id,
+                                message=f"Imported scene but could not finish artwork cache: {cache_exc}"[:1000],
+                            )
+                        )
+                        db.commit()
         except Exception as exc:
             detail = f"{exc.__class__.__name__}: {exc}"[:1200]
             with session_factory() as db:

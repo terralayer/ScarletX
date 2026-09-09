@@ -53,6 +53,31 @@ def _thumb_path(key: str, size: tuple[int, int]) -> Path:
     return CACHE_ROOT / "thumbs" / f"{digest}.webp"
 
 
+def cache_remote_image_bytes(
+    key: str,
+    content: bytes,
+    content_type: str,
+    source_url: str | None = None,
+) -> None:
+    """Seed a route cache key from bytes already fetched during import."""
+    data_path, meta_path = _paths(key)
+    try:
+        data_path.parent.mkdir(parents=True, exist_ok=True)
+        temp = data_path.with_suffix(".tmp")
+        temp.write_bytes(content)
+        temp.replace(data_path)
+        meta_path.write_text(
+            json.dumps(
+                {
+                    "content_type": content_type or "image/jpeg",
+                    "url": source_url or "",
+                }
+            )
+        )
+    except OSError:
+        pass
+
+
 async def _download_public_image(client: httpx.AsyncClient, url: str) -> tuple[bytes, str, str]:
     current = str(url or "").strip()
     for _redirect in range(MAX_REDIRECTS + 1):
@@ -106,11 +131,7 @@ async def cached_remote_image(key: str, urls: list[str]) -> tuple[bytes, str]:
             continue
         try:
             content, ctype, final_url = await _download_public_image(client, str(url))
-            data_path.parent.mkdir(parents=True, exist_ok=True)
-            temp = data_path.with_suffix(".tmp")
-            temp.write_bytes(content)
-            temp.replace(data_path)
-            meta_path.write_text(json.dumps({"content_type": ctype, "url": final_url}))
+            cache_remote_image_bytes(key, content, ctype, final_url)
             return content, ctype
         except (httpx.HTTPError, OSError, RemoteArtworkError) as exc:
             last_error = exc
@@ -118,12 +139,7 @@ async def cached_remote_image(key: str, urls: list[str]) -> tuple[bytes, str]:
 
 
 async def cached_remote_thumbnail(key: str, urls: list[str], size: tuple[int, int], *, contain: bool = False) -> tuple[bytes, str]:
-    """Return a small persistent WebP variant for library cards.
-
-    The original remote image is cached once, then every subsequent library render
-    reads the much smaller local WebP instead of decoding/transferring the full TPDB
-    artwork again.
-    """
+    """Return a small persistent WebP variant for library cards."""
     path = _thumb_path(key, size)
     try:
         if path.exists():

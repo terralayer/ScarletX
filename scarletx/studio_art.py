@@ -9,11 +9,11 @@ from PIL import Image, ImageChops, ImageFilter, ImageOps
 
 TARGET_SIZE = (800, 350)  # 16:7, matching the ScarletX studio cards/detail panel.
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
-STUDIO_ART_CACHE_VERSION = "v4"
+STUDIO_ART_CACHE_VERSION = "v5"
 LIGHT_CANVAS = (244, 244, 245, 255)
 DARK_CANVAS = (24, 24, 27, 255)
-LOGO_MAX_WIDTH_RATIO = 0.72
-LOGO_MAX_HEIGHT_RATIO = 0.58
+LOGO_MAX_WIDTH_RATIO = 0.64
+LOGO_MAX_HEIGHT_RATIO = 0.46
 _ART_CACHE: dict[str, bytes] = {}
 _ART_CACHE_DIR = Path(os.getenv("SCARLETX_CACHE_DIR", "./cache")).expanduser() / "tpdb" / "studios"
 
@@ -230,8 +230,9 @@ def prepare_studio_artwork(image_bytes: bytes, target_size: tuple[int, int] = TA
         max(1, int(round(target_h * LOGO_MAX_HEIGHT_RATIO))),
     )
 
-    # Fit the actual isolated brand mark into a consistent safe area. This keeps
-    # wide and square studio logos visually balanced instead of filling the card.
+    # Keep the isolated brand mark well inside a fixed visual safe area. The extra
+    # breathing room is intentional because TPDB studio logos vary dramatically in
+    # density even after their source canvas has been normalized.
     fitted = ImageOps.contain(logo, inner_size, method=Image.Resampling.LANCZOS)
     x = (target_w - fitted.width) // 2
     y = (target_h - fitted.height) // 2

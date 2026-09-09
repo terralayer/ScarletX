@@ -22,10 +22,23 @@ def test_studio_artwork_is_contained_with_consistent_padding():
     bbox = _mark_bbox(rendered, background)
     assert bbox is not None
     left, top, right, bottom = bbox
-    assert left >= 90
-    assert top >= 60
-    assert TARGET_SIZE[0] - right >= 90
-    assert TARGET_SIZE[1] - bottom >= 60
+    assert left >= 140
+    assert top >= 85
+    assert TARGET_SIZE[0] - right >= 140
+    assert TARGET_SIZE[1] - bottom >= 85
+
+
+def test_dense_studio_logo_is_reduced_inside_safe_area():
+    source = Image.new("RGBA", (600, 240), (0, 0, 0, 0))
+    ImageDraw.Draw(source).rectangle((1, 1, 598, 238), fill=(205, 30, 70, 255))
+
+    rendered = Image.open(BytesIO(prepare_studio_artwork(_png(source)))).convert("RGBA")
+    background = rendered.getpixel((0, 0))[:3]
+    bbox = _mark_bbox(rendered, background)
+    assert bbox is not None
+    left, top, right, bottom = bbox
+    assert right - left <= 520
+    assert bottom - top <= 180
 
 
 def test_opaque_white_tpdb_background_is_removed_before_contrast_analysis():
@@ -91,7 +104,7 @@ def test_studio_cards_always_request_standardized_tpdb_artwork():
     css = (ROOT / "frontend" / "ui_overrides.css").read_text(encoding="utf-8")
 
     assert "let renderImg=type==='studios'||!!img" in source
-    assert "STUDIO_ART_HTTP_VERSION='v4'" in source
+    assert "STUDIO_ART_HTTP_VERSION='v5'" in source
     assert "studioArtUrl=function(id)" in source
     assert "?v=${STUDIO_ART_HTTP_VERSION}" in source
     assert "let logo=id?`<span class=\"studio-logo\"><img src=\"${studioArtUrl(id)}\"" in source
@@ -124,7 +137,7 @@ def test_studio_art_route_uses_tpdb_logo_then_poster_fallback():
 
 def test_studio_art_cache_is_versioned_for_background_removal_and_safe_area():
     source = (ROOT / "scarletx" / "studio_art.py").read_text(encoding="utf-8")
-    assert 'STUDIO_ART_CACHE_VERSION = "v4"' in source
+    assert 'STUDIO_ART_CACHE_VERSION = "v5"' in source
     assert 'f"{STUDIO_ART_CACHE_VERSION}-{identifier}.png"' in source
 
 

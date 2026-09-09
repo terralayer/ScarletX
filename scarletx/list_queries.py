@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import re
-from datetime import datetime
+from datetime import date
 
 from fastapi import HTTPException
 from sqlalchemy import and_, func, or_, select, text
@@ -84,16 +84,21 @@ def scene_summary_page(
     cursor_parts = _decode_cursor(cursor)
     if cursor_parts:
         try:
-            imported_at = datetime.fromisoformat(str(cursor_parts[0]))
+            raw_release = cursor_parts[0]
+            release_date = date.fromisoformat(str(raw_release)) if raw_release else None
             scene_id = int(cursor_parts[1])
         except (TypeError, ValueError, IndexError) as exc:
             raise HTTPException(400, "Invalid scene pagination cursor") from exc
-        filters.append(
-            or_(
-                Scene.imported_at < imported_at,
-                and_(Scene.imported_at == imported_at, Scene.id < scene_id),
+        if release_date is None:
+            filters.append(and_(Scene.release_date.is_(None), Scene.id < scene_id))
+        else:
+            filters.append(
+                or_(
+                    Scene.release_date.is_(None),
+                    Scene.release_date < release_date,
+                    and_(Scene.release_date == release_date, Scene.id < scene_id),
+                )
             )
-        )
 
     media_id = (
         select(MediaFile.id)
@@ -110,18 +115,19 @@ def scene_summary_page(
             Scene.tpdb_id.label("tpdb_id"),
             Scene.title.label("title"),
             Scene.release_date.label("release_date"),
-            func.coalesce(func.nullif(Scene.poster_url, ""), Scene.image_url).label(
-                "image_url"
-            ),
+            func.coalesce(func.nullif(Scene.poster_url, ""), Scene.image_url).label("image_url"),
             Scene.monitored.label("monitored"),
             Studio.name.label("studio"),
             Studio.tpdb_id.label("studio_id"),
-            Scene.imported_at.label("imported_at"),
             media_id,
         )
         .outerjoin(Studio, Scene.studio_id == Studio.id)
         .where(*filters)
-        .order_by(Scene.imported_at.desc(), Scene.id.desc())
+        .order_by(
+            Scene.release_date.is_(None).asc(),
+            Scene.release_date.desc(),
+            Scene.id.desc(),
+        )
     )
     if not cursor:
         stmt = stmt.offset(offset)
@@ -168,7 +174,10 @@ def scene_summary_page(
     next_cursor = None
     if has_more and page_rows:
         last = page_rows[-1]
-        next_cursor = _encode_cursor(last["imported_at"].isoformat(), last["id"])
+        next_cursor = _encode_cursor(
+            last["release_date"].isoformat() if last["release_date"] else None,
+            last["id"],
+        )
 
     return {
         "total": int(total) if total is not None else None,
@@ -311,9 +320,7 @@ def studio_summary_page(
             Studio.id.label("id"),
             Studio.tpdb_id.label("tpdb_id"),
             Studio.name.label("name"),
-            func.coalesce(func.nullif(Studio.poster_url, ""), Studio.logo_url).label(
-                "image_url"
-            ),
+            func.coalesce(func.nullif(Studio.poster_url, ""), Studio.logo_url).label("image_url"),
             Studio.monitored.label("monitored"),
         )
         .where(*filters)

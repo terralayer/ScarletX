@@ -250,7 +250,7 @@ def test_scene_list_uses_summary_projection(tmp_path):
     with Session() as db, _select_counter(engine) as statements:
         payload = library_scene_page(limit=2, offset=0, cursor=None, q=None, db=db)
 
-    data_query = next(statement for statement in statements if "ORDER BY scenes.imported_at" in statement)
+    data_query = next(statement for statement in statements if "ORDER BY scenes.release_date" in statement)
     assert "scenes.description" not in data_query
     assert payload["items"][0]["image_url"] == "https://example.invalid/scene-1.jpg"
     downloaded = next(item for item in payload["items"] if item["has_file"])
