@@ -142,6 +142,7 @@ async function mediaLibrary(){
   $('#clearMissing').onclick=async()=>{if(!confirm('Remove database entries for media files that no longer exist?'))return;try{await api('/api/media-library/missing',{method:'DELETE'});notify('Missing-file entries cleared.','ok');mediaLibraryPage=1;mediaLibraryCursors=[null];mediaLibrary()}catch(err){notify(err.message,'error')}};
   try{
     let [status,dupes,unmatched]=await Promise.all([api('/api/media-library/status'),api('/api/media-library/duplicates'),api('/api/media-library/unmatched?limit=200&offset=0')]);
+    if(view!=='library')return;
     let totalPages=Math.max(1,Math.ceil(status.files/MEDIA_LIBRARY_PAGE_SIZE));
     if(mediaLibraryPage>totalPages){mediaLibraryPage=1;mediaLibraryCursors=[null]}
     $('#libraryStats').innerHTML=[['▶','Files',status.files,'Indexed'],['▱','Storage',bytes(status.total_bytes),'Local media'],['!','Missing',status.missing,'Needs attention'],['≡','Duplicates',status.duplicate_groups,'Fingerprint groups'],['?','Unmatched',status.unmatched,'Needs scene match']].map(x=>`<div class="stat"><div class="stat-icon">${x[0]}</div><div><small>${x[1]}</small><strong>${x[2]}</strong><em>${x[3]}</em></div></div>`).join('');
