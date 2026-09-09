@@ -32,3 +32,5 @@ jobs:
             - Existing configuration, database, downloads, media, artwork caches, and backups are preserved.
             - Container deployments require matching backend and web 0.3.10 images.
         run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main -f release_notes="$RELEASE_NOTES"
+
+# Dispatch attempt 2 after release helper fix #62.
