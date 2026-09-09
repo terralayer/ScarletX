@@ -6,9 +6,8 @@ from sqlalchemy.orm import Session
 from .models import MediaFile, MediaProbe, Performer, Scene, Studio, scene_performer
 
 
-def downloaded_scene_page(db: Session, *, limit: int = 8, offset: int = 0) -> dict:
-    """Return only scenes that currently have at least one usable local media file."""
-    usable_media = (
+def _usable_media_id():
+    return (
         select(MediaFile.id)
         .outerjoin(MediaProbe, MediaProbe.media_file_id == MediaFile.id)
         .where(
@@ -20,6 +19,19 @@ def downloaded_scene_page(db: Session, *, limit: int = 8, offset: int = 0) -> di
         .correlate(Scene)
         .scalar_subquery()
     )
+
+
+def _release_order():
+    return (
+        Scene.release_date.is_(None).asc(),
+        Scene.release_date.desc(),
+        Scene.id.desc(),
+    )
+
+
+def downloaded_scene_page(db: Session, *, limit: int = 8, offset: int = 0) -> dict:
+    """Return downloaded scenes ordered by release date, newest first."""
+    usable_media = _usable_media_id()
     filters = [Scene.content_type == "scene", usable_media.is_not(None)]
     total = db.scalar(select(func.count(Scene.id)).where(*filters)) or 0
     rows = db.execute(
@@ -30,14 +42,13 @@ def downloaded_scene_page(db: Session, *, limit: int = 8, offset: int = 0) -> di
             Scene.release_date.label("release_date"),
             func.coalesce(func.nullif(Scene.poster_url, ""), Scene.image_url).label("image_url"),
             Scene.monitored.label("monitored"),
-            Scene.imported_at.label("imported_at"),
             Studio.name.label("studio"),
             Studio.tpdb_id.label("studio_id"),
             usable_media.label("media_id"),
         )
         .outerjoin(Studio, Scene.studio_id == Studio.id)
         .where(*filters)
-        .order_by(Scene.imported_at.desc(), Scene.id.desc())
+        .order_by(*_release_order())
         .offset(offset)
         .limit(limit)
     ).mappings().all()
@@ -85,3 +96,74 @@ def downloaded_scene_page(db: Session, *, limit: int = 8, offset: int = 0) -> di
         "next_cursor": None,
         "items": items,
     }
+
+
+def recent_studios(db: Session, *, limit: int = 8) -> list[dict]:
+    """Studios ranked by the newest release date among their downloaded scenes."""
+    usable_media = _usable_media_id()
+    downloaded = [
+        Scene.content_type == "scene",
+        Scene.studio_id.is_not(None),
+        usable_media.is_not(None),
+    ]
+    grouped = db.execute(
+        select(
+            Studio.id.label("id"),
+            Studio.tpdb_id.label("tpdb_id"),
+            Studio.name.label("name"),
+            func.count(Scene.id).label("release_count"),
+            func.max(Scene.release_date).label("latest_release_date"),
+        )
+        .join(Scene, Scene.studio_id == Studio.id)
+        .where(*downloaded)
+        .group_by(Studio.id, Studio.tpdb_id, Studio.name)
+        .order_by(
+            func.max(Scene.release_date).is_(None).asc(),
+            func.max(Scene.release_date).desc(),
+            Studio.id.desc(),
+        )
+        .limit(limit)
+    ).mappings().all()
+    if not grouped:
+        return []
+
+    studio_ids = [int(row["id"]) for row in grouped]
+    latest_rows = db.execute(
+        select(
+            Scene.studio_id,
+            Scene.tpdb_id,
+            Scene.title,
+            Scene.release_date,
+            Scene.id,
+        )
+        .where(
+            Scene.studio_id.in_(studio_ids),
+            Scene.content_type == "scene",
+            _usable_media_id().is_not(None),
+        )
+        .order_by(
+            Scene.studio_id.asc(),
+            Scene.release_date.is_(None).asc(),
+            Scene.release_date.desc(),
+            Scene.id.desc(),
+        )
+    ).all()
+    latest_by_studio: dict[int, tuple] = {}
+    for row in latest_rows:
+        latest_by_studio.setdefault(int(row.studio_id), row)
+
+    result = []
+    for row in grouped:
+        latest = latest_by_studio.get(int(row["id"]))
+        result.append(
+            {
+                "id": int(row["id"]),
+                "tpdb_id": row["tpdb_id"],
+                "name": row["name"],
+                "release_count": int(row["release_count"] or 0),
+                "latest_release_date": latest.release_date if latest else row["latest_release_date"],
+                "latest_scene_id": latest.tpdb_id if latest else None,
+                "latest_title": latest.title if latest else None,
+            }
+        )
+    return result
