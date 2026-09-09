@@ -6,7 +6,11 @@ from .http_security import install_authentication, install_security_headers, rem
 from .main import app
 from .media_dedup import install_runtime_dedup
 from .routes import application as legacy_application
-from .routes.runtime_overrides import dashboard_scenes_runtime, update_general_settings_runtime
+from .routes.runtime_overrides import (
+    dashboard_scenes_runtime,
+    dashboard_studios_runtime,
+    update_general_settings_runtime,
+)
 from .settings_store import load_database_settings
 
 
@@ -35,15 +39,16 @@ def _patch_route_call(path: str, method: str, replacement) -> None:
     raise RuntimeError(f"ScarletX route not found: {method} {path}")
 
 
-def _add_dashboard_route() -> None:
-    if any(getattr(route, "path", None) == "/api/dashboard/scenes" for route in app.router.routes):
-        return
-    app.add_api_route(
-        "/api/dashboard/scenes",
-        dashboard_scenes_runtime,
-        methods=["GET"],
-        name="dashboard_downloaded_scenes",
+def _add_dashboard_routes() -> None:
+    definitions = (
+        ("/api/dashboard/scenes", dashboard_scenes_runtime, "dashboard_downloaded_scenes"),
+        ("/api/dashboard/studios", dashboard_studios_runtime, "dashboard_recent_studios"),
     )
+    existing = {getattr(route, "path", None) for route in app.router.routes}
+    for path, endpoint, name in definitions:
+        if path in existing:
+            continue
+        app.add_api_route(path, endpoint, methods=["GET"], name=name)
 
 
 # The legacy module still owns most domain API route objects. Patch behavior in
@@ -51,7 +56,7 @@ def _add_dashboard_route() -> None:
 _remove_legacy_web_route()
 legacy_application.load_database_settings = _fixed_runtime_settings
 _patch_route_call("/api/settings/general", "PATCH", update_general_settings_runtime)
-_add_dashboard_route()
+_add_dashboard_routes()
 install_runtime_dedup(legacy_application)
 remove_legacy_api_key_middleware(app)
 app.include_router(auth_router)
