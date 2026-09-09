@@ -36,6 +36,7 @@ RUN set -eux; \
     grep -q '/auth.css' /usr/share/nginx/html/index.html; \
     grep -q '/auth.js' /usr/share/nginx/html/index.html; \
     grep -q '/styles.css' /usr/share/nginx/html/index.html; \
+    grep -q '/ui_overrides.css' /usr/share/nginx/html/index.html; \
     grep -q '/app.js' /usr/share/nginx/html/index.html; \
     grep -q '/navigation_error_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/ui_overrides.js' /usr/share/nginx/html/index.html; \
