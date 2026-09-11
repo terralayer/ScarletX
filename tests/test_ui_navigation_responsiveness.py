@@ -29,8 +29,10 @@ def test_runtime_entity_library_and_search_ignore_stale_navigation_errors():
 
     assert "loadEntityLibrary=asyncfunction" in source
     assert "searchEntity=asyncfunction" in source
-    assert "catch(e){if(view!==type)return;notify(e.message,'error')}" in source
-    assert "catch(e){if(view!==type)return;$('#entityGrid').innerHTML=empty(e.message)}" in source
+    guard = "if(view!==type||!navigationGenerationCurrent(generation)||$('#entityGrid')!==grid)return"
+    assert source.count(guard) >= 4
+    assert "catch(e){" + guard + ";notify(e.message,'error')}" in source
+    assert "catch(e){" + guard + ";grid.innerHTML=empty(e.message)}" in source
 
     index = (FRONTEND / "index.html").read_text(encoding="utf-8")
     dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
