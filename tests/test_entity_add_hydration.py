@@ -6,8 +6,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_performer_and_studio_add_always_queue_metadata_hydration():
     source = (ROOT / "scarletx" / "routes" / "application.py").read_text()
-    performer = source[source.index('@app.post("/api/library/performers/{identifier}"'):source.index('@app.post("/api/library/studios/{identifier}"')]
-    studio = source[source.index('@app.post("/api/library/studios/{identifier}"'):source.index('@app.patch("/api/library/performers/{item_id}/monitor")]
+    performer_start = source.index('@app.post("/api/library/performers/{identifier}")')
+    studio_start = source.index('@app.post("/api/library/studios/{identifier}")')
+    monitor_start = source.index('@app.patch("/api/library/performers/{item_id}/monitor")')
+    performer = source[performer_start:studio_start]
+    studio = source[studio_start:monitor_start]
 
     assert "_queue_adult_entity_hydration" in performer
     assert "_queue_adult_entity_hydration" in studio
@@ -22,7 +25,7 @@ def test_hydration_fetches_full_scene_details_and_batches_cache_writes():
 
     assert "await tpdb.get_scene(" in source
     assert "asyncio.Semaphore" in source
-    assert "upsert_scene(db, remote, monitored=False, content_type=\"scene\", commit=False)" in source
+    assert 'upsert_scene(db, remote, monitored=False, content_type="scene", commit=False)' in source
     assert "db.commit()" in source
     assert "performers_cached" in source
 
