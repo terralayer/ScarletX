@@ -24,6 +24,7 @@ COPY frontend/app.js /usr/share/nginx/html/app.js
 COPY frontend/navigation_error_overrides.js /usr/share/nginx/html/navigation_error_overrides.js
 COPY frontend/ui_overrides.css /usr/share/nginx/html/ui_overrides.css
 COPY frontend/ui_overrides.js /usr/share/nginx/html/ui_overrides.js
+COPY frontend/activity_studio_overrides.js /usr/share/nginx/html/activity_studio_overrides.js
 COPY frontend/studio_art_overrides.js /usr/share/nginx/html/studio_art_overrides.js
 COPY frontend/dashboard_settings_overrides.js /usr/share/nginx/html/dashboard_settings_overrides.js
 
@@ -40,6 +41,7 @@ RUN set -eux; \
     grep -q '/app.js' /usr/share/nginx/html/index.html; \
     grep -q '/navigation_error_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/ui_overrides.js' /usr/share/nginx/html/index.html; \
+    grep -q '/activity_studio_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/studio_art_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/dashboard_settings_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q 'authGateBoot(boot);' /usr/share/nginx/html/app.js

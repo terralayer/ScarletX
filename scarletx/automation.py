@@ -1,7 +1,7 @@
 from __future__ import annotations
 import asyncio,re
 from dataclasses import dataclass
-from datetime import UTC,datetime
+from datetime import UTC,date,datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session,sessionmaker
 from .config import Settings
@@ -123,12 +123,17 @@ async def search_and_grab_scene(session_factory,scene_id,settings,**_):
     if not chosen:return GrabResult("no_match",scene_id,query,title=title,error="; ".join(f"{k}: {v}" for k,v in errors.items()) if errors and not releases else None)
     score,release,quality=chosen;result=await grab_specific_release(session_factory,settings,scene_id=scene_id,release=release,query=query,score=score)
     return GrabResult(**{**result.__dict__,"quality":quality}) if result.status=="queued" else result
-async def automatic_search_cycle(session_factory,settings):
+async def automatic_search_cycle(session_factory,settings,scene_ids=None):
     if not settings.automatic_search_enabled:return {"enabled":False,"checked":0,"queued":0,"results":[]}
     if not [x for x in settings.newznab_indexers() if x.enabled]:return {"enabled":True,"checked":0,"queued":0,"results":[],"blocked":"No enabled indexer is configured"}
     with session_factory() as db:
         ids=[]
-        for scene in db.scalars(select(Scene).where(Scene.monitored.is_(True),Scene.content_type=="scene").order_by(Scene.imported_at.asc())).all():
+        stmt=select(Scene).where(Scene.monitored.is_(True),Scene.content_type=="scene")
+        if scene_ids is not None:
+            if not scene_ids:return {"enabled":True,"checked":0,"queued":0,"results":[]}
+            stmt=stmt.where(Scene.id.in_(scene_ids))
+        for scene in db.scalars(stmt.order_by(Scene.release_date.desc(),Scene.imported_at.desc())).all():
+            if scene.release_date and scene.release_date > date.today():continue
             cfg=ensure_library_config(db,scene)
             if not cfg.search_enabled:continue
             if db.scalar(select(TrackedDownload.id).where(TrackedDownload.scene_id==scene.id,TrackedDownload.status.in_(ACTIVE_DOWNLOAD_STATES)).limit(1)):continue

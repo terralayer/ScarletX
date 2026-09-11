@@ -28,6 +28,7 @@ from ..newznab import NewznabClient, NewznabError, close_shared_newznab_clients
 from ..metadata import MetadataProviderError, metadata_client, metadata_provider_status
 from ..tpdb import close_shared_tpdb_clients
 from ..automation import automatic_search_cycle, grab_specific_release, search_and_grab_scene
+from ..monitored_entities import monitored_entity_discovery_cycle
 from ..library_management import (
     FileImportError, ensure_library_config, import_specific_media_file,
     preview_media_rename, recycle_media_file, rename_media_file, scan_path_for_manual_import,
@@ -264,6 +265,9 @@ def _runtime_settings_loader():
         return load_database_settings(runtime_db)
 
 
+MONITORED_ENTITY_DISCOVERY_INTERVAL_SECONDS = 3600
+
+
 downloader_supervisor = DownloaderSupervisor(SessionLocal, _runtime_settings_loader)
 
 
@@ -313,6 +317,7 @@ async def lifespan(_: FastAPI):
     watchers = [
         asyncio.create_task(completed_download_import_loop()),
         asyncio.create_task(automatic_search_loop()),
+        asyncio.create_task(monitored_entity_discovery_loop()),
         asyncio.create_task(rss_sync_loop()),
         asyncio.create_task(backup_loop()),
         asyncio.create_task(media_watch_loop(SessionLocal)),
@@ -990,6 +995,29 @@ async def automatic_search_loop() -> None:
         await asyncio.sleep(sleep_seconds)
 
 
+async def monitored_entity_discovery_loop() -> None:
+    while True:
+        try:
+            with SessionLocal() as db:
+                settings = load_database_settings(db)
+            discovery = await monitored_entity_discovery_cycle(SessionLocal, settings)
+            # Monitor All is an explicit request for ongoing acquisition. Search
+            # only scenes owned by monitored performers/studios; future scenes are
+            # retained for Upcoming and filtered until their release date.
+            if discovery["entities_checked"]:
+                await automatic_search_cycle(
+                    SessionLocal,
+                    settings.model_copy(update={"automatic_search_enabled": True}),
+                    scene_ids=discovery["scene_ids"],
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # TPDB/indexer outages are isolated and retried on the next hourly pass.
+            pass
+        await asyncio.sleep(MONITORED_ENTITY_DISCOVERY_INTERVAL_SECONDS)
+
+
 async def rss_sync_loop() -> None:
     while True:
         sleep_seconds = 900
@@ -1112,12 +1140,12 @@ def _tracked_download_rows(db: Session, items: list[TrackedDownload]) -> list[di
     if not items: return []
     item_ids=[x.id for x in items]; scene_ids={x.scene_id for x in items if x.scene_id}; external_ids={x.nzo_id for x in items}
     metas={x.tracked_download_id:x for x in db.scalars(select(TrackedDownloadMeta).where(TrackedDownloadMeta.tracked_download_id.in_(item_ids))).all()}
-    scenes={x.id:x for x in db.scalars(select(Scene).where(Scene.id.in_(scene_ids))).all()} if scene_ids else {}
+    scenes={x.id:x for x in db.scalars(select(Scene).where(Scene.id.in_(scene_ids)).options(selectinload(Scene.studio))).all()} if scene_ids else {}
     natives={x.id:x for x in db.scalars(select(NativeUsenetJob).where(NativeUsenetJob.id.in_(external_ids))).all()} if external_ids else {}
     rows=[]
     for item in items:
         meta=metas.get(item.id);scene=scenes.get(item.scene_id);client_name=meta.download_client if meta else "scarletx";native=natives.get(item.nzo_id) if client_name=="scarletx" else None
-        row={"id":item.id,"external_id":item.nzo_id,"nzo_id":item.nzo_id,"content_type":scene.content_type if scene else None,"release_title":item.scene_title or item.release_title,"release_guid":meta.release_guid if meta else None,"download_client":client_name,"protocol":meta.protocol if meta else "usenet","scene_tpdb_id":item.scene_tpdb_id,"scene_title":item.scene_title,"scene_id":item.scene_id,"status":item.status,"client_status":item.client_status,"storage_path":item.storage_path,"error":item.error,"created_at":item.created_at,"completed_at":item.completed_at,"imported_at":item.imported_at}
+        row={"id":item.id,"external_id":item.nzo_id,"nzo_id":item.nzo_id,"content_type":scene.content_type if scene else None,"release_title":item.scene_title or item.release_title,"release_guid":meta.release_guid if meta else None,"download_client":client_name,"protocol":meta.protocol if meta else "usenet","scene_tpdb_id":item.scene_tpdb_id,"scene_title":item.scene_title, "studio": scene.studio.name if scene and scene.studio else None,"scene_id":item.scene_id,"status":item.status,"client_status":item.client_status,"storage_path":item.storage_path,"error":item.error,"created_at":item.created_at,"completed_at":item.completed_at,"imported_at":item.imported_at}
         if native:
             nd=native_job_dict(native);row.update({"client_status":native.status,"progress":nd["progress"],"downloaded_bytes":nd["downloaded_bytes"],"total_bytes":nd["total_bytes"],"speed_bps":nd["speed_bps"],"eta_seconds":nd["eta_seconds"],"provider":nd.get("provider"),"provider_stats":nd.get("provider_stats",[]),"active_connections":nd.get("active_connections"),"connection_cap":nd.get("connection_cap"),"phase":nd.get("phase"),"postprocess_note":nd.get("postprocess_note"),"native_job":nd})
         rows.append(row)
