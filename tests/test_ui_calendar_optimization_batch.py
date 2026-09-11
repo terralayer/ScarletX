@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from scarletx.db import Base
-from scarletx.models import Performer, Scene, scene_performer
+from scarletx.models import Performer, Scene, Studio, scene_performer
 from scarletx.schemas import RemotePerson, RemoteScene, RemoteStudio, SearchResponse
 from scarletx.wanted import calendar_items
 
@@ -60,6 +60,27 @@ def test_calendar_includes_future_scene_via_monitored_performer_relationship():
         db.commit()
         items = calendar_items(db, date.today(), date.today() + timedelta(days=90))
     assert [item["title"] for item in items] == ["Coming Soon"]
+
+
+def test_calendar_includes_future_scene_via_monitored_studio_relationship():
+    factory = make_factory()
+    future = date.today() + timedelta(days=21)
+    with factory() as db:
+        studio = Studio(tpdb_id="st-cal", name="Studio Calendar", monitored=True, is_library=True)
+        db.add(studio)
+        db.flush()
+        scene = Scene(
+            tpdb_id="s-studio-future",
+            title="Studio Coming Soon",
+            content_type="scene",
+            monitored=False,
+            release_date=future,
+            studio_id=studio.id,
+        )
+        db.add(scene)
+        db.commit()
+        items = calendar_items(db, date.today(), date.today() + timedelta(days=90))
+    assert [item["title"] for item in items] == ["Studio Coming Soon"]
 
 
 class UnchangedMetadata:
