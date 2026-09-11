@@ -1,10 +1,10 @@
 (() => {
   document.body.insertAdjacentHTML('afterbegin', `
-<div class="sx-auth-gate" id="authGate" aria-live="polite">
+<div class="sx-auth-gate" id="authGate" aria-live="polite" hidden>
   <section class="sx-auth-card" role="dialog" aria-modal="true" aria-labelledby="authTitle">
     <div class="sx-auth-brand">Scarlet<b>X</b></div>
-    <h1 id="authTitle">Checking security…</h1>
-    <p id="authSubtitle">Verifying the local ScarletX administrator session.</p>
+    <h1 id="authTitle">Sign in to ScarletX</h1>
+    <p id="authSubtitle">Administrator sign-in is not required for this server.</p>
     <form id="authForm" hidden>
       <div class="sx-auth-fields">
         <div class="sx-auth-field"><label for="authUsername">Username</label><input id="authUsername" name="username" autocomplete="username" maxlength="100" required></div>
@@ -91,122 +91,87 @@ function startQueueStream() {
   };
 }
 
-  async function request(path, options={}) {
-    const headers = {'Content-Type':'application/json', ...(options.headers || {})};
-    const response = await fetch(path, {...options, headers, credentials:'same-origin'});
-    if (response.status === 204) return null;
-    const text = await response.text();
-    let data;
-    try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-    if (!response.ok) throw new Error(data?.detail || data || `Request failed (${response.status})`);
-    return data;
-  }
+async function request(path, options={}) {
+  const headers = {'Content-Type':'application/json', ...(options.headers || {})};
+  const response = await fetch(path, {...options, headers, credentials:'same-origin'});
+  if (response.status === 204) return null;
+  const text = await response.text();
+  let data;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  if (!response.ok) throw new Error(data?.detail || data || `Request failed (${response.status})`);
+  return data;
+}
 
-  function setGate(message='') {
-    el('authGate').hidden = false;
-    el('authForm').hidden = false;
-    el('authTitle').textContent = 'Sign in to ScarletX';
-    el('authSubtitle').textContent = 'Enter the administrator credentials for this ScarletX server.';
-    el('authSubmit').textContent = 'Sign in';
-    el('authError').textContent = message;
-    el('authPassword').value = '';
-    setTimeout(() => el('authUsername').focus(), 0);
+function bootApp() {
+  startQueueStream();
+  if (!state.appStarted && state.appBoot) {
+    state.appStarted = true;
+    Promise.resolve(state.appBoot()).catch(error => console.error('ScarletX boot failed', error));
   }
+}
 
-  function bootApp() {
-    startQueueStream();
-    if (!state.appStarted && state.appBoot) {
-      state.appStarted = true;
-      Promise.resolve(state.appBoot()).catch(error => console.error('ScarletX boot failed', error));
-    }
+function showOpenApp() {
+  el('authGate').hidden = true;
+  el('authAccount').hidden = true;
+  bootApp();
+}
+
+el('authForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const submit = el('authSubmit');
+  submit.disabled = true;
+  el('authError').textContent = '';
+  try {
+    const username = el('authUsername').value.trim();
+    const password = el('authPassword').value;
+    await request('/api/auth/login', {method:'POST', body:JSON.stringify({username, password})});
+    showOpenApp();
+  } catch (error) {
+    el('authError').textContent = error.message;
+  } finally {
+    submit.disabled = false;
   }
+});
 
-  function showOpenApp() {
-    el('authGate').hidden = true;
-    el('authAccount').hidden = true;
-    bootApp();
-  }
+el('authLogoutButton').addEventListener('click', async () => {
+  el('authLogoutButton').disabled = true;
+  stopQueueStream();
+  try { await request('/api/auth/logout', {method:'POST'}); } catch (error) { console.error(error); }
+  location.reload();
+});
 
-  function showApp(status) {
-    state.username = status.username || state.username || 'Administrator';
-    el('authGate').hidden = true;
-    el('authAccount').hidden = false;
+el('authAccountButton').addEventListener('click', () => {
+  el('authAccountUsername').value = state.username || '';
+  el('authAccountPassword').value = '';
+  el('authAccountPasswordConfirm').value = '';
+  el('authAccountError').textContent = '';
+  el('authAccountDialog').showModal();
+});
+el('authAccountClose').addEventListener('click', () => el('authAccountDialog').close());
+el('authAccountForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const save = el('authAccountSave');
+  save.disabled = true;
+  el('authAccountError').textContent = '';
+  try {
+    const username = el('authAccountUsername').value.trim();
+    const password = el('authAccountPassword').value;
+    const passwordConfirm = el('authAccountPasswordConfirm').value;
+    if (password.length < 12) throw new Error('Password must be at least 12 characters.');
+    if (password !== passwordConfirm) throw new Error('Passwords do not match.');
+    const result = await request('/api/auth/admin', {method:'PATCH', body:JSON.stringify({username, password, password_confirm:passwordConfirm})});
+    state.username = result.username;
     el('authAccountButton').textContent = state.username;
-    el('authAccountUsername').value = state.username;
-    bootApp();
+    el('authAccountDialog').close();
+  } catch (error) {
+    el('authAccountError').textContent = error.message;
+  } finally {
+    save.disabled = false;
   }
+});
 
-  async function refresh() {
-    el('authError').textContent = '';
-    try {
-      const status = await request('/api/auth/status');
-      if (!status.enabled) return showOpenApp(status);
-      if (!status.authenticated) return setGate();
-      showApp(status);
-    } catch (error) {
-      el('authTitle').textContent = 'ScarletX is unavailable';
-      el('authSubtitle').textContent = 'The authentication service could not be reached.';
-      el('authForm').hidden = true;
-      el('authError').textContent = error.message;
-    }
-  }
-
-  el('authForm').addEventListener('submit', async event => {
-    event.preventDefault();
-    const submit = el('authSubmit');
-    submit.disabled = true;
-    el('authError').textContent = '';
-    try {
-      const username = el('authUsername').value.trim();
-      const password = el('authPassword').value;
-      await request('/api/auth/login', {method:'POST', body:JSON.stringify({username, password})});
-      await refresh();
-    } catch (error) {
-      el('authError').textContent = error.message;
-    } finally {
-      submit.disabled = false;
-    }
-  });
-
-  el('authLogoutButton').addEventListener('click', async () => {
-    el('authLogoutButton').disabled = true;
-    stopQueueStream();
-    try { await request('/api/auth/logout', {method:'POST'}); } catch (error) { console.error(error); }
-    location.reload();
-  });
-
-  el('authAccountButton').addEventListener('click', () => {
-    el('authAccountUsername').value = state.username || '';
-    el('authAccountPassword').value = '';
-    el('authAccountPasswordConfirm').value = '';
-    el('authAccountError').textContent = '';
-    el('authAccountDialog').showModal();
-  });
-  el('authAccountClose').addEventListener('click', () => el('authAccountDialog').close());
-  el('authAccountForm').addEventListener('submit', async event => {
-    event.preventDefault();
-    const save = el('authAccountSave');
-    save.disabled = true;
-    el('authAccountError').textContent = '';
-    try {
-      const username = el('authAccountUsername').value.trim();
-      const password = el('authAccountPassword').value;
-      const passwordConfirm = el('authAccountPasswordConfirm').value;
-      if (password.length < 12) throw new Error('Password must be at least 12 characters.');
-      if (password !== passwordConfirm) throw new Error('Passwords do not match.');
-      const result = await request('/api/auth/admin', {method:'PATCH', body:JSON.stringify({username, password, password_confirm:passwordConfirm})});
-      state.username = result.username;
-      el('authAccountButton').textContent = state.username;
-      el('authAccountDialog').close();
-    } catch (error) {
-      el('authAccountError').textContent = error.message;
-    } finally {
-      save.disabled = false;
-    }
-  });
-
-  window.authGateBoot = function authGateBoot(appBoot) {
-    state.appBoot = appBoot;
-    refresh();
-  };
+window.authGateBoot = function authGateBoot(appBoot) {
+  state.appBoot = appBoot;
+  showOpenApp();
+};
 })();
