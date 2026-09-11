@@ -1,7 +1,31 @@
+import asyncio
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).parents[1]
+
+
+@pytest.mark.asyncio
+async def test_wake_signal_notifies_waiter_without_poll_delay():
+    from scarletx.background_signals import AsyncWakeSignal
+
+    signal = AsyncWakeSignal()
+    await signal.bind()
+    waiter = asyncio.create_task(signal.wait(5.0))
+    await asyncio.sleep(0)
+    signal.notify()
+    assert await asyncio.wait_for(waiter, timeout=0.5) is True
+
+
+@pytest.mark.asyncio
+async def test_wake_signal_keeps_recovery_timeout():
+    from scarletx.background_signals import AsyncWakeSignal
+
+    signal = AsyncWakeSignal()
+    await signal.bind()
+    assert await signal.wait(0.01) is False
 
 
 def test_completed_import_loop_uses_completion_signal_with_recovery_fallback():
