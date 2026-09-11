@@ -2302,8 +2302,8 @@ def queue_rows(db, *, active_only: bool = True, limit: int = 200) -> list[dict]:
     return [job_dict(row) for row in rows]
 
 
-def completed_rows(db, limit: int = 100) -> list[dict]:
-    rows = db.scalars(select(NativeUsenetJob).where(NativeUsenetJob.status == "completed").order_by(NativeUsenetJob.completed_at.desc()).limit(limit)).all()
+def completed_rows(db, limit: int = 100, offset: int = 0) -> list[dict]:
+    rows = db.scalars(select(NativeUsenetJob).where(NativeUsenetJob.status == "completed").order_by(NativeUsenetJob.completed_at.desc()).offset(offset).limit(limit)).all()
     return [job_dict(row) for row in rows]
 
 

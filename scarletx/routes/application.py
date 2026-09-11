@@ -88,7 +88,7 @@ from ..settings_store import load_database_settings, seed_database_settings, set
 from ..studio_art import StudioArtworkError, cache_studio_artwork, cached_studio_artwork, download_and_prepare_studio_artwork
 from ..media_library import (
     MediaLibraryError, asset_for, duplicate_rows, index_media_file, index_media_file_by_id,
-    library_stats, media_row, media_rows, media_type_for, scan_library, tool_status as media_tool_status, update_playback,
+    ensure_browser_playback, library_stats, media_row, media_rows, media_type_for, scan_library, tool_status as media_tool_status, update_playback,
 )
 from ..media_watch import media_watch_loop
 from ..remote_art import RemoteArtworkError, cached_remote_image, cached_remote_thumbnail, close_remote_art_client
@@ -1169,11 +1169,12 @@ def download_history(limit: int = Query(50, ge=1, le=200), db: Session = Depends
 
 
 @app.get("/api/downloads/completed")
-def completed_downloads(limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_session)):
-    rows = native_completed_rows(db, limit)
+def completed_downloads(limit: int = Query(20, ge=1, le=500), offset: int = Query(0, ge=0), db: Session = Depends(get_session)):
+    rows = native_completed_rows(db, limit, offset)
+    total = db.scalar(select(func.count()).select_from(NativeUsenetJob).where(NativeUsenetJob.status == "completed")) or 0
     ids = [row["id"] for row in rows]
     tracked_by_id = {x.nzo_id:x for x in db.scalars(select(TrackedDownload).where(TrackedDownload.nzo_id.in_(ids))).all()} if ids else {}
-    return {"scarletx": [{**row,"scene_title":tracked_by_id[row["id"]].scene_title if row["id"] in tracked_by_id else None,"release_title":tracked_by_id[row["id"]].release_title if row["id"] in tracked_by_id else row.get("title"),"imported_at":tracked_by_id[row["id"]].imported_at if row["id"] in tracked_by_id else None} for row in rows]}
+    return {"scarletx": [{**row,"scene_title":tracked_by_id[row["id"]].scene_title if row["id"] in tracked_by_id else None,"release_title":tracked_by_id[row["id"]].release_title if row["id"] in tracked_by_id else row.get("title"),"imported_at":tracked_by_id[row["id"]].imported_at if row["id"] in tracked_by_id else None} for row in rows], "total": total, "limit": limit, "offset": offset}
 
 
 @app.post("/api/downloads/native/{job_id}/reprocess")
@@ -2668,9 +2669,18 @@ def stream_media(media_id: int):
         if media is None:
             raise HTTPException(404, "Media file not found")
         path = Path(media.path)
+        probe = db.get(MediaProbe, media_id)
+        video_codec = probe.video_codec if probe else None
+        audio_codec = probe.audio_codec if probe else None
     if not path.exists() or not path.is_file():
         raise HTTPException(404, "Media file is missing")
-    return FileResponse(path, media_type=media_type_for(path), filename=path.name, content_disposition_type="inline", headers={"Accept-Ranges": "bytes", "Cache-Control": "private, max-age=3600"})
+    try:
+        playback_path = ensure_browser_playback(
+            media_id, path, video_codec=video_codec, audio_codec=audio_codec
+        )
+    except MediaLibraryError as exc:
+        raise HTTPException(422, f"Browser playback preparation failed: {exc}") from exc
+    return FileResponse(playback_path, media_type=media_type_for(playback_path), filename=playback_path.name, content_disposition_type="inline", headers={"Accept-Ranges": "bytes", "Cache-Control": "private, max-age=3600"})
 
 
 @app.get("/api/media-files/{media_id}/thumbnail")
