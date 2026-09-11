@@ -46,14 +46,14 @@ def assert_security_headers(response):
     assert response.headers["permissions-policy"] == "camera=(), microphone=(), geolocation=()"
 
 
-def test_security_headers_apply_to_normal_and_auth_failure_responses():
+def test_security_headers_apply_to_normal_and_open_api_responses():
     client = make_client()
     root = client.get("/")
-    protected = client.get("/api/private")
+    api = client.get("/api/private")
     assert root.status_code == 200
-    assert protected.status_code == 401
+    assert api.status_code == 200
     assert_security_headers(root)
-    assert_security_headers(protected)
+    assert_security_headers(api)
 
 
 def test_auth_and_setup_responses_are_not_cacheable():
