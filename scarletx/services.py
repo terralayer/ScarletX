@@ -1,9 +1,27 @@
+import json
+
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
 from .models import AppSetting, BackgroundJob, History, Performer, Scene, Studio, Tag, scene_performer
 from .schemas import RemotePerson, RemoteScene, RemoteStudio
 from .studio_policy import is_allowed_remote_scene
+
+
+def _apply_performer_metadata(obj: Performer, item: RemotePerson) -> None:
+    obj.name = item.name
+    obj.image_url = item.image_url
+    obj.bio = item.bio
+    obj.aliases = ", ".join(item.aliases) or None
+    for field in (
+        "gender", "birthday", "deathday", "birthplace", "birthplace_code",
+        "nationality", "ethnicity", "measurements", "cup_size", "fake_boobs",
+        "waist", "hips", "same_sex_only", "status", "height", "weight",
+        "hair_color", "eye_color", "tattoos", "piercings", "astrology",
+        "career_start_year", "career_end_year",
+    ):
+        setattr(obj, field, getattr(item, field, None))
+    obj.links_json = json.dumps(item.links or {}, separators=(",", ":"))
 
 
 def upsert_scene(
@@ -41,8 +59,7 @@ def upsert_scene(
     for item in remote.performers:
         obj = db.scalar(select(Performer).where(Performer.tpdb_id == item.id))
         if not obj: obj = Performer(tpdb_id=item.id, name=item.name); db.add(obj)
-        obj.name, obj.image_url, obj.bio = item.name, item.image_url, item.bio
-        obj.aliases = ", ".join(item.aliases) or obj.aliases
+        _apply_performer_metadata(obj, item)
         # Credited performers are listed automatically, but monitoring is always
         # explicit. Scene/movie metadata refreshes must never turn monitoring on.
         obj.is_library = True
@@ -150,8 +167,7 @@ def upsert_performer(db: Session, remote: RemotePerson, monitored: bool = True) 
     created = obj is None
     if not obj:
         obj = Performer(tpdb_id=remote.id, name=remote.name); db.add(obj)
-    obj.name, obj.image_url, obj.bio = remote.name, remote.image_url, remote.bio
-    obj.aliases = ", ".join(remote.aliases) or None
+    _apply_performer_metadata(obj, remote)
     obj.monitored, obj.is_library = monitored, True
     db.flush(); db.add(History(event_type="performer_imported" if created else "metadata_refreshed", message=f"Imported performer {obj.name}")); db.commit(); db.refresh(obj)
     return obj

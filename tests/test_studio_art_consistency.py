@@ -97,20 +97,15 @@ def test_light_studio_logo_gets_dark_background():
     assert max(r, g, b) <= 45
 
 
-def test_studio_cards_always_request_standardized_tpdb_artwork():
+def test_studio_art_override_only_versions_artwork_and_does_not_replace_core_renderers():
     override_path = ROOT / "frontend" / "studio_art_overrides.js"
-    assert override_path.exists()
     source = override_path.read_text(encoding="utf-8")
     css = (ROOT / "frontend" / "ui_overrides.css").read_text(encoding="utf-8")
-
-    assert "let renderImg=type==='studios'||!!img" in source
     assert "STUDIO_ART_HTTP_VERSION='v5'" in source
     assert "studioArtUrl=function(id)" in source
     assert "?v=${STUDIO_ART_HTTP_VERSION}" in source
-    assert "let logo=id?`<span class=\"studio-logo\"><img src=\"${studioArtUrl(id)}\"" in source
-    assert "type==='studios'?studioArtUrl(id):img" in source
-    assert "/api/artwork/studios/${encodeURIComponent(id)}?size=card" not in source
-    assert "renderImg?`<img" in source
+    assert "studioLink=function" not in source
+    assert "entityCard=function" not in source
     assert ".studio-card .media-poster{aspect-ratio:16/7" in css
     assert ".studio-card .media-poster img{object-fit:contain" in css
 

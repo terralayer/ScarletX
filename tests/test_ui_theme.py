@@ -64,13 +64,12 @@ def test_library_media_list_and_player_omit_filename_and_audio_codec():
     assert "<b>Audio</b>" not in player
 
 
-def test_library_runtime_media_spec_puts_duration_on_its_own_line():
+def test_library_runtime_uses_single_authoritative_media_renderer():
     source = (FRONTEND / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
-
-    assert "mediaFileRowsHtml=function(files)" in source
-    assert '<div class="media-spec">' in source
-    assert '</div><small>${durationText(x.duration_seconds)}</small>' in source
-    assert "x.audio_codec" not in source
+    overrides = (FRONTEND / "ui_overrides.js").read_text(encoding="utf-8")
+    assert "mediaFileRowsHtml=function(files)" not in source
+    assert "function mediaFileRowsHtml(files)" in overrides
+    assert 'class="library-release"' in overrides
 
 
 def test_scene_rows_show_tpdb_artwork_studio_logo_and_play_control():

@@ -7,7 +7,7 @@ let liveQueueTimer=null,liveQueueBusy=false,liveQueueSnapshot={tracked:[],client
 const ACTIVITY_QUEUE_PAGE_SIZE=50,ACTIVITY_COMPLETED_PAGE_SIZE=20,ACTIVITY_FAILED_PAGE_SIZE=20;
 let activityQueuePage=1,activityCompletedPage=1,activityCompletedTotal=0,activityFailedPage=1,activityFailedTotal=0;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const fmtDate=v=>v?new Date(v).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}):'—';
+const fmtDate=v=>{if(!v)return'—';let s=String(v),d;if(/^\d{4}-\d{2}-\d{2}$/.test(s)){let [y,m,day]=s.split('-').map(Number);d=new Date(y,m-1,day)}else d=new Date(v);return d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'})};
 const bytes=n=>{if(!n&&n!==0)return'—';let u=['B','KB','MB','GB','TB'],i=0,x=Number(n);while(x>=1024&&i<u.length-1){x/=1024;i++}return`${x.toFixed(i>2?2:i?1:0)} ${u[i]}`};
 const durationText=n=>{if(n==null)return'—';let x=Math.max(0,Math.floor(Number(n))),h=Math.floor(x/3600),m=Math.floor((x%3600)/60),sec=x%60;return h?`${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`:`${m}:${String(sec).padStart(2,'0')}`};
 const api=async(path,opts={})=>{let h={'Content-Type':'application/json',...(opts.headers||{})};let r=await fetch(path,{...opts,headers:h});if(r.status===204)return null;let text=await r.text(),data;try{data=JSON.parse(text)}catch{data=text}if(!r.ok)throw new Error(data?.detail||data||`${r.status}`);return data};
@@ -171,30 +171,49 @@ function performerFacts(x,monitored=null){
   return facts.join('');
 }
 function performerDetailBody(x,id,monitored=null){let img=x.image_url?`/api/artwork/performers/${encodeURIComponent(id)}`:'';return `<div class="performer-detail"><div class="performer-full-image">${img?`<img src="${esc(img)}" alt="${esc(x.name||'Performer')}" loading="eager" onerror="this.remove()">`:'No performer image available.'}</div><div><div class="profile-facts">${performerFacts(x,monitored)}</div><div class="divider"></div><p class="profile-bio">${esc(x.bio||'No biography available.')}</p></div></div>`}
+async function loadAllPerformerScenes(id,localId=null){
+  let items=[],page=1,total=0;
+  while(page<=1000){let url=localId?`/api/library/performers/${encodeURIComponent(localId)}/scenes?page=${page}&per_page=100`:`/api/metadata/performers/${encodeURIComponent(id)}/scenes?page=${page}&per_page=100`;let result=await api(url);let rows=result.items||[];items.push(...rows);total=Number(result.total||items.length);if(page*Number(result.per_page||100)>=total)break;page++}
+  return {items,total:items.length};
+}
+async function loadAllStudioScenes(id,localId=null){
+  let items=[],page=1,total=0;
+  while(page<=1000){let url=localId?`/api/library/studios/${encodeURIComponent(localId)}/scenes?page=${page}&per_page=100`:`/api/metadata/studios/${encodeURIComponent(id)}/scenes?page=${page}&per_page=100`;let result=await api(url);let rows=result.items||[];items.push(...rows);total=Number(result.total||items.length);if(page*Number(result.per_page||100)>=total)break;page++}
+  return {items,total:items.length};
+}
+function localPerformerProfile(x){let aliases=x.aliases;if(typeof aliases==='string')aliases=aliases.split(',').map(v=>v.trim()).filter(Boolean);let links=x.links||{};return {...x,id:x.tpdb_id,aliases:aliases||[],links};}
+
 async function performerProfile(id,localId=null){
   const generation=nextNavigationGeneration();
-  $('#app').innerHTML=pageHead('Performer','Loading TPDB performer profile…',`<button class="btn" id="backPerformers">← Performers</button>`)+`<div class="empty">Loading performer information…</div>`;
+  $('#app').innerHTML=pageHead('Performer','Loading performer profile…',`<button class="btn" id="backPerformers">← Performers</button>`)+`<div class="empty">Loading performer information…</div>`;
   $('#backPerformers').onclick=()=>{view='performers';renderEntities('performers')};
   try{
-    let local=null;if(localId){try{local=await api(`/api/library/performers/${encodeURIComponent(localId)}/detail`)}catch(_){}}else{let cached=entityLibraryCache.performers?.items||[];local=cached.find(v=>String(v.tpdb_id)===String(id))||null;}
-    let x;try{x=await api(`/api/metadata/performers/${encodeURIComponent(id)}?name=${encodeURIComponent(local?.name||'')}`)}catch(e){if(local)x={...local,id:local.tpdb_id,aliases:local.aliases?[local.aliases]:[]};else throw e}
-    let scenes={items:[]};try{scenes=await api(`/api/metadata/performers/${encodeURIComponent(id)}/scenes?per_page=100`)}catch(_){}
+    let local=null;
+    if(localId){try{local=await api(`/api/library/performers/${encodeURIComponent(localId)}/detail`)}catch(_){}}
+    else{let cached=entityLibraryCache.performers?.items||[],summary=cached.find(v=>String(v.tpdb_id)===String(id))||null;if(summary?.id){try{local=await api(`/api/library/performers/${encodeURIComponent(summary.id)}/detail`)}catch(_){local=summary}}}
+    let resolvedLocalId=localId||local?.id||null;
+    let x=local?localPerformerProfile(local):await api(`/api/metadata/performers/${encodeURIComponent(id)}`);
+    let scenes={items:[]};try{scenes=await loadAllPerformerScenes(id,resolvedLocalId)}catch(_){}
     let img=x.image_url?`/api/artwork/performers/${encodeURIComponent(id)}`:'';let links=Object.entries(x.links||{}).filter(([,v])=>v).map(([k,v])=>`<a class="btn small" target="_blank" rel="noopener" href="${esc(v)}">${esc(k)}</a>`).join('');
-    if(!navigationGenerationCurrent(generation))return;$('#app').innerHTML=pageHead(x.name||'Performer','TPDB performer profile',`<button class="btn" id="backPerformers">← Performers</button><button class="btn primary" id="monitorAllPerformer">Monitor All</button>`)+`<div class="profile-shell"><div class="profile-image">${img?`<img src="${esc(img)}" alt="${esc(x.name||'Performer')}" loading="eager" onerror="this.remove()">`:'No performer image available.'}</div><div><div class="profile-facts">${performerFacts(x,local?local.monitored:null)}</div>${x.bio?`<div class="profile-section"><h2>Biography</h2><div class="profile-bio">${esc(x.bio)}</div></div>`:''}${links?`<div class="profile-section"><h2>Links</h2><div class="profile-links">${links}</div></div>`:''}</div></div><div class="profile-section"><h2>Studio Scenes</h2><div id="performerSceneList">${sceneProfileList(scenes.items||[])}</div></div>`;
-    $('#backPerformers').onclick=()=>{view='performers';renderEntities('performers')};$('#monitorAllPerformer').onclick=async e=>{try{await monitorAllEntity('performers',id,local?.id,e.currentTarget)}catch(err){notify(err.message,'error')}};bindProfileSceneLinks($('#performerSceneList'));
+    if(!navigationGenerationCurrent(generation))return;$('#app').innerHTML=pageHead(x.name||'Performer','Cached performer profile',`<button class="btn" id="backPerformers">← Performers</button>${local?.monitored?'':`<button class="btn primary" id="monitorAllPerformer">Monitor All</button>`}`)+`<div class="profile-shell"><div class="profile-image">${img?`<img src="${esc(img)}" alt="${esc(x.name||'Performer')}" loading="eager" onerror="this.remove()">`:'No performer image available.'}</div><div><div class="profile-facts">${performerFacts(x,local?local.monitored:null)}</div>${x.bio?`<div class="profile-section"><h2>Biography</h2><div class="profile-bio">${esc(x.bio)}</div></div>`:''}${links?`<div class="profile-section"><h2>Links</h2><div class="profile-links">${links}</div></div>`:''}</div></div><div class="profile-section"><h2>Studio Scenes</h2><div id="performerSceneList">${sceneProfileList(scenes.items||[])}</div></div>`;
+    $('#backPerformers').onclick=()=>{view='performers';renderEntities('performers')};if($('#monitorAllPerformer'))$('#monitorAllPerformer').onclick=async e=>{try{await monitorAllEntity('performers',id,resolvedLocalId,e.currentTarget)}catch(err){notify(err.message,'error')}};bindProfileSceneLinks($('#performerSceneList'));
   }catch(e){if(!navigationGenerationCurrent(generation))return;notify(e.message,'error');if(!navigationGenerationCurrent(generation))return;$('#app').innerHTML=pageHead('Performer','Unable to load performer profile.',`<button class="btn" id="backPerformers">← Performers</button>`)+empty(e.message);$('#backPerformers').onclick=()=>{view='performers';renderEntities('performers')}}
 }
 
 async function studioProfile(id,localId=null){
   const generation=nextNavigationGeneration();
-  $('#app').innerHTML=pageHead('Studio','Loading TPDB studio…',`<button class="btn" id="backStudios">← Studios</button>`)+empty('Loading studio information…');
+  $('#app').innerHTML=pageHead('Studio','Loading studio…',`<button class="btn" id="backStudios">← Studios</button>`)+empty('Loading studio information…');
   $('#backStudios').onclick=()=>{view='studios';renderEntities('studios')};
   try{
-    let local=null;if(localId){try{local=await api(`/api/library/studios/${encodeURIComponent(localId)}/detail`)}catch(_){}}else{let cached=entityLibraryCache.studios?.items||[];local=cached.find(v=>String(v.tpdb_id)===String(id))||null;}
-    let x=await api(`/api/metadata/studios/${encodeURIComponent(id)}`);let scenes={items:[]};try{scenes=await api(`/api/metadata/studios/${encodeURIComponent(id)}/scenes?per_page=100`)}catch(_){}
-    let img=(x.poster_url||x.logo_url||local?.image_url)?`/api/artwork/studios/${encodeURIComponent(id)}`:'';
-    if(!navigationGenerationCurrent(generation))return;$('#app').innerHTML=pageHead(x.name||'Studio','TPDB studio profile',`<button class="btn" id="backStudios">← Studios</button><button class="btn primary" id="monitorAllStudio">Monitor All</button>`)+`<div class="profile-shell"><div class="profile-image">${img?`<img src="${esc(img)}" alt="${esc(x.name||'Studio')}" loading="eager" onerror="this.remove()">`:'No studio image available.'}</div><div><div class="profile-facts"><div class="profile-fact"><b>Monitored</b><span>${local?.monitored?'Yes':'No'}</span></div>${x.url?`<div class="profile-fact"><b>Website</b><span><a target="_blank" rel="noopener" href="${esc(x.url)}">Open site</a></span></div>`:''}</div>${x.description?`<div class="profile-section"><h2>About</h2><div class="profile-bio">${esc(x.description)}</div></div>`:''}</div></div><div class="profile-section"><h2>Studio Scenes</h2><div id="studioSceneList">${sceneProfileList(scenes.items||[])}</div></div>`;
-    $('#backStudios').onclick=()=>{view='studios';renderEntities('studios')};$('#monitorAllStudio').onclick=async e=>{try{await monitorAllEntity('studios',id,local?.id,e.currentTarget)}catch(err){notify(err.message,'error')}};bindProfileSceneLinks($('#studioSceneList'));
+    let local=null;
+    if(localId){try{local=await api(`/api/library/studios/${encodeURIComponent(localId)}/detail`)}catch(_){}}
+    else{let cached=entityLibraryCache.studios?.items||[],summary=cached.find(v=>String(v.tpdb_id)===String(id))||null;if(summary?.id){try{local=await api(`/api/library/studios/${encodeURIComponent(summary.id)}/detail`)}catch(_){local=summary}}}
+    let resolvedLocalId=localId||local?.id||null;
+    let x=local?{...local,id:local.tpdb_id}:await api(`/api/metadata/studios/${encodeURIComponent(id)}`);
+    let scenes={items:[]};try{scenes=await loadAllStudioScenes(id,resolvedLocalId)}catch(_){}
+    let img=(x.poster_url||x.logo_url||x.image_url)?`/api/artwork/studios/${encodeURIComponent(id)}`:'';
+    if(!navigationGenerationCurrent(generation))return;$('#app').innerHTML=pageHead(x.name||'Studio','Cached studio profile',`<button class="btn" id="backStudios">← Studios</button>${local?.monitored?'':`<button class="btn primary" id="monitorAllStudio">Monitor All</button>`}`)+`<div class="profile-shell"><div class="profile-image">${img?`<img src="${esc(img)}" alt="${esc(x.name||'Studio')}" loading="eager" onerror="this.remove()">`:'No studio image available.'}</div><div><div class="profile-facts"><div class="profile-fact"><b>Monitored</b><span>${local?.monitored?'Yes':'No'}</span></div>${x.url?`<div class="profile-fact"><b>Website</b><span><a target="_blank" rel="noopener" href="${esc(x.url)}">Open site</a></span></div>`:''}</div>${x.description?`<div class="profile-section"><h2>About</h2><div class="profile-bio">${esc(x.description)}</div></div>`:''}</div></div><div class="profile-section"><h2>Studio Scenes</h2><div id="studioSceneList">${sceneProfileList(scenes.items||[])}</div></div>`;
+    $('#backStudios').onclick=()=>{view='studios';renderEntities('studios')};if($('#monitorAllStudio'))$('#monitorAllStudio').onclick=async e=>{try{await monitorAllEntity('studios',id,resolvedLocalId,e.currentTarget)}catch(err){notify(err.message,'error')}};bindProfileSceneLinks($('#studioSceneList'));
   }catch(e){if(!navigationGenerationCurrent(generation))return;notify(e.message,'error');if(!navigationGenerationCurrent(generation))return;$('#app').innerHTML=pageHead('Studio','Unable to load studio.',`<button class="btn" id="backStudios">← Studios</button>`)+empty(e.message);$('#backStudios').onclick=()=>{view='studios';renderEntities('studios')}}
 }
 
@@ -208,8 +227,8 @@ async function scenePage(id,localId=null){
   let local=null,remote=null;
   try{
     if(localId){try{local=await api(`/api/library/scenes/${encodeURIComponent(localId)}/detail`)}catch(_){local=null}}
-    try{remote=await api(`/api/metadata/scenes/${encodeURIComponent(id)}`)}catch(_){remote=null}
-    let x={...(local||{}),...(remote||{})},files=local?.files||[];
+    if(!local){try{remote=await api(`/api/metadata/scenes/${encodeURIComponent(id)}`)}catch(_){remote=null}}
+    let x=local||remote||{},files=local?.files||[];
     let mediaRows=local?.files||[];
     let firstMedia=mediaRows[0],hero=firstMedia?`/api/media-files/${firstMedia.id}/screengrab`:((x.back_image_url||x.image_url||x.poster_url)?`/api/artwork/scenes/${encodeURIComponent(id)}`:'');
     let studio=x.studio?.name||local?.studio||'—',studioId=x.studio?.id||local?.studio_id;
