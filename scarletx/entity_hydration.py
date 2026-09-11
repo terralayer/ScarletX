@@ -17,12 +17,26 @@ from .services import upsert_scene
 ENTITY_PAGE_SIZE = 100
 ENTITY_PAGE_TIMEOUT_SECONDS = 25
 ENTITY_DETAIL_CONCURRENCY = 3
+ENTITY_FETCH_ATTEMPTS = 3
+ENTITY_RETRY_DELAY_SECONDS = 1.0
+DETAIL_BATCH_SIZE = 100
 MAX_ENTITY_PAGES = 1000
 
 
-async def _entity_scene_summaries(tpdb, entity_type: str, identifier: str) -> tuple[list[RemoteScene], list[str]]:
+async def _fetch_with_retry(operation, label: str):
+    last_error: Exception | None = None
+    for attempt in range(1, ENTITY_FETCH_ATTEMPTS + 1):
+        try:
+            return await asyncio.wait_for(operation(), timeout=ENTITY_PAGE_TIMEOUT_SECONDS)
+        except (TimeoutError, MetadataProviderError) as exc:
+            last_error = exc
+            if attempt < ENTITY_FETCH_ATTEMPTS:
+                await asyncio.sleep(ENTITY_RETRY_DELAY_SECONDS * attempt)
+    raise MetadataProviderError(f"{label} failed after {ENTITY_FETCH_ATTEMPTS} attempts: {last_error}")
+
+
+async def _entity_scene_summaries(tpdb, entity_type: str, identifier: str) -> list[RemoteScene]:
     """Fetch every TPDB scene credited to a performer or studio."""
-    warnings: list[str] = []
     scenes: list[RemoteScene] = []
     seen: set[str] = set()
 
@@ -30,7 +44,7 @@ async def _entity_scene_summaries(tpdb, entity_type: str, identifier: str) -> tu
         async def fetch(page: int):
             return await tpdb.get_performer_scenes(identifier, page=page, per_page=ENTITY_PAGE_SIZE)
     elif entity_type == "studio":
-        studio = await tpdb.get_studio(identifier)
+        studio = await _fetch_with_retry(lambda: tpdb.get_studio(identifier), f"TPDB studio {identifier}")
         search_id = studio.search_id
         if search_id is None and identifier.isdigit():
             search_id = int(identifier)
@@ -44,15 +58,7 @@ async def _entity_scene_summaries(tpdb, entity_type: str, identifier: str) -> tu
 
     page = 1
     while page <= MAX_ENTITY_PAGES:
-        try:
-            result = await asyncio.wait_for(fetch(page), timeout=ENTITY_PAGE_TIMEOUT_SECONDS)
-        except TimeoutError:
-            warnings.append(f"TPDB scene page {page} timed out")
-            break
-        except MetadataProviderError as exc:
-            warnings.append(f"TPDB scene page {page} failed: {exc}")
-            break
-
+        result = await _fetch_with_retry(lambda page=page: fetch(page), f"TPDB scene page {page}")
         for remote in result.items:
             if remote.id in seen:
                 continue
@@ -60,40 +66,38 @@ async def _entity_scene_summaries(tpdb, entity_type: str, identifier: str) -> tu
             scenes.append(remote)
 
         if page * ENTITY_PAGE_SIZE >= result.total:
-            break
+            return scenes
         page += 1
 
-    return scenes, warnings
+    raise MetadataProviderError(f"TPDB entity scene list exceeded {MAX_ENTITY_PAGES} pages")
 
 
-async def _full_scene_details(tpdb, summaries: list[RemoteScene]) -> tuple[list[RemoteScene], list[str]]:
+async def _full_scene_details(tpdb, summaries: list[RemoteScene]) -> list[RemoteScene]:
     """Hydrate full scene detail so every performer/studio credit is cached."""
     semaphore = asyncio.Semaphore(ENTITY_DETAIL_CONCURRENCY)
-    warnings: list[str] = []
 
     async def detail(summary: RemoteScene) -> RemoteScene:
         async with semaphore:
-            try:
+            async def load():
                 return await tpdb.get_scene(summary.id)
-            except MetadataProviderError as exc:
-                # Keep the scene summary rather than aborting a large entity crawl.
-                warnings.append(f"TPDB scene {summary.id} detail failed: {exc}")
-                return summary
+            return await _fetch_with_retry(load, f"TPDB scene {summary.id} detail")
 
-    details = await asyncio.gather(*(detail(summary) for summary in summaries))
-    return list(details), warnings
+    details: list[RemoteScene] = []
+    for start in range(0, len(summaries), DETAIL_BATCH_SIZE):
+        batch = summaries[start:start + DETAIL_BATCH_SIZE]
+        details.extend(await asyncio.gather(*(detail(summary) for summary in batch)))
+    return details
 
 
 async def fetch_entity_scene_graph(
     settings: Settings,
     entity_type: str,
     identifier: str,
-) -> tuple[list[RemoteScene], list[str]]:
+) -> list[RemoteScene]:
     """Return the complete TPDB scene graph for an added performer/studio."""
     async with metadata_client(settings) as tpdb:
-        summaries, warnings = await _entity_scene_summaries(tpdb, entity_type, identifier)
-        details, detail_warnings = await _full_scene_details(tpdb, summaries)
-    return details, [*warnings, *detail_warnings]
+        summaries = await _entity_scene_summaries(tpdb, entity_type, identifier)
+        return await _full_scene_details(tpdb, summaries)
 
 
 def _job_search_requested(job_id: int, initial: bool) -> bool:
@@ -127,13 +131,13 @@ async def run_adult_entity_hydration(
         db.commit()
 
     try:
-        remote_scenes, warnings = await fetch_entity_scene_graph(settings, entity_type, identifier)
+        remote_scenes = await fetch_entity_scene_graph(settings, entity_type, identifier)
         effective_search_when_monitored = _job_search_requested(job_id, search_when_monitored)
         scene_ids: list[int] = []
         performer_ids: set[str] = set()
         studio_ids: set[str] = set()
 
-        # Cache the graph in one transaction instead of one SQLite commit per scene.
+        # Cache the complete graph in one transaction instead of one SQLite commit per scene.
         with SessionLocal() as db:
             for remote in remote_scenes:
                 scene = upsert_scene(db, remote, monitored=False, content_type="scene", commit=False)
@@ -154,7 +158,6 @@ async def run_adult_entity_hydration(
                     "scenes_cached": len(scene_ids),
                     "performers_cached": len(performer_ids),
                     "studios_cached": len(studio_ids),
-                    "warnings": warnings[-20:],
                     "search_when_monitored": effective_search_when_monitored,
                 })
                 db.commit()
