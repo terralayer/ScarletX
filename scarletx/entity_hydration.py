@@ -195,6 +195,10 @@ async def run_adult_entity_hydration(
                     db.commit()
 
             for start in range(0, len(summaries), DETAIL_BATCH_SIZE):
+                # An Add can be upgraded to Add & Monitor while TPDB hydration is running.
+                effective_search_when_monitored = _job_search_requested(
+                    job_id, effective_search_when_monitored
+                )
                 batch = summaries[start:start + DETAIL_BATCH_SIZE]
                 details = await _full_scene_details(tpdb, batch)
                 with SessionLocal() as db:
@@ -230,6 +234,18 @@ async def run_adult_entity_hydration(
                             "search_when_monitored": effective_search_when_monitored,
                         })
                         db.commit()
+
+        # Re-read once more before searching so a late monitor upgrade is honored.
+        effective_search_when_monitored = _job_search_requested(
+            job_id, effective_search_when_monitored
+        )
+        if effective_search_when_monitored:
+            # Summary-only rows may have been cached before the upgrade. Promote them.
+            with SessionLocal() as db:
+                if summary_ids:
+                    for scene in db.scalars(select(Scene).where(Scene.id.in_(summary_ids))).all():
+                        scene.monitored = True
+                    db.commit()
 
         search_counts: dict[str, int] = {}
         if effective_search_when_monitored:
