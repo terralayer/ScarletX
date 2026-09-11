@@ -29,7 +29,7 @@ def test_runtime_entity_library_and_search_ignore_stale_navigation_errors():
 
     assert "loadEntityLibrary=asyncfunction" in source
     assert "searchEntity=asyncfunction" in source
-    guard = "if(view!==type||!navigationGenerationCurrent(generation)||$('#entityGrid')!==grid)return"
+    guard = "if(view!==type||!entityRequestCurrent(type,generation)||$('#entityGrid')!==grid)return"
     assert source.count(guard) >= 4
     assert "catch(e){" + guard + ";notify(e.message,'error')}" in source
     assert "catch(e){" + guard + ";grid.innerHTML=empty(e.message)}" in source
