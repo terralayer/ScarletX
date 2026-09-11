@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from .metadata import metadata_client
 from .models import AppSetting, Performer, Scene, Studio, scene_performer
@@ -88,11 +88,10 @@ async def _studio_scan(tpdb, identifier: str, previous_head: tuple[str, ...]):
 async def monitored_entity_discovery_cycle(session_factory, settings) -> dict:
     """Incrementally refresh monitored performers/studios from TPDB.
 
-    The first TPDB page acts as a durable head cursor. If it is unchanged from the
-    prior successful scan, deep historical pages and metadata upserts are skipped.
-    Existing local scenes tied to monitored entities are still returned as search
-    candidates so release-ready and retry-eligible scenes continue through normal
-    hourly acquisition policy.
+    Monitored performer/studio relationships are the durable source of truth. Any
+    existing related scene is promoted to monitored before the hourly acquisition
+    pass so Calendar and automatic search cannot miss it. New/changed TPDB scenes
+    are written in one transaction to avoid one SQLite commit per scene.
     """
     with session_factory() as db:
         performers = [
@@ -114,6 +113,13 @@ async def monitored_entity_discovery_cycle(session_factory, settings) -> dict:
             candidate_scene_ids.update(
                 db.scalars(select(Scene.id).where(Scene.studio_id.in_(studio_ids))).all()
             )
+        if candidate_scene_ids:
+            db.execute(
+                update(Scene)
+                .where(Scene.id.in_(candidate_scene_ids), Scene.monitored.is_(False))
+                .values(monitored=True)
+            )
+            db.commit()
 
     discovered = {}
     errors: list[dict[str, str]] = []
@@ -163,29 +169,30 @@ async def monitored_entity_discovery_cycle(session_factory, settings) -> dict:
     created = 0
     refreshed = 0
     scene_write_failed = False
-    for remote in discovered.values():
-        try:
-            with session_factory() as db:
-                scene = upsert_scene(db, remote, monitored=True, content_type="scene")
-                if not scene.monitored:
-                    scene.monitored = True
-                    db.commit()
-                candidate_scene_ids.add(scene.id)
-            if remote.id in existing_ids:
-                refreshed += 1
-            else:
-                created += 1
-        except Exception as exc:
-            scene_write_failed = True
-            errors.append({"type": "scene", "id": remote.id, "name": remote.title, "error": str(exc)})
+    with session_factory() as db:
+        for remote in discovered.values():
+            try:
+                # SAVEPOINT isolates one malformed remote scene while retaining a
+                # single outer commit for the successful batch.
+                with db.begin_nested():
+                    scene = upsert_scene(db, remote, monitored=True, content_type="scene", commit=False)
+                    if not scene.monitored:
+                        scene.monitored = True
+                    candidate_scene_ids.add(scene.id)
+                if remote.id in existing_ids:
+                    refreshed += 1
+                else:
+                    created += 1
+            except Exception as exc:
+                scene_write_failed = True
+                errors.append({"type": "scene", "id": remote.id, "name": remote.title, "error": str(exc)})
 
-    # Advance remote cursors only when every discovered scene was durably handled.
-    # A failed upsert therefore retries the deeper scan next hour instead of hiding it.
-    if cursor_updates and not scene_write_failed:
-        with session_factory() as db:
+        # Advance remote cursors only when every discovered scene was durably handled.
+        # A failed upsert therefore retries the deeper scan next hour instead of hiding it.
+        if cursor_updates and not scene_write_failed:
             for kind, local_id, head in cursor_updates:
                 _save_head_cursor(db, kind, local_id, head)
-            db.commit()
+        db.commit()
 
     return {
         "entities_checked": len(performers) + len(studios),

@@ -8,6 +8,9 @@
 .library-scene-copy{min-width:0}
 .library-scene-copy .scene-title{display:block;max-width:100%;text-align:left}
 .library-studio{display:block;margin-top:4px;color:var(--muted,#8f95a3)}
+.studio-credit{display:flex;align-items:center;gap:10px;min-width:180px}
+.studio-logo{width:72px;height:40px;flex:0 0 72px;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:7px;background:#f4f4f5;border:1px solid var(--line,#dfe2e6);padding:3px}
+.studio-logo img{width:100%;height:100%;object-fit:contain;object-position:center;display:block}
 .studio-card .media-poster{aspect-ratio:16/7;height:auto;background:#f4f4f5;display:flex;align-items:center;justify-content:center}
 .studio-card .media-poster img{object-fit:contain;object-position:center;width:100%;height:100%;display:block;background:transparent}
-@media (max-width:900px){.pagination-bar{justify-content:center;flex-wrap:wrap}.library-scene-thumb{width:72px;height:44px;flex-basis:72px}}
+@media (max-width:900px){.pagination-bar{justify-content:center;flex-wrap:wrap}.library-scene-thumb{width:72px;height:44px;flex-basis:72px}.studio-logo{width:60px;height:34px;flex-basis:60px}}
