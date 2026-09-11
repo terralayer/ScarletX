@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable
 
 from sqlalchemy import select
 
@@ -97,6 +96,21 @@ async def fetch_entity_scene_graph(
     return details, [*warnings, *detail_warnings]
 
 
+def _job_search_requested(job_id: int, initial: bool) -> bool:
+    """Honor a monitor upgrade made while an existing hydration job is running."""
+    if initial:
+        return True
+    with SessionLocal() as db:
+        job = db.get(BackgroundJob, job_id)
+        if job is None:
+            return False
+        try:
+            payload = json.loads(job.payload or "{}")
+        except (TypeError, json.JSONDecodeError):
+            return False
+        return bool(payload.get("search_when_monitored"))
+
+
 async def run_adult_entity_hydration(
     job_id: int,
     entity_type: str,
@@ -114,6 +128,7 @@ async def run_adult_entity_hydration(
 
     try:
         remote_scenes, warnings = await fetch_entity_scene_graph(settings, entity_type, identifier)
+        effective_search_when_monitored = _job_search_requested(job_id, search_when_monitored)
         scene_ids: list[int] = []
         performer_ids: set[str] = set()
         studio_ids: set[str] = set()
@@ -122,7 +137,7 @@ async def run_adult_entity_hydration(
         with SessionLocal() as db:
             for remote in remote_scenes:
                 scene = upsert_scene(db, remote, monitored=False, content_type="scene", commit=False)
-                if search_when_monitored:
+                if effective_search_when_monitored:
                     scene.monitored = True
                 ensure_library_config(db, scene)
                 scene_ids.append(scene.id)
@@ -140,12 +155,12 @@ async def run_adult_entity_hydration(
                     "performers_cached": len(performer_ids),
                     "studios_cached": len(studio_ids),
                     "warnings": warnings[-20:],
-                    "search_when_monitored": search_when_monitored,
+                    "search_when_monitored": effective_search_when_monitored,
                 })
                 db.commit()
 
         search_counts: dict[str, int] = {}
-        if search_when_monitored:
+        if effective_search_when_monitored:
             for position, scene_id in enumerate(scene_ids, start=1):
                 result = await search_and_grab_scene(SessionLocal, scene_id, settings)
                 search_counts[result.status] = search_counts.get(result.status, 0) + 1
@@ -207,7 +222,7 @@ def queue_adult_entity_hydration(
         except (TypeError, json.JSONDecodeError):
             continue
         if payload.get("identifier") == identifier:
-            # Upgrade an already queued cache-only job if the user now monitors it.
+            # A running cache-only job observes this payload update before its search phase.
             if search_when_monitored and not payload.get("search_when_monitored"):
                 payload["search_when_monitored"] = True
                 active.payload = json.dumps(payload)
