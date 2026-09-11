@@ -1,0 +1,123 @@
+name: Apply PR72 fixes
+
+on:
+  push:
+    branches: [fix/activity-pagination-dashboard-search-state]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/activity-pagination-dashboard-search-state
+          fetch-depth: 0
+      - name: Apply fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"pattern not found in {path}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # Failed rows need the same real DB offset pagination as Completed.
+          replace_once(
+              'scarletx/usenet/worker.py',
+              'def failed_rows(db, limit: int = 200) -> list[dict]:\n    rows = db.scalars(select(NativeUsenetJob).where(NativeUsenetJob.status == "failed").order_by(NativeUsenetJob.updated_at.desc()).limit(limit)).all()',
+              'def failed_rows(db, limit: int = 20, offset: int = 0) -> list[dict]:\n    rows = db.scalars(select(NativeUsenetJob).where(NativeUsenetJob.status == "failed").order_by(NativeUsenetJob.updated_at.desc()).offset(offset).limit(limit)).all()',
+          )
+
+          replace_once(
+              'scarletx/routes/application.py',
+              '@app.get("/api/downloads/failed")\ndef failed_downloads(limit: int = Query(200, ge=1, le=1000), db: Session = Depends(get_session)):\n    return {"scarletx": native_failed_rows(db, limit)}',
+              '@app.get("/api/downloads/failed")\ndef failed_downloads(limit: int = Query(20, ge=1, le=500), offset: int = Query(0, ge=0), db: Session = Depends(get_session)):\n    rows = native_failed_rows(db, limit, offset)\n    total = db.scalar(select(func.count()).select_from(NativeUsenetJob).where(NativeUsenetJob.status == "failed")) or 0\n    return {"scarletx": rows, "total": int(total), "limit": limit, "offset": offset}',
+          )
+
+          app = Path('frontend/app.js')
+          text = app.read_text()
+          text = text.replace(
+              'const ACTIVITY_QUEUE_PAGE_SIZE=50,ACTIVITY_COMPLETED_PAGE_SIZE=20;\nlet activityQueuePage=1,activityCompletedPage=1,activityCompletedTotal=0;',
+              'const ACTIVITY_QUEUE_PAGE_SIZE=50,ACTIVITY_COMPLETED_PAGE_SIZE=20,ACTIVITY_FAILED_PAGE_SIZE=20;\nlet activityQueuePage=1,activityCompletedPage=1,activityCompletedTotal=0,activityFailedPage=1,activityFailedTotal=0;',
+              1,
+          )
+          text = text.replace(
+              'async function dashboard(){',
+              '''function bindDashboardStats(){\n  let stats=$('#stats');if(!stats)return;\n  stats.querySelectorAll('[data-stat-go]').forEach(button=>{button.onclick=()=>{let target=button.dataset.statGo;if(['scenes','performers','studios'].includes(target))entityMode[target]='library';view=target;nav();render()}});\n}\nasync function dashboard(){''',
+              1,
+          )
+          old_stat = '''.map(x=>`<div class="stat dashboard-stat" data-stat-go="${x[4]}" role="button" tabindex="0"><div class="stat-icon">${x[0]}</div><div><small>${x[1]}</small><strong>${x[2]}</strong><em>${x[3]}</em></div></div>`).join('');'''
+          new_stat = '''.map(x=>`<button type="button" class="stat dashboard-stat" data-stat-go="${x[4]}"><div class="stat-icon">${x[0]}</div><div><small>${x[1]}</small><strong>${x[2]}</strong><em>${x[3]}</em></div></button>`).join('');bindDashboardStats();'''
+          if old_stat not in text:
+              raise SystemExit('dashboard stat pattern not found')
+          text = text.replace(old_stat, new_stat, 1)
+          text = text.replace(
+              "$('#app').onclick=e=>{let b=e.target.closest('[data-go],[data-stat-go]');if(b){let target=b.dataset.go||b.dataset.statGo;if(['scenes','performers','studios'].includes(target))entityMode[target]='library';view=target;nav();render()}};",
+              "$('#app').onclick=e=>{let b=e.target.closest('[data-go]');if(b){let target=b.dataset.go;if(['scenes','performers','studios'].includes(target))entityMode[target]='library';view=target;nav();render()}};",
+              1,
+          )
+          # Pin adds to TPDB Search even if later async activity causes a render.
+          needle = "let r=await api(`/api/library/${type}/${encodeURIComponent(id)}`,post({monitored}));"
+          if needle not in text:
+              raise SystemExit('entity add API pattern not found')
+          text = text.replace(needle, needle + "entityMode[type]='search';", 1)
+
+          old_pager = "function activityPager(kind,page,total,pageSize){let pages=Math.max(1,Math.ceil(total/pageSize));if(total<=pageSize)return'';return `<div class=\"pager activity-pager\"><button class=\"btn small\" data-activity-page=\"${kind}\" data-page=\"${page-1}\" ${page<=1?'disabled':''}>← Previous</button><span>Page ${page} of ${pages} · ${total}</span><button class=\"btn small\" data-activity-page=\"${kind}\" data-page=\"${page+1}\" ${page>=pages?'disabled':''}>Next →</button></div>`}"
+          new_pager = "function activityPager(kind,page,total,pageSize){let pages=Math.max(1,Math.ceil(total/pageSize));if(total<=pageSize)return'';return `<div class=\"pager activity-pager\"><button class=\"btn small\" data-activity-page=\"${kind}\" data-page=\"1\" ${page<=1?'disabled':''}>First</button><button class=\"btn small\" data-activity-page=\"${kind}\" data-page=\"${page-1}\" ${page<=1?'disabled':''}>Previous</button><span>Page ${page} of ${pages} · ${total}</span><button class=\"btn small\" data-activity-page=\"${kind}\" data-page=\"${page+1}\" ${page>=pages?'disabled':''}>Next</button><button class=\"btn small\" data-activity-page=\"${kind}\" data-page=\"${pages}\" ${page>=pages?'disabled':''}>Last</button></div>`}"
+          if old_pager not in text:
+              raise SystemExit('activityPager pattern not found')
+          text = text.replace(old_pager, new_pager, 1)
+
+          text = text.replace(
+              'let completedOffset=(activityCompletedPage-1)*ACTIVITY_COMPLETED_PAGE_SIZE;\n    let [q,c,f,h]=await Promise.all([api(\'/api/activity/queue\'),api(`/api/downloads/completed?limit=${ACTIVITY_COMPLETED_PAGE_SIZE}&offset=${completedOffset}`),api(\'/api/downloads/failed\'),api(\'/api/history?limit=200\')]),rows=q.tracked||[],completed=c.scarletx||[],failed=f.scarletx||[];',
+              'let completedOffset=(activityCompletedPage-1)*ACTIVITY_COMPLETED_PAGE_SIZE;\n    let failedOffset=(activityFailedPage-1)*ACTIVITY_FAILED_PAGE_SIZE;\n    let [q,c,f,h]=await Promise.all([api(\'/api/activity/queue\'),api(`/api/downloads/completed?limit=${ACTIVITY_COMPLETED_PAGE_SIZE}&offset=${completedOffset}`),api(`/api/downloads/failed?limit=${ACTIVITY_FAILED_PAGE_SIZE}&offset=${failedOffset}`),api(\'/api/history?limit=200\')]),rows=q.tracked||[],completed=c.scarletx||[],failed=f.scarletx||[];',
+              1,
+          )
+          completed_line = 'activityCompletedTotal=Number(c.total??completed.length);let completedPages=Math.max(1,Math.ceil(activityCompletedTotal/ACTIVITY_COMPLETED_PAGE_SIZE));if(activityCompletedPage>completedPages){activityCompletedPage=completedPages;return activity()}'
+          if completed_line not in text:
+              raise SystemExit('completed total pattern not found')
+          text = text.replace(
+              completed_line,
+              completed_line + '\n    activityFailedTotal=Number(f.total??failed.length);let failedPages=Math.max(1,Math.ceil(activityFailedTotal/ACTIVITY_FAILED_PAGE_SIZE));if(activityFailedPage>failedPages){activityFailedPage=failedPages;return activity()}',
+              1,
+          )
+          failed_render = "$('#activityFailed').innerHTML=failed.length?`<div class=\"tablewrap\" style=\"border:0;border-radius:0\"><table class=\"table\"><thead><tr><th>Scene</th><th>Failure</th><th>Partial</th><th></th></tr></thead><tbody>${failed.map(x=>`<tr><td><b>${esc(x.title||'Download')}</b></td><td><span class=\"state bad\">Failed</span><small>${esc(x.error||'Download failed')}</small></td><td>${bytes(x.downloaded_bytes||0)} / ${x.total_bytes?bytes(x.total_bytes):'—'}</td><td><div class=\"actions\"><button class=\"btn small primary\" data-failed-retry data-job=\"${esc(x.id)}\">Retry</button><button class=\"btn small\" data-native-password data-job=\"${esc(x.id)}\">Archive Password</button></div></td></tr>`).join('')}</tbody></table></div>`:empty('No failed downloads.');"
+          failed_render_new = "$('#activityFailed').innerHTML=(failed.length?`<div class=\"tablewrap\" style=\"border:0;border-radius:0\"><table class=\"table\"><thead><tr><th>Scene</th><th>Failure</th><th>Partial</th><th></th></tr></thead><tbody>${failed.map(x=>`<tr><td><b>${esc(x.title||'Download')}</b></td><td><span class=\"state bad\">Failed</span><small>${esc(x.error||'Download failed')}</small></td><td>${bytes(x.downloaded_bytes||0)} / ${x.total_bytes?bytes(x.total_bytes):'—'}</td><td><div class=\"actions\"><button class=\"btn small primary\" data-failed-retry data-job=\"${esc(x.id)}\">Retry</button><button class=\"btn small\" data-native-password data-job=\"${esc(x.id)}\">Archive Password</button></div></td></tr>`).join('')}</tbody></table></div>`:empty('No failed downloads.'))+activityPager('failed',activityFailedPage,activityFailedTotal,ACTIVITY_FAILED_PAGE_SIZE);"
+          if failed_render not in text:
+              raise SystemExit('failed render pattern not found')
+          text = text.replace(failed_render, failed_render_new, 1)
+          failed_click = "$('#activityFailed').onclick=async e=>{let pw=e.target.closest('[data-native-password]');"
+          failed_click_new = "$('#activityFailed').onclick=async e=>{let pg=e.target.closest('[data-activity-page=\"failed\"]');if(pg&&!pg.disabled){activityFailedPage=Number(pg.dataset.page)||1;return activity()}let pw=e.target.closest('[data-native-password]');"
+          if failed_click not in text:
+              raise SystemExit('failed click pattern not found')
+          text = text.replace(failed_click, failed_click_new, 1)
+          app.write_text(text)
+
+          # Make the release date a structural child beneath the studio in Media Library.
+          ui = Path('frontend/ui_overrides.js')
+          text = ui.read_text()
+          old_meta = '<small class="library-studio">${x.studio?`Studio: ${esc(x.studio)}`:\'Studio: —\'}</small><small class="studio-release">${fmtDate(x.release_date)}</small>'
+          new_meta = '<div class="library-studio-meta"><small class="library-studio">${x.studio?`Studio: ${esc(x.studio)}`:\'Studio: —\'}</small><small class="library-release">Release: ${fmtDate(x.release_date)}</small></div>'
+          if old_meta not in text:
+              raise SystemExit('library studio/date pattern not found')
+          ui.write_text(text.replace(old_meta, new_meta, 1))
+
+          css = Path('frontend/ui_overrides.css')
+          css_text = css.read_text()
+          additions = '''\n.library-studio-meta{display:flex;flex-direction:column;align-items:flex-start;gap:2px;margin-top:4px}\n.library-studio-meta .library-studio{display:block;margin-top:0}\n.library-release{display:block;color:var(--muted,#8f95a3);font-size:12px;line-height:1.2}\n.dashboard-stat{appearance:none;width:100%;font:inherit;text-align:left;color:inherit}\n'''
+          if '.library-studio-meta{' not in css_text:
+              css.write_text(css_text.rstrip() + additions)
+          PY
+          rm .github/workflows/apply-pr72-fixes.yml
+          git config user.name "TerraLayer"
+          git config user.email "321948909+terralayer@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: paginate activity and preserve search UX"
+          git push origin HEAD:fix/activity-pagination-dashboard-search-state
