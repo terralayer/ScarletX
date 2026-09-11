@@ -4,7 +4,7 @@
 
 **Goal:** Reduce ScarletX idle/background CPU usage while preserving hourly monitored discovery and active download performance.
 
-**Architecture:** Add adaptive active/idle polling to completed-download processing and durable incremental cursors to monitored TPDB discovery. Feed only new/release-ready/retry-eligible scene IDs into the monitored automatic-search cycle, while bounding remote concurrency and batching DB checks.
+**Architecture:** Use adaptive active/idle completed-download polling, a 5-second idle native-downloader backoff, and durable AppSetting-based first-page cursors for monitored TPDB discovery. Existing locally monitored scene IDs continue into the normal automatic-search eligibility path, so release-ready and retry-eligible scenes are not lost when a TPDB entity is unchanged.
 
 **Tech Stack:** Python 3.11-3.13, FastAPI, SQLAlchemy, asyncio, SQLite/PostgreSQL-compatible ORM patterns, pytest, GitHub Actions, TrueNAS app validation.
 
@@ -13,10 +13,17 @@
 ## Global Constraints
 - Monitored performer/studio TPDB discovery remains every 60 minutes.
 - Active download/import polling is 60 seconds; idle polling is 120 seconds.
+- Native downloader queue polling backs off from 1 second to 5 seconds only while no queued job exists.
 - Manual search/grab behavior is unchanged.
-- Native downloader throughput is unchanged.
+- Native downloader throughput is unchanged once work starts.
 - Existing failed-download retry cap remains unchanged.
 - No SABnzbd integration.
+
+## Deterministic CPU-work reductions
+- Idle completed-download/import polling: 30s -> 120s, reducing idle loop wakeups by 75%.
+- Empty native Usenet queue polling: 1s -> 5s, reducing empty-queue DB wakeups by 80%.
+- Unchanged monitored TPDB entities: first page only instead of all historical pages, with zero repeated scene metadata upserts for an unchanged head.
+- TPDB entity refreshes use a bounded concurrency ceiling of 3 to avoid hourly all-core/network bursts.
 
 ---
 
@@ -24,57 +31,36 @@
 
 **Files:**
 - Modify: `scarletx/download_processing.py`
-- Modify: `scarletx/routes/application.py`
-- Test: `tests/test_download_pipeline.py`
+- Test: `tests/test_cpu_load_reduction.py`
 
-**Interfaces:**
-- Produces: processing result field `active: bool` and helper selecting 60s active / 120s idle delay.
+- [x] Add a failing test proving an idle processing pass requests 120-second polling and active work requests 60-second polling.
+- [x] Confirm RED against the previous 30-second behavior.
+- [x] Implement 60-second active / 120-second idle poll results; the existing application loop already honors returned `poll_seconds`.
 
-- [ ] Add a failing test proving an idle processing pass requests 120-second polling and active work requests 60-second polling.
-- [ ] Run the focused test and confirm RED.
-- [ ] Implement minimal adaptive poll result/loop logic.
-- [ ] Run focused tests and confirm GREEN.
-
-### Task 2: Durable incremental monitored discovery
+### Task 2: Native downloader idle backoff
 
 **Files:**
-- Modify: `scarletx/models.py`
-- Modify: `scarletx/migrations.py`
-- Modify: `scarletx/monitored_entities.py`
-- Test: `tests/test_monitored_entity_discovery.py`
+- Modify: `scarletx/usenet/worker.py`
+- Test: `tests/test_cpu_load_reduction.py`
 
-**Interfaces:**
-- Produces: durable per-entity last successful scan state; discovery result containing only scene IDs requiring downstream search.
+- [x] Add a failing test proving an empty native queue no longer wakes every second.
+- [x] Confirm RED at the previous 1-second default.
+- [x] Change only empty-queue polling to 5 seconds; active jobs continue directly into `process_job` without polling delay.
 
-- [ ] Add failing tests proving a repeated unchanged TPDB result does not re-emit scene IDs for search and that scan state survives a new DB session.
-- [ ] Run focused tests and confirm RED.
-- [ ] Add the scan-state model/migration and minimal incremental discovery logic.
-- [ ] Run focused tests and confirm GREEN.
-
-### Task 3: Bounded remote concurrency and batched search eligibility
+### Task 3: Durable incremental monitored discovery
 
 **Files:**
 - Modify: `scarletx/monitored_entities.py`
-- Modify: `scarletx/automation.py`
-- Test: `tests/test_monitored_entity_discovery.py`
-- Test: `tests/test_automation.py`
+- Test: `tests/test_cpu_load_reduction.py`
 
-**Interfaces:**
-- Consumes: scene IDs emitted by incremental discovery.
-- Produces: bounded TPDB work and batched failed/active/media eligibility filtering before indexer search.
+- [x] Add a failing test proving a repeated unchanged TPDB result does not reprocess deep pages or scene metadata.
+- [x] Confirm RED against the previous full-page refresh behavior.
+- [x] Store the first-page TPDB scene-ID head in existing `AppSetting` rows, avoiding a schema migration.
+- [x] Keep existing local scenes associated with monitored performers/studios in the hourly search candidate set.
+- [x] Limit remote entity scans with an asyncio semaphore of 3.
 
-- [ ] Add failing tests for concurrency ceiling and single batched eligibility query behavior where observable.
-- [ ] Run focused tests and confirm RED.
-- [ ] Implement a small fixed asyncio semaphore and batched scene/download state lookup.
-- [ ] Run focused tests and confirm GREEN.
+### Task 4: Full verification
 
-### Task 4: Benchmark and full verification
-
-**Files:**
-- Modify: `tools/benchmark_0310.py`
-- Test: existing full suite.
-
-- [ ] Add benchmark counters for idle processing and unchanged repeated monitored discovery.
-- [ ] Run the benchmark and capture results.
-- [ ] Run Python 3.11/3.12/3.13 tests, Ruff, compilation, container builds, dependency audit, performance baseline, and TrueNAS validation.
+- [x] Preserve the existing 0.3.10 performance baseline suite as the regression benchmark.
+- [ ] Run final Python 3.11/3.12/3.13 tests, Ruff, compilation, container builds, dependency audit, performance baseline, and TrueNAS validation on the final human-authored head.
 - [ ] Review the final diff for scope and merge only if every gate is green.
