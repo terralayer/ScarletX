@@ -1,0 +1,32 @@
+name: Apply bug-hunt repairs
+on:
+  push:
+    branches: [fix/bug-hunt-23]
+    paths:
+      - tools/apply_bug_hunt_repairs.py
+      - .github/workflows/apply-bug-hunt-repairs.yml
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/bug-hunt-23
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Apply repairs
+        run: python tools/apply_bug_hunt_repairs.py
+      - name: Remove one-shot applicator
+        run: rm tools/apply_bug_hunt_repairs.py .github/workflows/apply-bug-hunt-repairs.yml
+      - name: Commit repairs
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix: repair bug-hunt regressions"
+          git push origin HEAD:fix/bug-hunt-23
