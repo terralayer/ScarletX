@@ -1,0 +1,59 @@
+name: Apply scoped entity search
+
+on:
+  push:
+    branches:
+      - feat/monitored-entity-hourly-discovery
+    paths:
+      - .github/workflows/apply-scoped-entity-search.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/monitored-entity-hourly-discovery
+      - name: Scope hourly release searches to monitored entity scenes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              count=text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected 1 match, got {count}")
+              return text.replace(old,new,1)
+
+          automation=Path('scarletx/automation.py')
+          text=automation.read_text()
+          text=replace_once(
+              text,
+              'async def automatic_search_cycle(session_factory,settings):',
+              'async def automatic_search_cycle(session_factory,settings,scene_ids=None):',
+              'automatic search signature',
+          )
+          old='''    with session_factory() as db:\n        ids=[]\n        for scene in db.scalars(select(Scene).where(Scene.monitored.is_(True),Scene.content_type=="scene").order_by(Scene.imported_at.asc())).all():\n'''
+          new='''    with session_factory() as db:\n        ids=[]\n        stmt=select(Scene).where(Scene.monitored.is_(True),Scene.content_type=="scene")\n        if scene_ids is not None:\n            if not scene_ids:return {"enabled":True,"checked":0,"queued":0,"results":[]}\n            stmt=stmt.where(Scene.id.in_(scene_ids))\n        for scene in db.scalars(stmt.order_by(Scene.imported_at.asc())).all():\n'''
+          text=replace_once(text,old,new,'automatic search candidate scope')
+          automation.write_text(text)
+
+          app=Path('scarletx/routes/application.py')
+          text=app.read_text()
+          old='''            await monitored_entity_discovery_cycle(SessionLocal, settings)\n            # Monitor All is an explicit request for ongoing acquisition. Run the\n            # existing release-search pipeline after discovery even if the general\n            # automatic-search toggle is off; future scenes are filtered there.\n            await automatic_search_cycle(\n                SessionLocal,\n                settings.model_copy(update={"automatic_search_enabled": True}),\n            )\n'''
+          new='''            discovery = await monitored_entity_discovery_cycle(SessionLocal, settings)\n            # Monitor All is an explicit request for ongoing acquisition. Search\n            # only scenes owned by monitored performers/studios; future scenes are\n            # retained for Upcoming and filtered until their release date.\n            if discovery["entities_checked"]:\n                await automatic_search_cycle(\n                    SessionLocal,\n                    settings.model_copy(update={"automatic_search_enabled": True}),\n                    scene_ids=discovery["scene_ids"],\n                )\n'''
+          text=replace_once(text,old,new,'hourly scoped search call')
+          app.write_text(text)
+          PY
+      - name: Remove helper workflow
+        run: git rm .github/workflows/apply-scoped-entity-search.yml
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scarletx/automation.py scarletx/routes/application.py
+          git commit -m "fix: scope hourly release search to monitored entities"
+          git push origin HEAD:feat/monitored-entity-hourly-discovery
