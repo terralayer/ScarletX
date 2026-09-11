@@ -34,7 +34,8 @@
   applyLiveQueue=function(q){
     baseApplyLiveQueue(q);
     const snapshotRows=q?.tracked||[];
-    const visibleRows=activityQueuePage===1?snapshotRows.slice(0,ACTIVITY_QUEUE_PAGE_SIZE):activityQueuePageRows;
+    const start=(activityQueuePage-1)*ACTIVITY_QUEUE_PAGE_SIZE;
+    const visibleRows=snapshotRows.slice(start,start+ACTIVITY_QUEUE_PAGE_SIZE);
     syncStudioLabels(visibleRows);
   };
 })();
