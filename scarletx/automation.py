@@ -132,7 +132,7 @@ async def automatic_search_cycle(session_factory,settings,scene_ids=None):
         if scene_ids is not None:
             if not scene_ids:return {"enabled":True,"checked":0,"queued":0,"results":[]}
             stmt=stmt.where(Scene.id.in_(scene_ids))
-        for scene in db.scalars(stmt.order_by(Scene.imported_at.asc())).all():
+        for scene in db.scalars(stmt.order_by(Scene.release_date.desc(),Scene.imported_at.desc())).all():
             if scene.release_date and scene.release_date > date.today():continue
             cfg=ensure_library_config(db,scene)
             if not cfg.search_enabled:continue
