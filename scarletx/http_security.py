@@ -1,22 +1,10 @@
 from __future__ import annotations
 
-import secrets
 from collections.abc import Callable
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from .auth import SESSION_COOKIE_NAME, session_user
-
-PUBLIC_API_PATHS = {
-    "/api/health",
-    "/api/auth/status",
-    "/api/auth/login",
-    "/api/setup/status",
-    "/api/setup/admin",
-}
-PROTECTED_FRAMEWORK_PATHS = {"/docs", "/redoc", "/openapi.json"}
 AUTH_CACHE_BYPASS_PREFIXES = ("/api/auth/", "/api/setup/")
 
 
@@ -40,54 +28,17 @@ def remove_legacy_api_key_middleware(app: FastAPI) -> bool:
     return removed
 
 
-def _supplied_api_key(request: Request) -> str:
-    supplied = request.headers.get("X-Api-Key") or ""
-    authorization = request.headers.get("Authorization") or ""
-    if not supplied and authorization.casefold().startswith("bearer "):
-        supplied = authorization[7:].strip()
-    return supplied
-
-
 def install_authentication(
     app: FastAPI,
     *,
     session_factory,
     settings_loader: Callable,
 ) -> None:
-    """Require a browser session or enabled ScarletX API key for private HTTP routes."""
+    """Retain the authentication hook while allowing ScarletX to run without a browser session."""
 
     @app.middleware("http")
     async def scarletx_authentication(request: Request, call_next):
-        path = request.url.path
-        requires_auth = path.startswith("/api/") or path in PROTECTED_FRAMEWORK_PATHS
-        if not requires_auth or path in PUBLIC_API_PATHS:
-            return await call_next(request)
-
-        authenticated = False
-        try:
-            with session_factory() as db:
-                settings = settings_loader(db)
-                if not settings.ui_auth_enabled:
-                    return await call_next(request)
-                token = request.cookies.get(SESSION_COOKIE_NAME) or ""
-                if token and session_user(db, token) is not None:
-                    authenticated = True
-                else:
-                    if settings.api_key_enabled:
-                        expected = settings.api_key.get_secret_value()
-                        supplied = _supplied_api_key(request)
-                        authenticated = bool(
-                            expected and secrets.compare_digest(supplied, expected)
-                        )
-        except Exception:
-            return JSONResponse(
-                {"detail": "ScarletX authentication is temporarily unavailable"},
-                status_code=503,
-            )
-
-        if authenticated:
-            return await call_next(request)
-        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+        return await call_next(request)
 
 
 def install_security_headers(app: FastAPI) -> None:
