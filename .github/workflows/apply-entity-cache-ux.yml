@@ -1,0 +1,95 @@
+name: Apply entity caching and UX fixes
+on:
+  push:
+    branches: [fix/entity-cache-pagination-ux]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/entity-cache-pagination-ux
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Apply fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          app = Path('frontend/app.js')
+          s = app.read_text()
+
+          old = "function studioLink(x){let st=x.studio;if(!st)return '<span class=\"muted\">—</span>';let name=typeof st==='string'?st:(st.name||'Studio'),id=typeof st==='object'?(st.id||st.tpdb_id||''):(x.studio_id||'');let logo=id?`<span class=\"studio-logo\"><img src=\"/api/artwork/studios/${encodeURIComponent(id)}?size=card\" alt=\"\" loading=\"lazy\" onerror=\"this.closest('.studio-logo').remove()\"></span>`:'';return `<span class=\"studio-credit\">${logo}${id?`<button class=\"studio-link\" data-studio-link=\"${esc(id)}\">${esc(name)}</button>`:esc(name)}</span>`}"
+          new = "function studioLink(x){let st=x.studio;if(!st)return `<span class=\"studio-credit\"><span class=\"muted\">—</span><small class=\"studio-release\">${fmtDate(x.release_date)}</small></span>`;let name=typeof st==='string'?st:(st.name||'Studio'),id=typeof st==='object'?(st.id||st.tpdb_id||''):(x.studio_id||'');let logo=id?`<span class=\"studio-logo\"><img src=\"/api/artwork/studios/${encodeURIComponent(id)}?size=card\" alt=\"\" loading=\"lazy\" onerror=\"this.closest('.studio-logo').remove()\"></span>`:'';return `<span class=\"studio-credit\">${logo}<span class=\"studio-copy\">${id?`<button class=\"studio-link\" data-studio-link=\"${esc(id)}\">${esc(name)}</button>`:esc(name)}<small class=\"studio-release\">${fmtDate(x.release_date)}</small></span></span>`}"
+          assert old in s
+          s = s.replace(old, new)
+          s = s.replace('</td><td>${studioLink(x)}</td><td>${fmtDate(x.release_date)}</td><td>${performerLinks(x)}</td>', '</td><td>${studioLink(x)}</td><td>${performerLinks(x)}</td>')
+          s = s.replace('<th>Studio</th><th>Release</th><th>Performers</th>', '<th>Studio</th><th>Performers</th>')
+
+          old_card = "${inLibrary?`<button class=\"btn small\" data-detail>Details</button><button class=\"btn small danger\" data-remove>Remove</button>`:`<button class=\"btn small primary\" data-add>Add & Monitor All</button><button class=\"btn small\" data-remote-detail>Details</button>`}"
+          new_card = "${inLibrary?`<button class=\"btn small\" data-detail>Details</button>`:`<button class=\"btn small\" data-add-only>Add</button><button class=\"btn small primary\" data-add-monitor>Add & Monitor</button><button class=\"btn small\" data-remote-detail>Details</button>`}"
+          assert old_card in s
+          s = s.replace(old_card, new_card)
+
+          old_actions = "if(b.hasAttribute('data-add')){b.disabled=true;b.textContent='Monitoring…';let r=await api(`/api/library/${type}/${encodeURIComponent(id)}`,post({monitored:true}));notify(`Monitor All started${r.job_id?` (job ${r.job_id})`:''}. ScarletX will search and download matching studio scenes.`,'ok');entityMode[type]='library';return renderEntities(type)}\n      if(b.hasAttribute('data-remove')){if(!confirm(`Remove this ${type.slice(0,-1)} from ScarletX?`))return;await api(`/api/library/${type}/${local}`,{method:'DELETE'});return loadEntityLibrary(type)}"
+          new_actions = "if(b.hasAttribute('data-add-only')||b.hasAttribute('data-add-monitor')){let monitored=b.hasAttribute('data-add-monitor');let buttons=[...c.querySelectorAll('[data-add-only],[data-add-monitor]')];buttons.forEach(x=>x.disabled=true);b.textContent=monitored?'Adding & Monitoring…':'Adding…';let r=await api(`/api/library/${type}/${encodeURIComponent(id)}`,post({monitored}));b.textContent=monitored?'Added & Monitoring ✓':'Added ✓';notify(`${type==='studios'?'Studio':'Performer'} added. Metadata caching started${r.job_id?` (job ${r.job_id})`:''}${monitored?' and monitoring is enabled.':'.'}`,'ok');return}"
+          assert old_actions in s
+          s = s.replace(old_actions, new_actions)
+
+          old_stats = "[['▣','Scenes',sys.library?.scene||0,'Adult library'],['♙','Performers',sys.performers||0,'In library'],['▥','Studios',sys.studios||0,'In library'],['◎','Wanted',sys.wanted||0,'Missing'],['▱','Storage',total?bytes(used):'—',total?`${pct}% of ${bytes(total)}`:'No scene root yet']].map(x=>`<div class=\"stat\"><div class=\"stat-icon\">${x[0]}</div><div><small>${x[1]}</small><strong>${x[2]}</strong><em>${x[3]}</em></div></div>`).join('')"
+          new_stats = "[['▣','Scenes',sys.library?.scene||0,'Adult library','scenes'],['♙','Performers',sys.performers||0,'In library','performers'],['▥','Studios',sys.studios||0,'In library','studios'],['◎','Wanted',sys.wanted||0,'Missing','wanted'],['▱','Storage',total?bytes(used):'—',total?`${pct}% of ${bytes(total)}`:'No scene root yet','library']].map(x=>`<div class=\"stat dashboard-stat\" data-stat-go=\"${x[4]}\" role=\"button\" tabindex=\"0\"><div class=\"stat-icon\">${x[0]}</div><div><small>${x[1]}</small><strong>${x[2]}</strong><em>${x[3]}</em></div></div>`).join('')"
+          assert old_stats in s
+          s = s.replace(old_stats, new_stats)
+          old_click = "$('#app').onclick=e=>{let b=e.target.closest('[data-go]');if(b){view=b.dataset.go;nav();render()}};"
+          new_click = "$('#app').onclick=e=>{let b=e.target.closest('[data-go],[data-stat-go]');if(b){let target=b.dataset.go||b.dataset.statGo;if(['scenes','performers','studios'].includes(target))entityMode[target]='library';view=target;nav();render()}};"
+          assert old_click in s
+          s = s.replace(old_click, new_click)
+          app.write_text(s)
+
+          ui = Path('frontend/ui_overrides.js')
+          u = ui.read_text()
+          u = u.replace('const ACTIVITY_QUEUE_PAGE_SIZE=50;\n', '')
+          u = u.replace('let activityQueuePage=1;\n', '')
+          old_row = "<small class=\"library-studio\">${x.studio?`Studio: ${esc(x.studio)}`:'Studio: —'}</small>${x.missing?'<small><span class=\"state bad\">Missing</span></small>':''}</div></div></td><td>${x.height?`${x.height}p`:esc(x.quality||'—')} · ${esc(x.video_codec||'—')}<small>${durationText(x.duration_seconds)}</small></td><td>${bytes(x.size_bytes)}</td>"
+          new_row = "<small class=\"library-studio\">${x.studio?`Studio: ${esc(x.studio)}`:'Studio: —'}</small><small class=\"studio-release\">${fmtDate(x.release_date)}</small>${x.missing?'<small><span class=\"state bad\">Missing</span></small>':''}</div></div></td><td>${bytes(x.size_bytes)}</td>"
+          assert old_row in u
+          u = u.replace(old_row, new_row)
+          u = u.replace('<th>Scene</th><th>Media</th><th>Size</th><th>Watch</th><th></th>', '<th>Scene</th><th>Size</th><th>Watch</th><th></th>')
+          ui.write_text(u)
+
+          media = Path('scarletx/media_library.py')
+          m = media.read_text()
+          old_media = '            "studio": scene.studio.name if scene and scene.studio else None,\n            "path": media.path, "filename": Path(media.path).name, "size_bytes": media.size_bytes,'
+          new_media = '            "studio": scene.studio.name if scene and scene.studio else None,\n            "release_date": scene.release_date if scene else None,\n            "path": media.path, "filename": Path(media.path).name, "size_bytes": media.size_bytes,'
+          assert old_media in m
+          media.write_text(m.replace(old_media, new_media))
+
+          hydration = Path('scarletx/entity_hydration.py')
+          h = hydration.read_text()
+          h = h.replace('from .models import BackgroundJob, History, utcnow', 'from .models import BackgroundJob, History, Scene, Studio, utcnow')
+          h = h.replace('from .services import upsert_scene', 'from .services import upsert_scene\nfrom .studio_policy import is_allowed_remote_scene')
+          h = h.replace('DETAIL_BATCH_SIZE = 100', 'DETAIL_BATCH_SIZE = 25')
+
+          marker = 'async def _full_scene_details(tpdb, summaries: list[RemoteScene]) -> list[RemoteScene]:\n'
+          assert marker in h
+          helper = '''def cache_entity_scene_summaries(summaries: list[RemoteScene], monitored: bool) -> list[int]:\n    """Persist lightweight scene/studio metadata immediately without erasing credits."""\n    scene_ids: list[int] = []\n    with SessionLocal() as db:\n        for remote in summaries:\n            if not is_allowed_remote_scene(remote):\n                continue\n            scene = db.scalar(select(Scene).where(Scene.tpdb_id == remote.id))\n            if scene is None:\n                scene = Scene(tpdb_id=remote.id, title=remote.title, content_type="scene", monitored=monitored)\n                db.add(scene)\n            scene.title = remote.title\n            scene.description = remote.description\n            scene.release_date = remote.release_date\n            scene.duration = remote.duration\n            scene.source_url = remote.source_url\n            scene.image_url = remote.image_url\n            scene.back_image_url = remote.back_image_url\n            scene.poster_url = remote.poster_url\n            if monitored:\n                scene.monitored = True\n            if remote.studio is not None:\n                studio = db.scalar(select(Studio).where(Studio.tpdb_id == remote.studio.id))\n                if studio is None:\n                    studio = Studio(tpdb_id=remote.studio.id, name=remote.studio.name)\n                    db.add(studio)\n                studio.name = remote.studio.name\n                studio.url = remote.studio.url\n                studio.logo_url = remote.studio.logo_url\n                studio.poster_url = remote.studio.poster_url\n                studio.description = remote.studio.description\n                studio.is_library = True\n                scene.studio = studio\n            db.flush()\n            ensure_library_config(db, scene)\n            scene_ids.append(scene.id)\n        db.commit()\n    return scene_ids\n\n\n'''
+          h = h.replace(marker, helper + marker)
+
+          old_run = '''        remote_scenes = await fetch_entity_scene_graph(settings, entity_type, identifier)\n        effective_search_when_monitored = _job_search_requested(job_id, search_when_monitored)\n        scene_ids: list[int] = []\n        performer_ids: set[str] = set()\n        studio_ids: set[str] = set()\n\n        # Cache the complete graph in one transaction instead of one SQLite commit per scene.\n        with SessionLocal() as db:\n            for remote in remote_scenes:\n                scene = upsert_scene(db, remote, monitored=False, content_type="scene", commit=False)\n                if effective_search_when_monitored:\n                    scene.monitored = True\n                ensure_library_config(db, scene)\n                scene_ids.append(scene.id)\n                performer_ids.update(item.id for item in remote.performers)\n                if remote.studio is not None:\n                    studio_ids.add(remote.studio.id)\n            db.commit()\n\n            job = db.get(BackgroundJob, job_id)\n            if job is not None:\n                job.payload = json.dumps({\n                    "entity_type": entity_type,\n                    "identifier": identifier,\n                    "scenes_cached": len(scene_ids),\n                    "performers_cached": len(performer_ids),\n                    "studios_cached": len(studio_ids),\n                    "search_when_monitored": effective_search_when_monitored,\n                })\n                db.commit()\n'''
+          new_run = '''        effective_search_when_monitored = _job_search_requested(job_id, search_when_monitored)\n        scene_ids: list[int] = []\n        performer_ids: set[str] = set()\n        studio_ids: set[str] = set()\n        skipped_policy = 0\n        details_cached = 0\n\n        async with metadata_client(settings) as tpdb:\n            summaries = await _entity_scene_summaries(tpdb, entity_type, identifier)\n            summary_ids = cache_entity_scene_summaries(summaries, effective_search_when_monitored)\n            with SessionLocal() as db:\n                job = db.get(BackgroundJob, job_id)\n                if job is not None:\n                    job.payload = json.dumps({\n                        "entity_type": entity_type,\n                        "identifier": identifier,\n                        "summaries_cached": len(summary_ids),\n                        "details_cached": 0,\n                        "search_when_monitored": effective_search_when_monitored,\n                    })\n                    db.commit()\n\n            for start in range(0, len(summaries), DETAIL_BATCH_SIZE):\n                batch = summaries[start:start + DETAIL_BATCH_SIZE]\n                details = await _full_scene_details(tpdb, batch)\n                with SessionLocal() as db:\n                    for remote in details:\n                        if not is_allowed_remote_scene(remote):\n                            skipped_policy += 1\n                            continue\n                        try:\n                            scene = upsert_scene(db, remote, monitored=False, content_type="scene", commit=False)\n                        except ValueError:\n                            skipped_policy += 1\n                            continue\n                        if effective_search_when_monitored:\n                            scene.monitored = True\n                        ensure_library_config(db, scene)\n                        scene_ids.append(scene.id)\n                        performer_ids.update(item.id for item in remote.performers)\n                        if remote.studio is not None:\n                            studio_ids.add(remote.studio.id)\n                        details_cached += 1\n                    db.commit()\n                    job = db.get(BackgroundJob, job_id)\n                    if job is not None:\n                        job.payload = json.dumps({\n                            "entity_type": entity_type,\n                            "identifier": identifier,\n                            "summaries_cached": len(summary_ids),\n                            "details_cached": details_cached,\n                            "scenes_cached": len(scene_ids),\n                            "performers_cached": len(performer_ids),\n                            "studios_cached": len(studio_ids),\n                            "skipped_policy": skipped_policy,\n                            "search_when_monitored": effective_search_when_monitored,\n                        })\n                        db.commit()\n'''
+          assert old_run in h
+          h = h.replace(old_run, new_run)
+          hydration.write_text(h)
+          PY
+          rm .github/workflows/apply-entity-cache-ux.yml
+          git config user.name "TerraLayer"
+          git config user.email "321948909+terralayer@users.noreply.github.com"
+          git add frontend/app.js frontend/ui_overrides.js scarletx/media_library.py scarletx/entity_hydration.py .github/workflows/apply-entity-cache-ux.yml
+          git commit -m "fix: entity caching pagination and add UX"
+          git push origin HEAD:fix/entity-cache-pagination-ux
