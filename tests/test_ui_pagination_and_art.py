@@ -41,7 +41,9 @@ def test_library_override_paginates_50_rows_with_tpdb_art_and_studio_line():
     assert "cursor=${encodeURIComponent(cursor)}" in source
     assert "/api/artwork/scenes/${encodeURIComponent(x.scene_id)}?size=card" in source
     assert 'class="library-studio"' in source
-    assert 'class="studio-release"' in source
+    assert 'class="library-studio-meta"' in source
+    assert 'class="library-release"' in source
+    assert "Release: ${fmtDate(x.release_date)}" in source
     assert 'data-library-page="first"' in source
     assert 'data-library-page="prev"' in source
     assert 'data-library-page="next"' in source
