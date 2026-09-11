@@ -1,0 +1,132 @@
+name: Apply hourly monitoring patch
+
+on:
+  push:
+    branches:
+      - feat/monitored-entity-hourly-discovery
+    paths:
+      - .github/workflows/apply-hourly-monitoring-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/monitored-entity-hourly-discovery
+      - name: Patch backend scheduler, serializer, and async page guards
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected 1 match, got {count}")
+              return text.replace(old, new, 1)
+
+          app = Path('scarletx/routes/application.py')
+          text = app.read_text()
+          text = replace_once(
+              text,
+              'from ..automation import automatic_search_cycle, grab_specific_release, search_and_grab_scene\n',
+              'from ..automation import automatic_search_cycle, grab_specific_release, search_and_grab_scene\nfrom ..monitored_entities import monitored_entity_discovery_cycle\n',
+              'monitor discovery import',
+          )
+          text = replace_once(
+              text,
+              'downloader_supervisor = DownloaderSupervisor(SessionLocal, _runtime_settings_loader)\n',
+              'MONITORED_ENTITY_DISCOVERY_INTERVAL_SECONDS = 3600\n\n\ndownloader_supervisor = DownloaderSupervisor(SessionLocal, _runtime_settings_loader)\n',
+              'discovery interval constant',
+          )
+
+          match = re.search(r'async def automatic_search_loop\(\) -> None:\n.*?(?=\n\nasync def )', text, re.S)
+          if not match:
+              raise SystemExit('automatic_search_loop block not found')
+          block = match.group(0)
+          discovery_loop = '''\n\nasync def monitored_entity_discovery_loop() -> None:\n    while True:\n        try:\n            with SessionLocal() as db:\n                settings = load_database_settings(db)\n            await monitored_entity_discovery_cycle(SessionLocal, settings)\n            # Monitor All is an explicit request for ongoing acquisition. Run the\n            # existing release-search pipeline after discovery even if the general\n            # automatic-search toggle is off; future scenes are filtered there.\n            await automatic_search_cycle(\n                SessionLocal,\n                settings.model_copy(update={"automatic_search_enabled": True}),\n            )\n        except asyncio.CancelledError:\n            raise\n        except Exception:\n            # TPDB/indexer outages are isolated and retried on the next hourly pass.\n            pass\n        await asyncio.sleep(MONITORED_ENTITY_DISCOVERY_INTERVAL_SECONDS)\n'''
+          text = text[:match.end()] + discovery_loop + text[match.end():]
+          text = replace_once(
+              text,
+              '        asyncio.create_task(automatic_search_loop()),\n',
+              '        asyncio.create_task(automatic_search_loop()),\n        asyncio.create_task(monitored_entity_discovery_loop()),\n',
+              'lifespan watcher',
+          )
+          text = replace_once(
+              text,
+              'scenes={x.id:x for x in db.scalars(select(Scene).where(Scene.id.in_(scene_ids))).all()} if scene_ids else {}',
+              'scenes={x.id:x for x in db.scalars(select(Scene).where(Scene.id.in_(scene_ids)).options(selectinload(Scene.studio))).all()} if scene_ids else {}',
+              'download scene bulk load',
+          )
+
+          func_start = text.index('def _tracked_download_rows(')
+          next_start = text.find('\ndef ', func_start + 1)
+          if next_start < 0:
+              next_start = text.find('\n@app.', func_start + 1)
+          section = text[func_start:next_start]
+          if '"studio"' not in section:
+              pattern = re.compile(r'("scene_title"\s*:\s*[^,}]+,)')
+              section, n = pattern.subn(r'\1 "studio": scene.studio.name if scene and scene.studio else None,', section, count=1)
+              if n != 1:
+                  raise SystemExit('download studio serialization insertion failed')
+          text = text[:func_start] + section + text[next_start:]
+          app.write_text(text)
+
+          js = Path('frontend/app.js')
+          source = js.read_text()
+
+          def guard_async(name):
+              nonlocal_source = None
+              return nonlocal_source
+
+          targets = ['performerProfile', 'studioProfile', 'openLocalScene', 'scenePage', 'playMedia']
+          for name in targets:
+              marker = f'async function {name}'
+              start = source.find(marker)
+              if start < 0:
+                  raise SystemExit(f'{name}: function not found')
+              end_match = re.search(r'\nasync function [A-Za-z0-9_]+', source[start + len(marker):])
+              end = start + len(marker) + end_match.start() if end_match else len(source)
+              section = source[start:end]
+              brace = section.find('{')
+              if brace < 0:
+                  raise SystemExit(f'{name}: opening brace not found')
+              if 'const generation=nextNavigationGeneration();' not in section:
+                  section = section[:brace+1] + '\n  const generation=nextNavigationGeneration();' + section[brace+1:]
+
+              if name == 'openLocalScene':
+                  section, n = re.subn(
+                      r'(let x=await api\([^;]+;)(return scenePage\()',
+                      r'\1if(!navigationGenerationCurrent(generation))return;\2',
+                      section,
+                      count=1,
+                  )
+                  if n != 1:
+                      raise SystemExit('openLocalScene guard insertion failed')
+              else:
+                  needle = "$('#app').innerHTML="
+                  positions = [m.start() for m in re.finditer(re.escape(needle), section)]
+                  targets_pos = positions[1:] if len(positions) > 1 else positions
+                  for pos in reversed(targets_pos):
+                      section = section[:pos] + 'if(!navigationGenerationCurrent(generation))return;' + section[pos:]
+                  section = section.replace(
+                      '}catch(e){notify(e.message',
+                      '}catch(e){if(!navigationGenerationCurrent(generation))return;notify(e.message',
+                  )
+              source = source[:start] + section + source[end:]
+
+          js.write_text(source)
+          PY
+      - name: Remove helper workflow
+        run: git rm .github/workflows/apply-hourly-monitoring-patch.yml
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scarletx/routes/application.py frontend/app.js
+          git commit -m "feat: schedule monitored discovery and guard async detail renders"
+          git push origin HEAD:feat/monitored-entity-hourly-discovery
