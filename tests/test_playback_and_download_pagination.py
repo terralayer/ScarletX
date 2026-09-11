@@ -68,6 +68,13 @@ def test_incompatible_media_builds_and_reuses_cached_mp4(tmp_path, monkeypatch):
     assert "+faststart" in command
 
 
+def test_existing_media_library_matching_helpers_are_preserved():
+    from scarletx import media_library
+
+    assert callable(media_library._norm)
+    assert callable(media_library._match_local_scene)
+
+
 def test_completed_rows_supports_offset_for_real_server_pagination():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
