@@ -529,3 +529,68 @@ def asset_for(db: Session, media_id: int, kind: str) -> Path:
 
 def media_type_for(path: Path) -> str:
     return mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+
+
+def ensure_browser_playback(
+    media_id: int,
+    source: Path,
+    *,
+    video_codec: str | None = None,
+    audio_codec: str | None = None,
+    generated_root: Path | None = None,
+) -> Path:
+    """Return a browser-playable file, caching an MP4 fallback when required."""
+    source = Path(source)
+    if not source.exists() or not source.is_file():
+        raise MediaLibraryError(f"Media file does not exist: {source}")
+
+    if video_codec is None:
+        try:
+            metadata = probe_path(source)
+        except MediaLibraryError:
+            # Preserve direct streaming for existing MP4/M4V media when probing is
+            # unavailable (for example in lightweight test/dev environments).
+            # Production containers include FFprobe, so incompatible MP4 codecs
+            # are still detected and converted there.
+            if source.suffix.casefold() in {".mp4", ".m4v"}:
+                return source
+            raise
+        video_codec = metadata.get("video_codec")
+        audio_codec = metadata.get("audio_codec")
+
+    vcodec = (video_codec or "").casefold()
+    acodec = (audio_codec or "").casefold() or None
+    if source.suffix.casefold() in {".mp4", ".m4v"} and vcodec in {"h264", "avc1"} and acodec in {None, "aac", "mp3"}:
+        return source
+
+    root = (generated_root or GENERATED_ROOT) / "media" / str(media_id)
+    root.mkdir(parents=True, exist_ok=True)
+    target = root / "playback.mp4"
+    if target.exists() and target.stat().st_size > 0 and target.stat().st_mtime >= source.stat().st_mtime:
+        return target
+
+    temporary = root / "playback.tmp.mp4"
+    temporary.unlink(missing_ok=True)
+    command = [
+        "ffmpeg", "-y", "-v", "error", "-i", str(source),
+        "-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn",
+    ]
+    if vcodec in {"h264", "avc1"}:
+        command += ["-c:v", "copy"]
+    else:
+        command += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", "-threads", "2"]
+    if acodec is None:
+        command += ["-an"]
+    elif acodec == "aac":
+        command += ["-c:a", "copy"]
+    else:
+        command += ["-c:a", "aac", "-b:a", "192k"]
+    command += ["-movflags", "+faststart", str(temporary)]
+    try:
+        _run(command, timeout=6 * 60 * 60)
+        if not temporary.exists() or temporary.stat().st_size <= 0:
+            raise MediaLibraryError("FFmpeg did not create a browser playback file")
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return target
