@@ -28,6 +28,8 @@ from .services import upsert_scene
 from .status_console import emit_status
 
 PENDING = {"queued", "downloading", "paused", "postprocessing", "import_pending"}
+ACTIVE_DOWNLOAD_POLL_SECONDS = 60
+IDLE_DOWNLOAD_POLL_SECONDS = 120
 IMPORT_MAX_ATTEMPTS = 3
 IMPORT_RETRY_DELAYS_SECONDS = (30, 120)
 _IMPORT_ATTEMPT_RE = re.compile(r"^\[import-attempt\s+(\d+)/(\d+)\]\s*")
@@ -152,14 +154,14 @@ async def process_completed_downloads(
     metadata_factory=metadata_client,
 ):
     if not settings.completed_download_import_enabled:
-        return {"enabled": False, "checked": 0, "imported": 0, "failed": 0, "poll_seconds": settings.download_poll_seconds}
+        return {"enabled": False, "checked": 0, "imported": 0, "failed": 0, "poll_seconds": IDLE_DOWNLOAD_POLL_SECONDS}
 
     with session_factory() as db:
         pending = db.scalars(select(TrackedDownload).where(TrackedDownload.status.in_(PENDING))).all()
         jobs, states, metadata_by_tracked, native_by_id = _pending_state_maps(db, pending)
 
     if not jobs:
-        return {"enabled": True, "checked": 0, "imported": 0, "failed": 0, "poll_seconds": settings.download_poll_seconds}
+        return {"enabled": True, "checked": 0, "imported": 0, "failed": 0, "poll_seconds": IDLE_DOWNLOAD_POLL_SECONDS}
 
     imported = failed = 0
     notifications = []
@@ -324,4 +326,4 @@ async def process_completed_downloads(
             # Notification transport is best effort and must not change durable
             # download/import outcomes or turn Process Completed into HTTP 500.
             continue
-    return {"enabled": True, "checked": len(states), "imported": imported, "failed": failed, "poll_seconds": settings.download_poll_seconds}
+    return {"enabled": True, "checked": len(states), "imported": imported, "failed": failed, "poll_seconds": ACTIVE_DOWNLOAD_POLL_SECONDS}
