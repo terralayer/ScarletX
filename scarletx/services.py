@@ -6,7 +6,13 @@ from .schemas import RemotePerson, RemoteScene, RemoteStudio
 from .studio_policy import is_allowed_remote_scene
 
 
-def upsert_scene(db: Session, remote: RemoteScene, monitored: bool = True, content_type: str = "scene") -> Scene:
+def upsert_scene(
+    db: Session,
+    remote: RemoteScene,
+    monitored: bool = True,
+    content_type: str = "scene",
+    commit: bool = True,
+) -> Scene:
     if content_type == "scene" and not is_allowed_remote_scene(remote):
         raise ValueError("ScarletX only allows scenes from production studios/sites")
     scene = db.scalar(select(Scene).where(Scene.tpdb_id == remote.id).options(selectinload(Scene.performers), selectinload(Scene.tags)))
@@ -48,7 +54,13 @@ def upsert_scene(db: Session, remote: RemoteScene, monitored: bool = True, conte
         obj.name = item.name; scene.tags.append(obj)
     db.flush()
     db.add(History(event_type="scene_imported" if created else "metadata_refreshed", scene_id=scene.id, message=f"{'Imported' if created else 'Refreshed'} {scene.title}"))
-    db.commit(); db.refresh(scene)
+    if commit:
+        db.commit(); db.refresh(scene)
+    else:
+        # The monitored-entity refresh path batches many scene updates into one
+        # transaction. Flush so IDs/relationships are usable without paying one
+        # SQLite commit/fsync per TPDB scene.
+        db.flush()
     return scene
 
 
