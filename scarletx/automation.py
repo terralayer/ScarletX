@@ -1,7 +1,7 @@
 from __future__ import annotations
 import asyncio,re
 from dataclasses import dataclass
-from datetime import UTC,datetime
+from datetime import UTC,date,datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session,sessionmaker
 from .config import Settings
@@ -129,6 +129,7 @@ async def automatic_search_cycle(session_factory,settings):
     with session_factory() as db:
         ids=[]
         for scene in db.scalars(select(Scene).where(Scene.monitored.is_(True),Scene.content_type=="scene").order_by(Scene.imported_at.asc())).all():
+            if scene.release_date and scene.release_date > date.today():continue
             cfg=ensure_library_config(db,scene)
             if not cfg.search_enabled:continue
             if db.scalar(select(TrackedDownload.id).where(TrackedDownload.scene_id==scene.id,TrackedDownload.status.in_(ACTIVE_DOWNLOAD_STATES)).limit(1)):continue
