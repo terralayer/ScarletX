@@ -139,6 +139,10 @@ def test_activity_uses_50_active_and_20_completed_and_failed_rows_per_page():
     assert "activityPager('completed'" in source
     assert "activityPager('failed'" in source
     assert "data-activity-page=\"failed\"" in source
+    assert ">First</button>" in source
+    assert ">Previous</button>" in source
+    assert ">Next</button>" in source
+    assert ">Last</button>" in source
     assert "$('#queueBadge').textContent=allRows.length" in source
     assert "const start=(activityQueuePage-1)*ACTIVITY_QUEUE_PAGE_SIZE" in studio_override
     assert "activityQueuePageRows" not in studio_override
