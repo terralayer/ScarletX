@@ -24,3 +24,4 @@ def test_hourly_entity_search_is_scoped_to_discovered_entity_scene_ids():
 
     assert "async def automatic_search_cycle(session_factory,settings,scene_ids=None):" in source
     assert "Scene.id.in_(scene_ids)" in source
+    assert "stmt.order_by(Scene.release_date.desc(),Scene.imported_at.desc())" in source
