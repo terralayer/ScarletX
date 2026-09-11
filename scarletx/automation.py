@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio,re
 from dataclasses import dataclass
 from datetime import UTC,date,datetime
-from sqlalchemy import select
+from sqlalchemy import func,select
 from sqlalchemy.orm import Session,sessionmaker
 from .config import Settings
 from .library_management import QUALITY_ORDER,default_quality_profile,detect_quality,ensure_library_config,score_release
@@ -13,6 +13,7 @@ from .release_profiles import apply_release_profiles
 from .download_clients import DownloadClientError, submit_release
 from .release_policy import release_rejection_reason
 ACTIVE_DOWNLOAD_STATES={"queued","downloading","paused","postprocessing","import_pending"}
+MAX_MONITORED_AUTO_RETRIES = 2
 @dataclass(frozen=True)
 class GrabResult:
     status:str;scene_id:int;query:str;title:str|None=None;indexer:str|None=None;quality:str|None=None;nzo_ids:tuple[str,...]=();error:str|None=None;download_client:str|None=None;score:int|None=None
@@ -137,6 +138,9 @@ async def automatic_search_cycle(session_factory,settings,scene_ids=None):
             cfg=ensure_library_config(db,scene)
             if not cfg.search_enabled:continue
             if db.scalar(select(TrackedDownload.id).where(TrackedDownload.scene_id==scene.id,TrackedDownload.status.in_(ACTIVE_DOWNLOAD_STATES)).limit(1)):continue
+            if scene_ids is not None:
+                failed_attempts=db.scalar(select(func.count(TrackedDownload.id)).where(TrackedDownload.scene_id==scene.id,TrackedDownload.status == "failed")) or 0
+                if failed_attempts >= MAX_MONITORED_AUTO_RETRIES + 1:continue
             media=_current_scene_file(db,scene.id);profile=db.get(QualityProfile,cfg.quality_profile_id) if cfg.quality_profile_id else default_quality_profile(db,"scene")
             if media and profile and not profile.upgrades_allowed:continue
             ids.append(scene.id)
