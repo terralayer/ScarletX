@@ -2312,8 +2312,8 @@ def history_rows(db, limit: int = 100) -> list[dict]:
     return [job_dict(row) for row in rows]
 
 
-def failed_rows(db, limit: int = 200) -> list[dict]:
-    rows = db.scalars(select(NativeUsenetJob).where(NativeUsenetJob.status == "failed").order_by(NativeUsenetJob.updated_at.desc()).limit(limit)).all()
+def failed_rows(db, limit: int = 20, offset: int = 0) -> list[dict]:
+    rows = db.scalars(select(NativeUsenetJob).where(NativeUsenetJob.status == "failed").order_by(NativeUsenetJob.updated_at.desc()).offset(offset).limit(limit)).all()
     return [job_dict(row) for row in rows]
 
 

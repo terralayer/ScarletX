@@ -18,3 +18,7 @@
 .studio-card .media-poster{aspect-ratio:16/7;height:auto;background:#f4f4f5;display:flex;align-items:center;justify-content:center}
 .studio-card .media-poster img{object-fit:contain;object-position:center;width:100%;height:100%;display:block;background:transparent}
 @media (max-width:900px){.pagination-bar{justify-content:center;flex-wrap:wrap}.library-scene-thumb{width:72px;height:44px;flex-basis:72px}.studio-logo{width:60px;height:34px;flex-basis:60px}}
+.library-studio-meta{display:flex;flex-direction:column;align-items:flex-start;gap:2px;margin-top:4px}
+.library-studio-meta .library-studio{display:block;margin-top:0}
+.library-release{display:block;color:var(--muted,#8f95a3);font-size:12px;line-height:1.2}
+.dashboard-stat{appearance:none;width:100%;font:inherit;text-align:left;color:inherit}

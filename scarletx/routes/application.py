@@ -1196,8 +1196,10 @@ async def reprocess_native_download(job_id: str, db: Session = Depends(get_sessi
 
 
 @app.get("/api/downloads/failed")
-def failed_downloads(limit: int = Query(200, ge=1, le=1000), db: Session = Depends(get_session)):
-    return {"scarletx": native_failed_rows(db, limit)}
+def failed_downloads(limit: int = Query(20, ge=1, le=500), offset: int = Query(0, ge=0), db: Session = Depends(get_session)):
+    rows = native_failed_rows(db, limit, offset)
+    total = db.scalar(select(func.count()).select_from(NativeUsenetJob).where(NativeUsenetJob.status == "failed")) or 0
+    return {"scarletx": rows, "total": int(total), "limit": limit, "offset": offset}
 
 
 @app.delete("/api/downloads/failed")
