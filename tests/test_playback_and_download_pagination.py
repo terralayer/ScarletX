@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from scarletx.media_library import ensure_browser_playback
 from scarletx.models import Base, NativeUsenetJob
-from scarletx.usenet.worker import completed_rows
+from scarletx.usenet.worker import completed_rows, failed_rows
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -99,19 +99,50 @@ def test_completed_rows_supports_offset_for_real_server_pagination():
     assert page[-1]["id"] == "job-05"
 
 
-def test_activity_uses_50_active_and_20_completed_rows_per_page():
+def test_failed_rows_supports_offset_for_real_server_pagination():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    base = datetime(2026, 9, 11, tzinfo=UTC)
+    with Session(engine) as db:
+        for index in range(45):
+            db.add(
+                NativeUsenetJob(
+                    id=f"failed-{index:02d}",
+                    title=f"Failed Scene {index:02d}",
+                    nzb_url=f"https://example.invalid/failed-{index}.nzb",
+                    status="failed",
+                    updated_at=base + timedelta(minutes=index),
+                )
+            )
+        db.commit()
+
+        page = failed_rows(db, limit=20, offset=20)
+
+    assert len(page) == 20
+    assert page[0]["id"] == "failed-24"
+    assert page[-1]["id"] == "failed-05"
+
+
+def test_activity_uses_50_active_and_20_completed_and_failed_rows_per_page():
     source = (ROOT / "frontend" / "app.js").read_text()
     studio_override = (ROOT / "frontend" / "activity_studio_overrides.js").read_text()
     backend = (ROOT / "scarletx" / "routes" / "application.py").read_text()
 
     assert "ACTIVITY_QUEUE_PAGE_SIZE=50" in source
     assert "ACTIVITY_COMPLETED_PAGE_SIZE=20" in source
+    assert "ACTIVITY_FAILED_PAGE_SIZE=20" in source
     assert "activityQueuePage" in source
     assert "activityCompletedPage" in source
+    assert "activityFailedPage" in source
     assert "limit=${ACTIVITY_COMPLETED_PAGE_SIZE}&offset=${completedOffset}" in source
-    assert "activityPager" in source
+    assert "limit=${ACTIVITY_FAILED_PAGE_SIZE}&offset=${failedOffset}" in source
+    assert "activityPager('completed'" in source
+    assert "activityPager('failed'" in source
+    assert "data-activity-page=\"failed\"" in source
     assert "$('#queueBadge').textContent=allRows.length" in source
     assert "const start=(activityQueuePage-1)*ACTIVITY_QUEUE_PAGE_SIZE" in studio_override
     assert "activityQueuePageRows" not in studio_override
-    assert "offset: int = Query(0, ge=0)" in backend
-    assert '"total":' in backend
+    assert "def completed_downloads(limit: int = Query(20" in backend
+    assert "def failed_downloads(limit: int = Query(20" in backend
+    assert backend.count("offset: int = Query(0, ge=0)") >= 2
+    assert backend.count('"total":') >= 2
