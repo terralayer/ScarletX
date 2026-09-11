@@ -114,7 +114,7 @@ def test_small_studio_logos_use_prepared_artwork_background_without_forcing_gray
     source = (ROOT / "frontend" / "studio_art_overrides.js").read_text(encoding="utf-8")
     css = (ROOT / "frontend" / "ui_overrides.css").read_text(encoding="utf-8")
 
-    assert "studioArtUrl(id)" in source
+    assert "studioArtUrl=function(id)" in source
     assert ".studio-logo{" in css
     studio_logo_css = css[css.index(".studio-logo{"):css.index(".studio-logo img{")]
     assert "background:transparent" in studio_logo_css

@@ -39,7 +39,8 @@ def test_frontend_formats_date_only_values_without_utc_day_shift():
     fmt = app[app.index("const fmtDate="):app.index("const bytes=")]
 
     assert "split('-').map(Number)" in fmt
-    assert "new Date(y,m-1,d)" in fmt.replace(" ", "") or "newDate(y,m-1,d)" in fmt.replace(" ", "")
+    compact=fmt.replace(" ", "")
+    assert "newDate(y,m-1,day)" in compact
 
 
 def test_profiles_use_cached_local_metadata_and_paginate_scene_lists():
@@ -50,9 +51,9 @@ def test_profiles_use_cached_local_metadata_and_paginate_scene_lists():
 
     assert "loadAllPerformerScenes" in performer
     assert "loadAllStudioScenes" in studio
-    assert "local||" in performer or "local ||" in performer
-    assert "local||" in studio or "local ||" in studio
-    assert "local||" in scene or "local ||" in scene
+    assert "let x=local?localPerformerProfile(local):await api" in performer
+    assert "let x=local?{...local,id:local.tpdb_id}:await api" in studio
+    assert "if(!local){try{remote=await api" in scene
     assert "local?.monitored?'':" in performer.replace(" ", "")
     assert "local?.monitored?'':" in studio.replace(" ", "")
 
