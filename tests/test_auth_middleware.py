@@ -75,34 +75,34 @@ def test_private_api_is_open_when_ui_auth_is_disabled():
     assert client.get("/api/private").status_code == 200
 
 
-def test_private_api_is_blocked_when_ui_auth_is_enabled_without_session():
+def test_private_api_stays_open_when_ui_auth_setting_is_enabled():
     client, factory = make_app(ui_auth_enabled=True)
-    assert client.get("/api/private").status_code == 401
+    assert client.get("/api/private").status_code == 200
     create_admin(factory)
-    assert client.get("/api/private").status_code == 401
+    assert client.get("/api/private").status_code == 200
 
 
-def test_activity_stream_requires_authenticated_session():
+def test_activity_stream_does_not_require_authenticated_session():
     client, factory = make_app(ui_auth_enabled=True)
     create_admin(factory)
 
-    assert client.get("/api/activity/stream").status_code == 401
+    assert client.get("/api/activity/stream").status_code == 200
 
 
-def test_valid_browser_session_authenticates_private_api():
+def test_existing_browser_session_does_not_change_private_api_access():
     client, factory = make_app(ui_auth_enabled=True)
     token = create_admin(factory)
     client.cookies.set("scarletx_session", token)
     assert client.get("/api/private").status_code == 200
 
 
-def test_existing_api_key_authenticates_when_enabled():
+def test_api_access_no_longer_depends_on_api_key():
     client, factory = make_app(ui_auth_enabled=True, api_key_enabled=True, api_key="automation-key")
     create_admin(factory)
     assert client.get("/api/private", headers={"X-Api-Key": "automation-key"}).status_code == 200
     assert client.get("/api/private", headers={"Authorization": "Bearer automation-key"}).status_code == 200
-    assert client.get("/api/private?apikey=automation-key").status_code == 401
-    assert client.get("/api/private", headers={"X-Api-Key": "wrong"}).status_code == 401
+    assert client.get("/api/private?apikey=automation-key").status_code == 200
+    assert client.get("/api/private", headers={"X-Api-Key": "wrong"}).status_code == 200
 
 
 def test_non_api_spa_shell_remains_public():
@@ -111,17 +111,15 @@ def test_non_api_spa_shell_remains_public():
     assert response.status_code == 404
 
 
-def test_framework_docs_and_openapi_are_not_anonymous():
+def test_framework_docs_and_openapi_are_public_without_session_gate():
     client, _factory = make_app(ui_auth_enabled=True)
-    assert client.get("/docs").status_code == 401
-    assert client.get("/redoc").status_code == 401
-    assert client.get("/openapi.json").status_code == 401
+    assert client.get("/docs").status_code == 200
+    assert client.get("/redoc").status_code == 200
+    assert client.get("/openapi.json").status_code == 200
 
 
-def test_authenticated_downstream_failure_is_not_misreported_as_auth_outage():
-    client, factory = make_app(ui_auth_enabled=True, raise_server_exceptions=False)
-    token = create_admin(factory)
-    client.cookies.set("scarletx_session", token)
+def test_downstream_failure_is_not_misreported_as_auth_outage():
+    client, _factory = make_app(ui_auth_enabled=True, raise_server_exceptions=False)
 
     response = client.get("/api/crash")
 
