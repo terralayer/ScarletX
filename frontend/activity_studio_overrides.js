@@ -3,7 +3,7 @@
   const baseApplyLiveQueue=applyLiveQueue;
 
   function studioLine(value){
-    return `<small class="live-studio">${value?esc(value):''}</small>`;
+    return `<small class="live-studio" style="display:block;margin-top:2px">${value?esc(value):''}</small>`;
   }
 
   activityQueueHtml=function(rows){
@@ -23,6 +23,8 @@
       if(!label){
         label=document.createElement('small');
         label.className='live-studio';
+        label.style.display='block';
+        label.style.marginTop='2px';
         row.querySelector('.live-title')?.insertAdjacentElement('afterend',label);
       }
       label.textContent=x.studio||'';
