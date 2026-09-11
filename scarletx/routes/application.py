@@ -29,6 +29,7 @@ from ..metadata import MetadataProviderError, metadata_client, metadata_provider
 from ..tpdb import close_shared_tpdb_clients
 from ..automation import automatic_search_cycle, grab_specific_release, search_and_grab_scene
 from ..monitored_entities import monitored_entity_discovery_cycle
+from ..entity_hydration import queue_adult_entity_hydration as _queue_adult_entity_hydration
 from ..library_management import (
     FileImportError, ensure_library_config, import_specific_media_file,
     preview_media_rename, recycle_media_file, rename_media_file, scan_path_for_manual_import,
@@ -1818,7 +1819,10 @@ async def import_performer(identifier: str, request: ImportRequest, tasks: Backg
     try:
         async with client(settings) as tpdb: remote = await tpdb.get_performer(identifier)
         performer = upsert_performer(db, remote, request.monitored)
-        job_id = _queue_adult_entity_monitor_search(db, tasks, "performer", identifier, settings) if request.monitored else None
+        job_id = _queue_adult_entity_hydration(
+            db, tasks, "performer", identifier, settings,
+            search_when_monitored=request.monitored,
+        )
         return {"id": performer.id, "tpdb_id": performer.tpdb_id, "name": performer.name, "monitored": performer.monitored, "job_id": job_id}
     except MetadataProviderError as exc: raise HTTPException(502, str(exc)) from exc
 
@@ -1828,7 +1832,10 @@ async def import_studio(identifier: str, request: ImportRequest, tasks: Backgrou
     try:
         async with client(settings) as tpdb: remote = await tpdb.get_studio(identifier)
         studio = upsert_studio(db, remote, request.monitored)
-        job_id = _queue_adult_entity_monitor_search(db, tasks, "studio", identifier, settings) if request.monitored else None
+        job_id = _queue_adult_entity_hydration(
+            db, tasks, "studio", identifier, settings,
+            search_when_monitored=request.monitored,
+        )
         return {"id": studio.id, "tpdb_id": studio.tpdb_id, "name": studio.name, "monitored": studio.monitored, "job_id": job_id}
     except MetadataProviderError as exc: raise HTTPException(502, str(exc)) from exc
 
