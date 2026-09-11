@@ -28,6 +28,15 @@ def remove_legacy_api_key_middleware(app: FastAPI) -> bool:
     return removed
 
 
+def _supplied_api_key(request: Request) -> str:
+    """Return header/bearer API keys while continuing to reject query-string keys."""
+    supplied = request.headers.get("X-Api-Key") or ""
+    authorization = request.headers.get("Authorization") or ""
+    if not supplied and authorization.casefold().startswith("bearer "):
+        supplied = authorization[7:].strip()
+    return supplied
+
+
 def install_authentication(
     app: FastAPI,
     *,
