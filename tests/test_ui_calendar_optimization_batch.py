@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from scarletx.db import Base
-from scarletx.models import Performer, Scene, Studio, scene_performer
+from scarletx.models import Performer, Scene, scene_performer
 from scarletx.schemas import RemotePerson, RemoteScene, RemoteStudio, SearchResponse
 from scarletx.wanted import calendar_items
 
@@ -44,7 +44,7 @@ def test_top_left_x_mark_is_removed_but_brand_word_remains():
 def test_scene_and_library_studio_art_is_large_enough_to_read():
     styles = (ROOT / "frontend" / "ui_overrides.css").read_text(encoding="utf-8")
     compact = "".join(styles.split())
-    assert ".studio-logo{width:72px;height:40px;flex:00 72px" in compact
+    assert ".studio-logo{width:72px;height:40px;flex:0072px" in compact
     assert ".studio-logoimg{width:100%;height:100%;object-fit:contain" in compact
 
 
@@ -117,9 +117,12 @@ async def test_hourly_discovery_promotes_existing_related_scene_to_monitored(mon
 
 def test_monitored_discovery_batches_scene_upserts_in_one_session():
     source = (ROOT / "scarletx" / "monitored_entities.py").read_text(encoding="utf-8")
-    assert "upsert_scene(db, remote, monitored=True, content_type=\"scene\", commit=False)" in source
-    assert "for remote in discovered.values():\n            try:" in source
-    assert "db.commit()" in source
+    compact = "".join(source.split())
+    assert 'upsert_scene(db,remote,monitored=True,content_type="scene",commit=False)' in compact
+    batch_start = compact.index("withsession_factory()asdb:forremoteindiscovered.values():")
+    batch_end = compact.index("return{", batch_start)
+    batch = compact[batch_start:batch_end]
+    assert batch.count("db.commit()") == 1
 
 
 def test_upsert_scene_supports_deferred_commit():
