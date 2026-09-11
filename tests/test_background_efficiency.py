@@ -40,7 +40,7 @@ def test_completed_import_loop_uses_completion_signal_with_recovery_fallback():
     source = (ROOT / "scarletx" / "routes" / "application.py").read_text(encoding="utf-8")
     compact = "".join(source.split())
     assert "awaitcompleted_import_signal.bind()" in compact
-    assert "awaitcompleted_import_signal.wait(COMPLETED_IMPORT_RECOVERY_SECONDS)" in compact
+    assert "awaitcompleted_import_signal.wait(wait_seconds)" in compact
     assert "COMPLETED_IMPORT_RECOVERY_SECONDS=120" in compact
 
 

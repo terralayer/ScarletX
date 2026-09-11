@@ -34,11 +34,14 @@ except Exception:  # The pure-Python/C-stdlib path remains a safe fallback.
     sabctools = None
 
 from ..archive_security import parse_7z_listing, validate_archive_member_path, validate_extracted_tree
+from ..background_signals import completed_import_signal, native_queue_signal
 from ..status_console import emit_status
 from ..models import History, NativeUsenetJob, TrackedDownload, utcnow
 from ..progress import ProgressCheckpointGate
 from ..download_metrics import SegmentResultBuffer, download_phase_metrics
 from ..release_policy import MIN_RELEASE_BYTES, payload_name_is_ignored
+
+NATIVE_QUEUE_RECOVERY_SECONDS = 60
 
 
 class NativeUsenetError(RuntimeError):
@@ -1685,10 +1688,12 @@ def enqueue_url(session_factory, settings, url: str, title: str) -> str:
             NativeUsenetJob.status.in_(["queued", "downloading", "paused", "postprocessing"]),
         ).order_by(NativeUsenetJob.created_at.desc()).limit(1))
         if existing:
+            native_queue_signal.notify()
             return existing.id
         job_id = "sx-" + uuid.uuid4().hex
         db.add(NativeUsenetJob(id=job_id, title=title, nzb_url=url, status="queued"))
         db.commit()
+    native_queue_signal.notify()
     return job_id
 
 
@@ -2214,6 +2219,7 @@ async def process_job(session_factory, settings, job_id: str) -> None:
                 completed_at=utcnow(),
                 unpack_password=None,
             )
+            completed_import_signal.notify()
             _clear_live_progress(job_id)
             with _CANCELLED_JOBS_LOCK:
                 _CANCELLED_JOBS.discard(job_id)
@@ -2277,7 +2283,8 @@ async def process_job(session_factory, settings, job_id: str) -> None:
 
 
 async def native_worker_loop(session_factory, settings_loader, poll_seconds: float = 5.0) -> None:
-    emit_status("Native Downloader", "ACTIVE", f"poll every {poll_seconds:g}s", severity="active")
+    emit_status("Native Downloader", "ACTIVE", "event driven; 60s recovery fallback", severity="active")
+    await native_queue_signal.bind()
     # Jobs interrupted by an app restart are safe to retry because decoded segments
     # are persisted under the incomplete directory and skipped on the next pass.
     with session_factory() as db:
@@ -2288,7 +2295,7 @@ async def native_worker_loop(session_factory, settings_loader, poll_seconds: flo
             job = db.scalar(select(NativeUsenetJob).where(NativeUsenetJob.status == "queued").order_by(NativeUsenetJob.created_at.asc()).limit(1))
             job_id = job.id if job else None
         if not job_id:
-            await asyncio.sleep(poll_seconds)
+            await native_queue_signal.wait(NATIVE_QUEUE_RECOVERY_SECONDS)
             continue
         settings = settings_loader()
         await process_job(session_factory, settings, job_id)

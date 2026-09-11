@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,7 @@ from sqlalchemy.orm import Session, selectinload
 from .library_match import build_scene_match_index, match_local_scene
 from .library_scanner import load_states, normalized_path, record_success, reconcile_missing, scandir_videos, unchanged
 from .status_console import emit_status
+from .runtime_metrics import runtime_metrics
 from .models import (
     BackgroundJob,
     History,
@@ -33,6 +35,8 @@ from .models import (
 
 VIDEO_EXTENSIONS = {".mp4", ".m4v", ".mkv", ".avi", ".mov", ".wmv", ".webm", ".ts", ".m2ts", ".mpg", ".mpeg"}
 GENERATED_ROOT = Path(os.getenv("SCARLETX_GENERATED_DIR", "./generated")).expanduser()
+MEDIA_TOOL_CONCURRENCY = max(1, int(os.getenv("SCARLETX_MEDIA_TOOL_CONCURRENCY", "2")))
+_MEDIA_TOOL_SEMAPHORE = threading.BoundedSemaphore(MEDIA_TOOL_CONCURRENCY)
 
 
 class MediaLibraryError(RuntimeError):
@@ -48,7 +52,8 @@ def tool_status() -> dict[str, bool]:
 
 def _run(args: list[str], *, timeout: int = 120) -> subprocess.CompletedProcess[str]:
     try:
-        return subprocess.run(args, capture_output=True, text=True, check=True, timeout=timeout)
+        with _MEDIA_TOOL_SEMAPHORE, runtime_metrics.media_tool():
+            return subprocess.run(args, capture_output=True, text=True, check=True, timeout=timeout)
     except FileNotFoundError as exc:
         raise MediaLibraryError(f"Required media tool is not installed: {args[0]}") from exc
     except subprocess.TimeoutExpired as exc:
@@ -338,7 +343,7 @@ def scan_library(
             # Probe changed/new files with separate DB sessions so ffprobe and
             # thumbnail generation can run concurrently without sharing a Session.
             if to_index:
-                workers = min(4, max(1, (os.cpu_count() or 2) // 2), len(to_index))
+                workers = min(MEDIA_TOOL_CONCURRENCY, len(to_index))
                 with concurrent.futures.ThreadPoolExecutor(max_workers=workers, thread_name_prefix="scarletx-media") as pool:
                     futures = {
                         pool.submit(index_media_file_by_id, session_factory, media_id, generate_art=True): media_id
