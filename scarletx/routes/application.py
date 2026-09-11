@@ -100,6 +100,8 @@ from ..migrations import (
 )
 from ..list_queries import performer_summary_page, scene_summary_page, studio_summary_page
 from ..event_stream import QueueEvent, format_sse, queue_event_broker, queue_event_pump
+from ..background_signals import completed_import_signal
+from ..runtime_metrics import runtime_metrics
 
 
 def _encode_cursor(*parts) -> str:
@@ -266,6 +268,7 @@ def _runtime_settings_loader():
         return load_database_settings(runtime_db)
 
 
+COMPLETED_IMPORT_RECOVERY_SECONDS = 120
 MONITORED_ENTITY_DISCOVERY_INTERVAL_SECONDS = 3600
 
 
@@ -390,6 +393,11 @@ def get_runtime_settings(db: Session = Depends(get_session)) -> Settings:
 
 def client(settings: Settings):
     return metadata_client(settings)
+
+
+@app.get("/api/system/runtime-metrics")
+def runtime_efficiency_metrics():
+    return runtime_metrics.snapshot()
 
 
 @app.get("/api/settings")
@@ -966,17 +974,20 @@ async def process_completed_downloads() -> dict:
 
 
 async def completed_download_import_loop() -> None:
+    await completed_import_signal.bind()
     while True:
-        poll_seconds = 30
+        wait_seconds = COMPLETED_IMPORT_RECOVERY_SECONDS
         try:
             result = await process_completed_downloads()
-            poll_seconds = int(result.get("poll_seconds", 30))
+            wait_seconds = min(
+                COMPLETED_IMPORT_RECOVERY_SECONDS,
+                max(1, int(result.get("poll_seconds", COMPLETED_IMPORT_RECOVERY_SECONDS))),
+            )
         except asyncio.CancelledError:
             raise
         except Exception:
-            # A transient download/metadata/database failure must not stop the watcher.
-            pass
-        await asyncio.sleep(max(10, poll_seconds))
+            wait_seconds = COMPLETED_IMPORT_RECOVERY_SECONDS
+        await completed_import_signal.wait(wait_seconds)
 
 
 async def automatic_search_loop() -> None:
