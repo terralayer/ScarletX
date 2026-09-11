@@ -13,7 +13,7 @@ def test_static_frontend_is_outside_backend_package():
     assert not (ROOT / "scarletx/web/index.html").exists()
 
 
-def test_static_auth_assets_contain_optional_login_and_account_controls():
+def test_static_auth_assets_keep_optional_account_controls_hidden():
     script = text("frontend/auth.js")
     styles = text("frontend/auth.css")
     assert 'id="authGate"' in script
@@ -22,27 +22,29 @@ def test_static_auth_assets_contain_optional_login_and_account_controls():
     assert 'id="authAccountButton"' in script
     assert 'id="authLogoutButton"' in script
     assert 'id="authAccountDialog"' in script
+    assert 'id="authGate" aria-live="polite" hidden' in script
     assert ".sx-auth-gate" in styles
     assert ".sx-auth-account" in styles
 
 
-def test_static_auth_script_uses_same_origin_api_and_gates_app_boot():
+def test_static_auth_script_uses_same_origin_api_without_session_probe():
     script = text("frontend/auth.js")
     for endpoint in (
-        "/api/auth/status",
         "/api/auth/login",
         "/api/auth/logout",
         "/api/auth/admin",
     ):
         assert endpoint in script
+    assert "/api/auth/status" not in script
     assert "credentials:'same-origin'" in script or 'credentials: "same-origin"' in script
     assert "window.authGateBoot" in script
 
 
-def test_auth_gate_boots_application_immediately_when_disabled():
+def test_auth_gate_boots_application_immediately_without_session_check():
     script = text("frontend/auth.js")
-    assert "if (!status.enabled)" in script
-    assert "showOpenApp(status)" in script
+    assert "showOpenApp();" in script
+    assert "Checking security" not in script
+    assert "Verifying the local ScarletX administrator session." not in script
     assert "/api/setup/admin" not in script
 
 
@@ -54,7 +56,7 @@ def test_security_settings_expose_ui_auth_credentials():
     assert 'id="securityPasswordConfirm"' in script
 
 
-def test_web_image_injects_static_auth_assets_and_delays_legacy_boot():
+def test_web_image_injects_static_auth_assets_and_boots_through_shim():
     web_dockerfile = text("Dockerfile.web")
     assert "COPY frontend/index.html /usr/share/nginx/html/index.html" in web_dockerfile
     assert "/auth.css" in web_dockerfile
