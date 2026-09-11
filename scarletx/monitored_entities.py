@@ -50,9 +50,9 @@ async def _studio_scenes(tpdb, identifier: str):
 async def monitored_entity_discovery_cycle(session_factory, settings) -> dict:
     """Refresh monitored performers/studios from TPDB and persist their scenes.
 
-    The entity monitor flags are the durable source of truth.  Scene discovery is
-    idempotent by TPDB scene ID, and one failing entity never prevents the other
-    monitored entities from being refreshed.
+    The entity monitor flags are the durable source of truth. Scene discovery is
+    idempotent by TPDB scene ID, and one failing entity or scene never prevents
+    the remaining monitored entities from being refreshed.
     """
     with session_factory() as db:
         performers = [
@@ -100,30 +100,47 @@ async def monitored_entity_discovery_cycle(session_factory, settings) -> dict:
                 )
 
     with session_factory() as db:
-        existing_ids = set(
-            db.scalars(
-                select(Scene.tpdb_id).where(Scene.tpdb_id.in_(tuple(discovered)))
-            ).all()
-        ) if discovered else set()
+        existing_ids = (
+            set(
+                db.scalars(
+                    select(Scene.tpdb_id).where(Scene.tpdb_id.in_(tuple(discovered)))
+                ).all()
+            )
+            if discovered
+            else set()
+        )
 
     created = 0
     refreshed = 0
+    scene_ids: list[int] = []
     for remote in discovered.values():
-        with session_factory() as db:
-            scene = upsert_scene(db, remote, monitored=True, content_type="scene")
-            if not scene.monitored:
-                scene.monitored = True
-                db.commit()
-        if remote.id in existing_ids:
-            refreshed += 1
-        else:
-            created += 1
+        try:
+            with session_factory() as db:
+                scene = upsert_scene(db, remote, monitored=True, content_type="scene")
+                if not scene.monitored:
+                    scene.monitored = True
+                    db.commit()
+                scene_ids.append(scene.id)
+            if remote.id in existing_ids:
+                refreshed += 1
+            else:
+                created += 1
+        except Exception as exc:
+            errors.append(
+                {
+                    "type": "scene",
+                    "id": remote.id,
+                    "name": remote.title,
+                    "error": str(exc),
+                }
+            )
 
     return {
         "entities_checked": len(performers) + len(studios),
         "performers_checked": len(performers),
         "studios_checked": len(studios),
         "unique_scenes": len(discovered),
+        "scene_ids": scene_ids,
         "created": created,
         "refreshed": refreshed,
         "errors": errors,
