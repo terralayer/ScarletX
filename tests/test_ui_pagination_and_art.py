@@ -21,8 +21,10 @@ def test_web_image_copies_ui_override_assets():
 
 
 def test_queue_override_paginates_50_rows_and_moves_eta_to_own_line():
+    app = (FRONTEND / "app.js").read_text(encoding="utf-8")
     source = (FRONTEND / "ui_overrides.js").read_text(encoding="utf-8")
-    assert "const ACTIVITY_QUEUE_PAGE_SIZE=50" in source
+    assert "const ACTIVITY_QUEUE_PAGE_SIZE=50" in app
+    assert "const ACTIVITY_QUEUE_PAGE_SIZE=50" not in source
     assert "/api/activity/page?page=${activityQueuePage}&limit=${ACTIVITY_QUEUE_PAGE_SIZE}" in source
     assert "activityQueuePagerHtml(activityQueueTotal)" in source
     assert 'class="live-eta-row"' in source
@@ -39,11 +41,13 @@ def test_library_override_paginates_50_rows_with_tpdb_art_and_studio_line():
     assert "cursor=${encodeURIComponent(cursor)}" in source
     assert "/api/artwork/scenes/${encodeURIComponent(x.scene_id)}?size=card" in source
     assert 'class="library-studio"' in source
+    assert 'class="studio-release"' in source
     assert 'data-library-page="first"' in source
     assert 'data-library-page="prev"' in source
     assert 'data-library-page="next"' in source
     assert "audio_codec" not in source
     assert ">Audio<" not in source
+    assert "<th>Media</th>" not in source
 
 
 def test_library_artwork_route_accepts_local_scene_ids():

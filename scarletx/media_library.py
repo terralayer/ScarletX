@@ -414,6 +414,7 @@ def media_rows(db: Session, rows: list[MediaFile]) -> list[dict[str, Any]]:
             "id": media.id, "scene_id": media.scene_id,
             "scene_title": scene.title if scene else media.release_title or Path(media.path).stem,
             "studio": scene.studio.name if scene and scene.studio else None,
+            "release_date": scene.release_date if scene else None,
             "path": media.path, "filename": Path(media.path).name, "size_bytes": media.size_bytes,
             "quality": media.quality, "release_title": media.release_title, "imported_at": media.imported_at,
             "missing": bool(probe.missing) if probe else not Path(media.path).exists(),
