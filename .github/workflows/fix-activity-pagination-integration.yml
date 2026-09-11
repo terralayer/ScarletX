@@ -1,0 +1,41 @@
+name: Fix activity pagination integration
+on:
+  push:
+    branches: [fix/playback-and-download-pagination]
+    paths: [.github/workflows/fix-activity-pagination-integration.yml]
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/playback-and-download-pagination
+      - name: Patch pagination integration
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('frontend/app.js')
+          s=p.read_text()
+          old="  $('#queueBadge').textContent=rows.length;"
+          new="  $('#queueBadge').textContent=allRows.length;"
+          if old not in s: raise SystemExit('queue badge anchor missing')
+          p.write_text(s.replace(old,new,1))
+
+          p=Path('frontend/activity_studio_overrides.js')
+          s=p.read_text()
+          old="""    const snapshotRows=q?.tracked||[];\n    const visibleRows=activityQueuePage===1?snapshotRows.slice(0,ACTIVITY_QUEUE_PAGE_SIZE):activityQueuePageRows;\n    syncStudioLabels(visibleRows);"""
+          new="""    const snapshotRows=q?.tracked||[];\n    const start=(activityQueuePage-1)*ACTIVITY_QUEUE_PAGE_SIZE;\n    const visibleRows=snapshotRows.slice(start,start+ACTIVITY_QUEUE_PAGE_SIZE);\n    syncStudioLabels(visibleRows);"""
+          if old not in s: raise SystemExit('studio pagination anchor missing')
+          p.write_text(s.replace(old,new,1))
+          PY
+      - name: Commit and remove helper
+        run: |
+          git config user.name TerraLayer
+          git config user.email 321948909+terralayer@users.noreply.github.com
+          git add frontend/app.js frontend/activity_studio_overrides.js
+          git commit -m "fix: integrate activity pagination with live studio labels"
+          git rm .github/workflows/fix-activity-pagination-integration.yml
+          git commit -m "chore: remove activity pagination helper"
+          git push origin HEAD:fix/playback-and-download-pagination
