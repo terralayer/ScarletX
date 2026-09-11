@@ -2,6 +2,18 @@ let navigationGeneration=0;
 function nextNavigationGeneration(){navigationGeneration+=1;return navigationGeneration}
 function navigationGenerationCurrent(generation){return generation===navigationGeneration}
 
+const navigationBaseRender=render;
+render=async function(...args){
+  nextNavigationGeneration();
+  return navigationBaseRender(...args);
+};
+
+const navigationBaseRenderEntities=renderEntities;
+renderEntities=async function(...args){
+  nextNavigationGeneration();
+  return navigationBaseRenderEntities(...args);
+};
+
 loadEntityLibrary=async function(type,cursor=null,append=false,q=null){
   const generation=nextNavigationGeneration();
   const grid=$('#entityGrid');
