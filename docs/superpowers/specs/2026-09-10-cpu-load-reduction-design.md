@@ -13,7 +13,7 @@ Reduce ScarletX background CPU usage without slowing active downloads, weakening
 - Preserve manual searches, native downloader throughput, existing retry policy, calendar behavior, and monitoring persistence.
 
 ## Architecture
-Introduce a small durable entity-scan cursor table keyed by entity type + local entity ID. The monitored discovery cycle reads that cursor, processes TPDB results in bounded-concurrency batches, upserts only changed/new scene records, and advances the cursor only after a successful entity scan. The application download-processing loop uses the result of each processing pass to choose an active or idle sleep interval.
+Use the existing AppSetting store for a durable entity-scan head cursor keyed by entity type + local entity ID, avoiding a schema migration. The monitored discovery cycle reads that cursor, processes TPDB results in bounded-concurrency batches, upserts only changed/new scene records, and advances the cursor only after a successful entity scan. The application download-processing loop uses the result of each processing pass to choose an active or idle sleep interval.
 
 The automatic search cycle receives only the scene IDs that need attention from monitored discovery. Existing manual/global automatic search behavior remains unchanged. No new downloader pipeline is introduced.
 

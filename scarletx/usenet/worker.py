@@ -2276,7 +2276,7 @@ async def process_job(session_factory, settings, job_id: str) -> None:
                 db.commit()
 
 
-async def native_worker_loop(session_factory, settings_loader, poll_seconds: float = 1.0) -> None:
+async def native_worker_loop(session_factory, settings_loader, poll_seconds: float = 5.0) -> None:
     emit_status("Native Downloader", "ACTIVE", f"poll every {poll_seconds:g}s", severity="active")
     # Jobs interrupted by an app restart are safe to retry because decoded segments
     # are persisted under the incomplete directory and skipped on the next pass.
