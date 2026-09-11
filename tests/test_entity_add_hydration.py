@@ -6,9 +6,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_performer_and_studio_add_always_queue_metadata_hydration():
     source = (ROOT / "scarletx" / "routes" / "application.py").read_text()
-    performer_start = source.index('@app.post("/api/library/performers/{identifier}")')
-    studio_start = source.index('@app.post("/api/library/studios/{identifier}")')
-    monitor_start = source.index('@app.patch("/api/library/performers/{item_id}/monitor")')
+    performer_start = source.index("async def import_performer(")
+    studio_start = source.index("async def import_studio(")
+    monitor_start = source.index("async def monitor_performer(")
     performer = source[performer_start:studio_start]
     studio = source[studio_start:monitor_start]
 
