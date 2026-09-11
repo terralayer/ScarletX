@@ -1000,14 +1000,16 @@ async def monitored_entity_discovery_loop() -> None:
         try:
             with SessionLocal() as db:
                 settings = load_database_settings(db)
-            await monitored_entity_discovery_cycle(SessionLocal, settings)
-            # Monitor All is an explicit request for ongoing acquisition. Run the
-            # existing release-search pipeline after discovery even if the general
-            # automatic-search toggle is off; future scenes are filtered there.
-            await automatic_search_cycle(
-                SessionLocal,
-                settings.model_copy(update={"automatic_search_enabled": True}),
-            )
+            discovery = await monitored_entity_discovery_cycle(SessionLocal, settings)
+            # Monitor All is an explicit request for ongoing acquisition. Search
+            # only scenes owned by monitored performers/studios; future scenes are
+            # retained for Upcoming and filtered until their release date.
+            if discovery["entities_checked"]:
+                await automatic_search_cycle(
+                    SessionLocal,
+                    settings.model_copy(update={"automatic_search_enabled": True}),
+                    scene_ids=discovery["scene_ids"],
+                )
         except asyncio.CancelledError:
             raise
         except Exception:
