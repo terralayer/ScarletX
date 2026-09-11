@@ -22,11 +22,11 @@ def test_scarlet_dark_design_tokens_are_the_default_theme():
     assert "--line:#252b34" in page
 
 
-def test_sidebar_uses_the_simple_scarlet_x_brandmark():
+def test_sidebar_uses_wordmark_without_separate_x_logo():
     page = html()
-    assert 'class="brandmark"' in page
-    assert '<span class="xslash xslash-a"></span>' in page
-    assert '<span class="xslash xslash-b"></span>' in page
+    assert 'class="brandmark"' not in page
+    assert '<span class="xslash xslash-a"></span>' not in page
+    assert '<span class="xslash xslash-b"></span>' not in page
     assert '<div class="brandword">Scarlet<b>X</b></div>' in page
 
 
