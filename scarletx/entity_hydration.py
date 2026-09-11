@@ -10,16 +10,17 @@ from .config import Settings
 from .db import SessionLocal
 from .library_management import ensure_library_config
 from .metadata import MetadataProviderError, metadata_client
-from .models import BackgroundJob, History, utcnow
+from .models import BackgroundJob, History, Scene, Studio, utcnow
 from .schemas import RemoteScene
 from .services import upsert_scene
+from .studio_policy import is_allowed_remote_scene
 
 ENTITY_PAGE_SIZE = 100
 ENTITY_PAGE_TIMEOUT_SECONDS = 25
 ENTITY_DETAIL_CONCURRENCY = 3
 ENTITY_FETCH_ATTEMPTS = 3
 ENTITY_RETRY_DELAY_SECONDS = 1.0
-DETAIL_BATCH_SIZE = 100
+DETAIL_BATCH_SIZE = 25
 MAX_ENTITY_PAGES = 1000
 
 
@@ -70,6 +71,46 @@ async def _entity_scene_summaries(tpdb, entity_type: str, identifier: str) -> li
         page += 1
 
     raise MetadataProviderError(f"TPDB entity scene list exceeded {MAX_ENTITY_PAGES} pages")
+
+
+def cache_entity_scene_summaries(summaries: list[RemoteScene], monitored: bool) -> list[int]:
+    """Persist lightweight scene/studio metadata immediately without erasing credits."""
+    scene_ids: list[int] = []
+    with SessionLocal() as db:
+        for remote in summaries:
+            if not is_allowed_remote_scene(remote):
+                continue
+            scene = db.scalar(select(Scene).where(Scene.tpdb_id == remote.id))
+            if scene is None:
+                scene = Scene(tpdb_id=remote.id, title=remote.title, content_type="scene", monitored=monitored)
+                db.add(scene)
+            scene.title = remote.title
+            scene.description = remote.description
+            scene.release_date = remote.release_date
+            scene.duration = remote.duration
+            scene.source_url = remote.source_url
+            scene.image_url = remote.image_url
+            scene.back_image_url = remote.back_image_url
+            scene.poster_url = remote.poster_url
+            if monitored:
+                scene.monitored = True
+            if remote.studio is not None:
+                studio = db.scalar(select(Studio).where(Studio.tpdb_id == remote.studio.id))
+                if studio is None:
+                    studio = Studio(tpdb_id=remote.studio.id, name=remote.studio.name)
+                    db.add(studio)
+                studio.name = remote.studio.name
+                studio.url = remote.studio.url
+                studio.logo_url = remote.studio.logo_url
+                studio.poster_url = remote.studio.poster_url
+                studio.description = remote.studio.description
+                studio.is_library = True
+                scene.studio = studio
+            db.flush()
+            ensure_library_config(db, scene)
+            scene_ids.append(scene.id)
+        db.commit()
+    return scene_ids
 
 
 async def _full_scene_details(tpdb, summaries: list[RemoteScene]) -> list[RemoteScene]:
@@ -131,36 +172,64 @@ async def run_adult_entity_hydration(
         db.commit()
 
     try:
-        remote_scenes = await fetch_entity_scene_graph(settings, entity_type, identifier)
         effective_search_when_monitored = _job_search_requested(job_id, search_when_monitored)
         scene_ids: list[int] = []
         performer_ids: set[str] = set()
         studio_ids: set[str] = set()
+        skipped_policy = 0
+        details_cached = 0
 
-        # Cache the complete graph in one transaction instead of one SQLite commit per scene.
-        with SessionLocal() as db:
-            for remote in remote_scenes:
-                scene = upsert_scene(db, remote, monitored=False, content_type="scene", commit=False)
-                if effective_search_when_monitored:
-                    scene.monitored = True
-                ensure_library_config(db, scene)
-                scene_ids.append(scene.id)
-                performer_ids.update(item.id for item in remote.performers)
-                if remote.studio is not None:
-                    studio_ids.add(remote.studio.id)
-            db.commit()
+        async with metadata_client(settings) as tpdb:
+            summaries = await _entity_scene_summaries(tpdb, entity_type, identifier)
+            summary_ids = cache_entity_scene_summaries(summaries, effective_search_when_monitored)
+            with SessionLocal() as db:
+                job = db.get(BackgroundJob, job_id)
+                if job is not None:
+                    job.payload = json.dumps({
+                        "entity_type": entity_type,
+                        "identifier": identifier,
+                        "summaries_cached": len(summary_ids),
+                        "details_cached": 0,
+                        "search_when_monitored": effective_search_when_monitored,
+                    })
+                    db.commit()
 
-            job = db.get(BackgroundJob, job_id)
-            if job is not None:
-                job.payload = json.dumps({
-                    "entity_type": entity_type,
-                    "identifier": identifier,
-                    "scenes_cached": len(scene_ids),
-                    "performers_cached": len(performer_ids),
-                    "studios_cached": len(studio_ids),
-                    "search_when_monitored": effective_search_when_monitored,
-                })
-                db.commit()
+            for start in range(0, len(summaries), DETAIL_BATCH_SIZE):
+                batch = summaries[start:start + DETAIL_BATCH_SIZE]
+                details = await _full_scene_details(tpdb, batch)
+                with SessionLocal() as db:
+                    for remote in details:
+                        if not is_allowed_remote_scene(remote):
+                            skipped_policy += 1
+                            continue
+                        try:
+                            scene = upsert_scene(db, remote, monitored=False, content_type="scene", commit=False)
+                        except ValueError:
+                            skipped_policy += 1
+                            continue
+                        if effective_search_when_monitored:
+                            scene.monitored = True
+                        ensure_library_config(db, scene)
+                        scene_ids.append(scene.id)
+                        performer_ids.update(item.id for item in remote.performers)
+                        if remote.studio is not None:
+                            studio_ids.add(remote.studio.id)
+                        details_cached += 1
+                    db.commit()
+                    job = db.get(BackgroundJob, job_id)
+                    if job is not None:
+                        job.payload = json.dumps({
+                            "entity_type": entity_type,
+                            "identifier": identifier,
+                            "summaries_cached": len(summary_ids),
+                            "details_cached": details_cached,
+                            "scenes_cached": len(scene_ids),
+                            "performers_cached": len(performer_ids),
+                            "studios_cached": len(studio_ids),
+                            "skipped_policy": skipped_policy,
+                            "search_when_monitored": effective_search_when_monitored,
+                        })
+                        db.commit()
 
         search_counts: dict[str, int] = {}
         if effective_search_when_monitored:

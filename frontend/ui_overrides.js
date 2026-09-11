@@ -1,6 +1,4 @@
-const ACTIVITY_QUEUE_PAGE_SIZE=50;
 const MEDIA_LIBRARY_PAGE_SIZE=50;
-let activityQueuePage=1;
 let activityQueueTotal=0;
 let activityQueuePageRows=[];
 let activityQueueCountBusy=false;
@@ -111,12 +109,12 @@ window.addEventListener('scarletx:queue-event',e=>{
 refreshActivityQueueTotal();
 
 function mediaFileRowsHtml(files){
-  return files.map(x=>{let art=x.scene_id?`/api/artwork/scenes/${encodeURIComponent(x.scene_id)}?size=card`:'';return `<tr data-media-row="${x.id}"><td><div class="library-scene-cell">${art?`<span class="library-scene-thumb"><img src="${esc(art)}" alt="" loading="lazy" onerror="this.closest('.library-scene-thumb').classList.add('missing-art');this.remove()"></span>`:''}<div class="library-scene-copy"><button class="scene-title" data-library-scene="${x.scene_id}">${esc(x.scene_title)}</button><small class="library-studio">${x.studio?`Studio: ${esc(x.studio)}`:'Studio: —'}</small>${x.missing?'<small><span class="state bad">Missing</span></small>':''}</div></div></td><td>${x.height?`${x.height}p`:esc(x.quality||'—')} · ${esc(x.video_codec||'—')}<small>${durationText(x.duration_seconds)}</small></td><td>${bytes(x.size_bytes)}</td><td>${x.position_seconds?`${durationText(x.position_seconds)} / ${durationText(x.duration_seconds)}`:x.play_count?'Played':'Unwatched'}${x.favorite?'<small>★ Favorite</small>':''}</td><td><div class="actions"><button class="btn small primary" data-play-media="${x.id}" ${x.missing?'disabled':''}>Play</button><button class="btn small" data-probe-media="${x.id}">Refresh</button><button class="btn small" data-favorite-media="${x.id}" data-fav="${x.favorite?'1':'0'}">${x.favorite?'★':'☆'}</button></div></td></tr>`}).join('');
+  return files.map(x=>{let art=x.scene_id?`/api/artwork/scenes/${encodeURIComponent(x.scene_id)}?size=card`:'';return `<tr data-media-row="${x.id}"><td><div class="library-scene-cell">${art?`<span class="library-scene-thumb"><img src="${esc(art)}" alt="" loading="lazy" onerror="this.closest('.library-scene-thumb').classList.add('missing-art');this.remove()"></span>`:''}<div class="library-scene-copy"><button class="scene-title" data-library-scene="${x.scene_id}">${esc(x.scene_title)}</button><small class="library-studio">${x.studio?`Studio: ${esc(x.studio)}`:'Studio: —'}</small><small class="studio-release">${fmtDate(x.release_date)}</small>${x.missing?'<small><span class="state bad">Missing</span></small>':''}</div></div></td><td>${bytes(x.size_bytes)}</td><td>${x.position_seconds?`${durationText(x.position_seconds)} / ${durationText(x.duration_seconds)}`:x.play_count?'Played':'Unwatched'}${x.favorite?'<small>★ Favorite</small>':''}</td><td><div class="actions"><button class="btn small primary" data-play-media="${x.id}" ${x.missing?'disabled':''}>Play</button><button class="btn small" data-probe-media="${x.id}">Refresh</button><button class="btn small" data-favorite-media="${x.id}" data-fav="${x.favorite?'1':'0'}">${x.favorite?'★':'☆'}</button></div></td></tr>`}).join('');
 }
 
 function mediaFilesHtml(files,total,hasMore=false){
   if(!files.length)return empty('No indexed media files yet. Configure a scene root folder, then scan the library.');
-  return `<div class="tablewrap" style="border:0;border-radius:0"><table class="table"><thead><tr><th>Scene</th><th>Media</th><th>Size</th><th>Watch</th><th></th></tr></thead><tbody>${mediaFileRowsHtml(files)}</tbody></table></div>`;
+  return `<div class="tablewrap" style="border:0;border-radius:0"><table class="table"><thead><tr><th>Scene</th><th>Size</th><th>Watch</th><th></th></tr></thead><tbody>${mediaFileRowsHtml(files)}</tbody></table></div>`;
 }
 
 function mediaLibraryPagerHtml(total,hasMore){
