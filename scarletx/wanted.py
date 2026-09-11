@@ -1,9 +1,9 @@
 from __future__ import annotations
 import shutil
 from pathlib import Path
-from sqlalchemy import exists, select
+from sqlalchemy import exists, or_, select
 from .library_management import QUALITY_ORDER,default_quality_profile,detect_quality,ensure_library_config
-from .models import LibraryItemConfig,MediaFile,QualityProfile,RootFolder,Scene
+from .models import LibraryItemConfig,MediaFile,Performer,QualityProfile,RootFolder,Scene,Studio,scene_performer
 
 def _profile_for(db,scene):
     cfg=ensure_library_config(db,scene);return db.get(QualityProfile,cfg.quality_profile_id) if cfg.quality_profile_id else default_quality_profile(db,"scene")
@@ -47,12 +47,22 @@ def cutoff_unmet(db,content_type=None,limit=500):
     return rows
 def calendar_items(db,start,end,limit=500):
     rows=[]
+    monitored_performer = exists(
+        select(scene_performer.c.scene_id)
+        .join(Performer,Performer.id==scene_performer.c.performer_id)
+        .where(scene_performer.c.scene_id==Scene.id,Performer.monitored.is_(True))
+    )
     stmt = select(Scene).where(
-        Scene.content_type == "scene", Scene.monitored.is_(True),
+        Scene.content_type == "scene",
+        or_(
+            Scene.monitored.is_(True),
+            Scene.studio.has(Studio.monitored.is_(True)),
+            monitored_performer,
+        ),
         Scene.release_date >= start, Scene.release_date <= end,
     ).order_by(Scene.release_date, Scene.title).limit(limit)
     for s in db.scalars(stmt).all():
-        rows.append({"date":s.release_date,"kind":"scene","library_item_id":s.id,"title":s.title,"monitored":s.monitored})
+        rows.append({"date":s.release_date,"kind":"scene","library_item_id":s.id,"title":s.title,"monitored":True})
     return rows
 def disk_space(db):
     rows=[]
