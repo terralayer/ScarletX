@@ -94,6 +94,7 @@ def test_completed_rows_supports_offset_for_real_server_pagination():
 
 def test_activity_uses_50_active_and_20_completed_rows_per_page():
     source = (ROOT / "frontend" / "app.js").read_text()
+    studio_override = (ROOT / "frontend" / "activity_studio_overrides.js").read_text()
     backend = (ROOT / "scarletx" / "routes" / "application.py").read_text()
 
     assert "ACTIVITY_QUEUE_PAGE_SIZE=50" in source
@@ -102,5 +103,8 @@ def test_activity_uses_50_active_and_20_completed_rows_per_page():
     assert "activityCompletedPage" in source
     assert "limit=${ACTIVITY_COMPLETED_PAGE_SIZE}&offset=${completedOffset}" in source
     assert "activityPager" in source
+    assert "$('#queueBadge').textContent=allRows.length" in source
+    assert "const start=(activityQueuePage-1)*ACTIVITY_QUEUE_PAGE_SIZE" in studio_override
+    assert "activityQueuePageRows" not in studio_override
     assert "offset: int = Query(0, ge=0)" in backend
     assert '"total":' in backend
