@@ -115,6 +115,17 @@ def test_studio_cards_always_request_standardized_tpdb_artwork():
     assert ".studio-card .media-poster img{object-fit:contain" in css
 
 
+def test_small_studio_logos_use_prepared_artwork_background_without_forcing_gray():
+    source = (ROOT / "frontend" / "studio_art_overrides.js").read_text(encoding="utf-8")
+    css = (ROOT / "frontend" / "ui_overrides.css").read_text(encoding="utf-8")
+
+    assert "studioArtUrl(id)" in source
+    assert ".studio-logo{" in css
+    studio_logo_css = css[css.index(".studio-logo{"):css.index(".studio-logo img{")]
+    assert "background:transparent" in studio_logo_css
+    assert "background:#f4f4f5" not in studio_logo_css
+
+
 def test_studio_art_override_is_loaded_and_packaged():
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
