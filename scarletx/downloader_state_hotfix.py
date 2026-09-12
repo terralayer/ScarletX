@@ -10,10 +10,9 @@ from sqlalchemy.orm import Session
 from . import download_clients
 from .background_signals import completed_import_signal, native_queue_signal
 from .config import Settings
-from .db import SessionLocal, get_session
+from .db import get_session
 from .models import NativeUsenetJob, TrackedDownload, utcnow
 from .routes import application as legacy_application
-from .settings_store import get_runtime_settings
 from .usenet import worker
 
 
@@ -75,7 +74,7 @@ def resume_native_download_hotfix(job_id: str, db: Session = Depends(get_session
 async def reprocess_native_download_hotfix(
     job_id: str,
     db: Session = Depends(get_session),
-    settings: Settings = Depends(get_runtime_settings),
+    settings: Settings = Depends(legacy_application.get_runtime_settings),
 ):
     job = legacy_application._native_job_or_404(db, job_id)
     if job.status != "completed":
