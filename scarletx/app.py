@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .auth_routes import router as auth_router
+from .compact_studio_art import install_compact_studio_art_route
 from .db import SessionLocal
 from .downloader_state_hotfix import install_downloader_state_hotfixes
 from .http_security import install_authentication, install_security_headers, remove_legacy_api_key_middleware
@@ -62,6 +63,7 @@ _patch_route_call("/api/settings/general", "PATCH", update_general_settings_runt
 _add_dashboard_routes()
 install_runtime_dedup(legacy_application)
 install_downloader_state_hotfixes(app)
+install_compact_studio_art_route(app)
 remove_legacy_api_key_middleware(app)
 app.include_router(auth_router)
 install_authentication(
