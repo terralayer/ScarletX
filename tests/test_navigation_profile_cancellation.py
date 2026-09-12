@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).parents[1]
-APP = ROOT / "frontend" / "app.js"
+NAVIGATION = ROOT / "frontend" / "navigation_error_overrides.js"
 
 
 def _section(source: str, start: str, end: str) -> str:
@@ -10,32 +10,34 @@ def _section(source: str, start: str, end: str) -> str:
 
 
 def test_profile_scene_pagination_stops_when_navigation_is_stale():
-    source = APP.read_text(encoding="utf-8")
+    source = NAVIGATION.read_text(encoding="utf-8")
+    compact = source.replace(" ", "")
+
+    assert "loadAllPerformerScenes=asyncfunction(id,localId=null,generation=navigationGeneration)" in compact
+    assert "loadAllStudioScenes=asyncfunction(id,localId=null,generation=navigationGeneration)" in compact
+    assert "performerProfile=asyncfunction(id,localId=null)" in compact
+    assert "studioProfile=asyncfunction(id,localId=null)" in compact
 
     performer_loader = _section(
         source,
-        "async function loadAllPerformerScenes",
-        "async function loadAllStudioScenes",
+        "loadAllPerformerScenes=async function",
+        "loadAllStudioScenes=async function",
     )
     studio_loader = _section(
         source,
-        "async function loadAllStudioScenes",
-        "function localPerformerProfile",
+        "loadAllStudioScenes=async function",
+        "performerProfile=async function",
     )
     performer_profile = _section(
         source,
-        "async function performerProfile",
-        "async function studioProfile",
+        "performerProfile=async function",
+        "studioProfile=async function",
     )
-    studio_profile = _section(
-        source,
-        "async function studioProfile",
-        "async function openLocalScene",
-    )
+    studio_profile = source[source.index("studioProfile=async function"):]
 
-    assert "generation" in performer_loader.split("{")[0]
-    assert "generation" in studio_loader.split("{")[0]
-    assert "navigationGenerationCurrent(generation)" in performer_loader
-    assert "navigationGenerationCurrent(generation)" in studio_loader
+    for loader in (performer_loader, studio_loader):
+        assert "navigationGenerationCurrent(generation)" in loader
+        assert loader.count("navigationGenerationCurrent(generation)") >= 2
+
     assert "loadAllPerformerScenes(id,resolvedLocalId,generation)" in performer_profile.replace(" ", "")
     assert "loadAllStudioScenes(id,resolvedLocalId,generation)" in studio_profile.replace(" ", "")
