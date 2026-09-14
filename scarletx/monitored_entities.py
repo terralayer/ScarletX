@@ -167,6 +167,64 @@ async def _studio_scan(
     return scenes, head, False
 
 
+def _persist_discovered_scenes(
+    session_factory,
+    discovered: dict,
+    cursor_updates: list[tuple[str, int, tuple[str, ...]]],
+    studio_deep_scan_updates: list[int],
+    performer_deep_scan_updates: list[int],
+) -> tuple[int, int, set[int], list[dict[str, str]]]:
+    """Persist a discovery batch outside the web server event loop.
+
+    This helper owns every SQLAlchemy session it creates so no session or ORM object
+    crosses threads. Keeping scene upserts and the final SQLite commit here prevents a
+    large daily discovery refresh from starving normal API/navigation requests.
+    """
+    with session_factory() as db:
+        existing_ids = (
+            set(db.scalars(select(Scene.tpdb_id).where(Scene.tpdb_id.in_(tuple(discovered)))).all())
+            if discovered
+            else set()
+        )
+
+    created = 0
+    refreshed = 0
+    persisted_scene_ids: set[int] = set()
+    errors: list[dict[str, str]] = []
+    scene_write_failed = False
+
+    with session_factory() as db:
+        for remote in discovered.values():
+            try:
+                # SAVEPOINT isolates one malformed remote scene while retaining a
+                # single outer commit for the successful batch.
+                with db.begin_nested():
+                    scene = upsert_scene(db, remote, monitored=True, content_type="scene", commit=False)
+                    if not scene.monitored:
+                        scene.monitored = True
+                    persisted_scene_ids.add(scene.id)
+                if remote.id in existing_ids:
+                    refreshed += 1
+                else:
+                    created += 1
+            except Exception as exc:
+                scene_write_failed = True
+                errors.append({"type": "scene", "id": remote.id, "name": remote.title, "error": str(exc)})
+
+        # Advance remote cursors/deep-scan markers only when every discovered scene
+        # was durably handled. A failed upsert retries the deeper scan next hour.
+        if cursor_updates and not scene_write_failed:
+            for kind, local_id, head in cursor_updates:
+                _save_head_cursor(db, kind, local_id, head)
+            for local_id in studio_deep_scan_updates:
+                _save_studio_deep_scan(db, local_id)
+            for local_id in performer_deep_scan_updates:
+                _save_performer_deep_scan(db, local_id)
+        db.commit()
+
+    return created, refreshed, persisted_scene_ids, errors
+
+
 async def monitored_entity_discovery_cycle(session_factory, settings) -> dict:
     """Incrementally refresh monitored performers/studios from TPDB.
 
@@ -174,7 +232,7 @@ async def monitored_entity_discovery_cycle(session_factory, settings) -> dict:
     acquisition. Performer and studio discovery each perform one deep scan per local
     calendar day so future releases cannot remain hidden behind an unchanged first
     page. New/changed TPDB scenes are written in one transaction to avoid one SQLite
-    commit per scene.
+    commit per scene, and that synchronous persistence runs off the request event loop.
     """
     with session_factory() as db:
         performers = [
@@ -270,44 +328,16 @@ async def monitored_entity_discovery_cycle(session_factory, settings) -> dict:
         for scene in scenes:
             discovered[scene.id] = scene
 
-    with session_factory() as db:
-        existing_ids = (
-            set(db.scalars(select(Scene.tpdb_id).where(Scene.tpdb_id.in_(tuple(discovered)))).all())
-            if discovered
-            else set()
-        )
-
-    created = 0
-    refreshed = 0
-    scene_write_failed = False
-    with session_factory() as db:
-        for remote in discovered.values():
-            try:
-                # SAVEPOINT isolates one malformed remote scene while retaining a
-                # single outer commit for the successful batch.
-                with db.begin_nested():
-                    scene = upsert_scene(db, remote, monitored=True, content_type="scene", commit=False)
-                    if not scene.monitored:
-                        scene.monitored = True
-                    candidate_scene_ids.add(scene.id)
-                if remote.id in existing_ids:
-                    refreshed += 1
-                else:
-                    created += 1
-            except Exception as exc:
-                scene_write_failed = True
-                errors.append({"type": "scene", "id": remote.id, "name": remote.title, "error": str(exc)})
-
-        # Advance remote cursors/deep-scan markers only when every discovered scene
-        # was durably handled. A failed upsert retries the deeper scan next hour.
-        if cursor_updates and not scene_write_failed:
-            for kind, local_id, head in cursor_updates:
-                _save_head_cursor(db, kind, local_id, head)
-            for local_id in studio_deep_scan_updates:
-                _save_studio_deep_scan(db, local_id)
-            for local_id in performer_deep_scan_updates:
-                _save_performer_deep_scan(db, local_id)
-        db.commit()
+    created, refreshed, persisted_scene_ids, persistence_errors = await asyncio.to_thread(
+        _persist_discovered_scenes,
+        session_factory,
+        discovered,
+        cursor_updates,
+        studio_deep_scan_updates,
+        performer_deep_scan_updates,
+    )
+    candidate_scene_ids.update(persisted_scene_ids)
+    errors.extend(persistence_errors)
 
     return {
         "entities_checked": len(performers) + len(studios),
