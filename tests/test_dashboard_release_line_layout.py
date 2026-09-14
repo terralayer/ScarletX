@@ -3,6 +3,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Dashboard-only layout contract: do not change the normal Scenes/Library table layout.
+
 
 def dashboard_source() -> str:
     app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
