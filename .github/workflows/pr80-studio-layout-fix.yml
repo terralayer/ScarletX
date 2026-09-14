@@ -1,0 +1,48 @@
+name: PR80 studio layout fix
+
+on:
+  push:
+    branches:
+      - fix/calendar-dashboard-layout
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/calendar-dashboard-layout
+          fetch-depth: 0
+      - name: Patch authoritative dashboard layout
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          app = Path('frontend/app.js')
+          source = app.read_text(encoding='utf-8')
+          old = "<small>${esc(x.latest_title||'Latest downloaded release')} · ${fmtDate(x.latest_release_date)}</small>"
+          new = "<div class=\"dashboard-release-title\">${esc(x.latest_title||'Latest downloaded release')}</div><div class=\"dashboard-release-date\">${fmtDate(x.latest_release_date)}</div>"
+          if old not in source:
+              raise SystemExit('expected studio release markup not found')
+          source = source.replace(old, new, 1)
+          app.write_text(source, encoding='utf-8')
+
+          styles = Path('frontend/styles.css')
+          css = styles.read_text(encoding='utf-8')
+          marker = '.dashboard-release-title,.dashboard-release-date'
+          if marker not in css:
+              css += "\n.dashboard-release-title,.dashboard-release-date{display:block;font-size:9px;color:var(--muted);line-height:1.35;margin-top:2px}.dashboard-scene-copy{min-width:0}.dashboard-scene-copy .scene-title{display:block}\n"
+          styles.write_text(css, encoding='utf-8')
+          PY
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/pr80-studio-layout-fix.yml
+          git config user.name 'TerraLayer Automation'
+          git config user.email '321948909+terralayer@users.noreply.github.com'
+          git add frontend/app.js frontend/styles.css .github/workflows/pr80-studio-layout-fix.yml
+          git commit -m 'fix: split dashboard release title and date lines'
+          git push origin HEAD:fix/calendar-dashboard-layout
