@@ -315,6 +315,22 @@ def studio_summary_page(
             )
         )
 
+    scene_count = (
+        select(func.count(Scene.id))
+        .where(Scene.studio_id == Studio.id, Scene.content_type == "scene")
+        .correlate(Studio)
+        .scalar_subquery()
+        .label("scene_count")
+    )
+    downloaded_scene_count = (
+        select(func.count(func.distinct(Scene.id)))
+        .select_from(Scene)
+        .join(MediaFile, MediaFile.scene_id == Scene.id)
+        .where(Scene.studio_id == Studio.id, Scene.content_type == "scene")
+        .correlate(Studio)
+        .scalar_subquery()
+        .label("downloaded_scene_count")
+    )
     stmt = (
         select(
             Studio.id.label("id"),
@@ -322,6 +338,8 @@ def studio_summary_page(
             Studio.name.label("name"),
             func.coalesce(func.nullif(Studio.poster_url, ""), Studio.logo_url).label("image_url"),
             Studio.monitored.label("monitored"),
+            downloaded_scene_count,
+            scene_count,
         )
         .where(*filters)
         .order_by(Studio.name.asc(), Studio.id.asc())
@@ -338,6 +356,8 @@ def studio_summary_page(
             "name": row["name"],
             "image_url": row["image_url"],
             "monitored": bool(row["monitored"]),
+            "downloaded_scene_count": int(row["downloaded_scene_count"] or 0),
+            "scene_count": int(row["scene_count"] or 0),
         }
         for row in page_rows
     ]

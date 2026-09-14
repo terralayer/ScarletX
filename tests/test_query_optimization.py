@@ -324,4 +324,6 @@ def test_studio_list_uses_summary_projection(tmp_path):
         "name",
         "image_url",
         "monitored",
+        "downloaded_scene_count",
+        "scene_count",
     }
