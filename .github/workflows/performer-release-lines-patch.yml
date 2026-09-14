@@ -1,0 +1,49 @@
+name: Performer Release Lines Patch
+
+on:
+  push:
+    branches:
+      - fix/dashboard-release-lines
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/dashboard-release-lines
+      - name: Patch performer dashboard release layout
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('frontend/app.js')
+          source = path.read_text(encoding='utf-8')
+          start = source.index("$('#performerReleaseRows')")
+          end = source.index("$('#calendarRows')", start)
+          segment = source[start:end]
+          old = "<small>${esc(x.latest_title||'Latest downloaded release')} · ${fmtDate(x.latest_release_date)}</small>"
+          new = "<div class=\"dashboard-release-title\">${esc(x.latest_title||'Latest downloaded release')}</div><div class=\"dashboard-release-date\">${fmtDate(x.latest_release_date)}</div>"
+          if segment.count(old) != 1:
+              raise SystemExit(f'expected one performer release line, found {segment.count(old)}')
+          segment = segment.replace(old, new)
+          path.write_text(source[:start] + segment + source[end:], encoding='utf-8')
+          PY
+      - name: Verify performer regression
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check --editable '.[dev]'
+          python -m pytest tests/test_dashboard_release_line_layout.py::test_dashboard_performer_release_title_and_date_are_separate_lines -q
+      - name: Commit performer layout and remove one-shot workflow
+        shell: bash
+        run: |
+          git config user.name "TerraLayer"
+          git config user.email "321948909+terralayer@users.noreply.github.com"
+          git rm .github/workflows/performer-release-lines-patch.yml
+          git add frontend/app.js
+          git commit -m "Split performer scene title and release date lines"
+          git push origin HEAD:fix/dashboard-release-lines
