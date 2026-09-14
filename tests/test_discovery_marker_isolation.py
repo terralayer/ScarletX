@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -48,6 +49,59 @@ class TwoPerformerMetadata:
     async def get_performer_scenes(self, identifier, page=1, per_page=48):
         scene = self.scenes[identifier]
         return SearchResponse(items=[scene], total=1, page=page, per_page=per_page)
+
+
+@pytest.mark.asyncio
+async def test_transient_sqlite_lock_retries_scene_write_and_advances_marker(monkeypatch):
+    from scarletx import monitored_entities
+
+    factory = make_factory()
+    with factory() as db:
+        performer = Performer(
+            tpdb_id="performer-good",
+            name="Good Performer",
+            monitored=True,
+            is_library=True,
+        )
+        db.add(performer)
+        db.commit()
+        performer_id = performer.id
+
+    fake = TwoPerformerMetadata()
+
+    @asynccontextmanager
+    async def fake_client(_settings):
+        yield fake
+
+    attempts = 0
+
+    def flaky_upsert(_db, remote, monitored=True, content_type="scene", commit=False):
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise OperationalError("DELETE FROM scene_performer", {}, Exception("database is locked"))
+        return SimpleNamespace(monitored=True, id=101)
+
+    with factory() as db:
+        bad = db.query(Performer).filter(Performer.tpdb_id == "performer-bad").one_or_none()
+        if bad is not None:
+            db.delete(bad)
+            db.commit()
+
+    monkeypatch.setattr(monitored_entities, "client", fake_client)
+    monkeypatch.setattr(monitored_entities, "upsert_scene", flaky_upsert)
+    monkeypatch.setattr(monitored_entities.time, "sleep", lambda _seconds: None, raising=False)
+
+    result = await monitored_entities.monitored_entity_discovery_cycle(factory, object())
+
+    assert attempts == 3
+    assert result["errors"] == []
+
+    with factory() as db:
+        marker = db.get(AppSetting, f"monitored_scan:performer_deep:{performer_id}")
+
+    assert marker is not None
+    assert marker.value == date.today().isoformat()
 
 
 @pytest.mark.asyncio
