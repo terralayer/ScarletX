@@ -26,3 +26,5 @@
 .studio-card-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:auto}
 .studio-card-footer .actions{margin:0}
 .studio-scene-count{margin-left:auto;text-align:right;color:var(--muted,#8f95a3);font-size:12px;line-height:1.2;white-space:nowrap}
+.dashboard-release-title{display:block;font-size:9px;color:var(--muted);line-height:1.35;margin-top:2px}
+.dashboard-release-date{display:block;font-size:8px;color:var(--muted);line-height:1.2;margin-top:1px}

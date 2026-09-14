@@ -12,10 +12,12 @@ def dashboard_source() -> str:
     return app[app.index("async function dashboard()"):app.index("function performerLinks")]
 
 
-def test_dashboard_release_line_styles_match_compact_row_metadata():
+def test_dashboard_release_date_is_smaller_than_release_title():
     styles = (ROOT / "frontend" / "styles.css").read_text(encoding="utf-8")
-    compact = "".join(styles.split())
-    assert ".dashboard-release-title,.dashboard-release-date{display:block;font-size:9px;color:var(--muted);line-height:1.35;margin-top:2px}" in compact
+    overrides = (ROOT / "frontend" / "ui_overrides.css").read_text(encoding="utf-8")
+    compact = "".join((styles + overrides).split())
+    assert ".dashboard-release-title{display:block;font-size:9px;color:var(--muted);line-height:1.35;margin-top:2px}" in compact
+    assert ".dashboard-release-date{display:block;font-size:8px;color:var(--muted);line-height:1.2;margin-top:1px}" in compact
     assert ".dashboard-scene-copy.scene-title{display:block}" in compact
 
 
