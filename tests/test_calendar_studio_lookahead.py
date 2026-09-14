@@ -1,3 +1,4 @@
+# Calendar is intentionally driven by monitored studios, not performer-only monitoring.
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
 
