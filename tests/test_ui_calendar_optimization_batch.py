@@ -165,11 +165,12 @@ async def test_hourly_discovery_promotes_existing_related_scene_to_monitored(mon
 def test_monitored_discovery_batches_scene_upserts_in_one_session():
     source = (ROOT / "scarletx" / "monitored_entities.py").read_text(encoding="utf-8")
     compact = "".join(source.split())
-    assert 'upsert_scene(db,remote,monitored=True,content_type="scene",commit=False)' in compact
-    batch_start = compact.index("withsession_factory()asdb:forremoteindiscovered.values():")
-    batch_end = compact.index("return{", batch_start)
-    batch = compact[batch_start:batch_end]
+    helper_start = compact.index("def_persist_discovered_scenes(")
+    helper_end = compact.index("asyncdefmonitored_entity_discovery_cycle", helper_start)
+    batch = compact[helper_start:helper_end]
+    assert 'upsert_scene(db,remote,monitored=True,content_type="scene",commit=False)' in batch
     assert batch.count("db.commit()") == 1
+    assert "awaitasyncio.to_thread(_persist_discovered_scenes" in compact
 
 
 def test_upsert_scene_supports_deferred_commit():
