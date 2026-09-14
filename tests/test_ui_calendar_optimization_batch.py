@@ -53,7 +53,7 @@ def test_scene_and_library_studio_art_is_large_enough_to_read():
     assert ".studio-logoimg{width:100%;height:100%;object-fit:contain" in compact
 
 
-def test_calendar_excludes_future_scene_via_monitored_performer_relationship():
+def test_calendar_includes_future_scene_via_monitored_performer_relationship():
     factory = make_factory()
     future = date.today() + timedelta(days=14)
     with factory() as db:
@@ -64,7 +64,7 @@ def test_calendar_excludes_future_scene_via_monitored_performer_relationship():
         db.execute(scene_performer.insert().values(scene_id=scene.id, performer_id=performer.id))
         db.commit()
         items = calendar_items(db, date.today(), date.today() + timedelta(days=90))
-    assert items == []
+    assert [item["title"] for item in items] == ["Coming Soon"]
 
 
 def test_calendar_includes_future_scene_via_monitored_studio_relationship():
