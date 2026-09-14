@@ -11,10 +11,13 @@ def dashboard_source() -> str:
 
 def test_dashboard_performer_release_title_and_date_are_separate_lines():
     dashboard = dashboard_source()
+    start = dashboard.index("$('#performerReleaseRows')")
+    end = dashboard.index("$('#calendarRows')", start)
+    performer_rows = dashboard[start:end]
 
-    assert 'class="dashboard-release-title"' in dashboard
-    assert 'class="dashboard-release-date"' in dashboard
-    assert "${esc(x.latest_title||'Latest downloaded release')} · ${fmtDate(x.latest_release_date)}" not in dashboard
+    assert 'class="dashboard-release-title"' in performer_rows
+    assert 'class="dashboard-release-date"' in performer_rows
+    assert "${esc(x.latest_title||'Latest downloaded release')} · ${fmtDate(x.latest_release_date)}" not in performer_rows
 
 
 def test_dashboard_recent_scene_title_and_date_are_separate_lines():
