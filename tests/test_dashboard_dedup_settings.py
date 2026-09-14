@@ -165,16 +165,17 @@ def test_scanner_boundary_runs_exact_duplicate_cleanup():
     assert "full_sha256" in source
 
 
-def test_general_settings_no_longer_exposes_application_name():
-    frontend = (ROOT / "frontend" / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
+def test_general_settings_preserves_application_name_control():
+    frontend = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
     app_source = (ROOT / "scarletx" / "app.py").read_text(encoding="utf-8")
     runtime_source = (ROOT / "scarletx" / "routes" / "runtime_overrides.py").read_text(encoding="utf-8")
-    assert "Application name" not in frontend
-    assert 'id="appName"' not in frontend
-    assert "app_name:" not in frontend
-    assert "{log_level:val('#logLevel')}" in frontend
-    assert 'model_copy(update={"app_name": "ScarletX"})' in app_source
-    assert 'set_setting(db, "app_name"' not in runtime_source
+
+    assert "Application name" in frontend
+    assert 'id="appName"' in frontend
+    assert "app_name:val('#appName')" in frontend
+    assert "log_level:val('#logLevel')" in frontend
+    assert 'model_copy(update={"app_name": "ScarletX"})' not in app_source
+    assert 'set_setting(db, "app_name"' in runtime_source
 
     from scarletx.app import app
 
