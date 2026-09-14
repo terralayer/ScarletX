@@ -53,7 +53,7 @@ def test_scene_and_library_studio_art_is_large_enough_to_read():
     assert ".studio-logoimg{width:100%;height:100%;object-fit:contain" in compact
 
 
-def test_calendar_includes_future_scene_via_monitored_performer_relationship():
+def test_calendar_excludes_future_scene_via_monitored_performer_relationship():
     factory = make_factory()
     future = date.today() + timedelta(days=14)
     with factory() as db:
@@ -64,7 +64,7 @@ def test_calendar_includes_future_scene_via_monitored_performer_relationship():
         db.execute(scene_performer.insert().values(scene_id=scene.id, performer_id=performer.id))
         db.commit()
         items = calendar_items(db, date.today(), date.today() + timedelta(days=90))
-    assert [item["title"] for item in items] == ["Coming Soon"]
+    assert items == []
 
 
 def test_calendar_includes_future_scene_via_monitored_studio_relationship():
@@ -88,21 +88,25 @@ def test_calendar_includes_future_scene_via_monitored_studio_relationship():
     assert [item["title"] for item in items] == ["Studio Coming Soon"]
 
 
-def test_calendar_route_defaults_to_all_known_future_releases():
+def test_calendar_route_defaults_to_thirty_day_studio_window():
     factory = make_factory()
-    far_future = date.today() + timedelta(days=180)
+    beyond_window = date.today() + timedelta(days=31)
     with factory() as db:
+        studio = Studio(tpdb_id="st-window", name="Window Studio", monitored=True, is_library=True)
+        db.add(studio)
+        db.flush()
         scene = Scene(
-            tpdb_id="s-beyond-90",
-            title="Beyond Ninety Days",
+            tpdb_id="s-beyond-30",
+            title="Beyond Thirty Days",
             content_type="scene",
             monitored=True,
-            release_date=far_future,
+            release_date=beyond_window,
+            studio_id=studio.id,
         )
         db.add(scene)
         db.commit()
         items = calendar_route(start=None, end=None, limit=500, db=db)
-    assert [item["title"] for item in items] == ["Beyond Ninety Days"]
+    assert items == []
 
 
 class UnchangedMetadata:

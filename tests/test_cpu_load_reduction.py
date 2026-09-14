@@ -3,13 +3,13 @@ from contextlib import asynccontextmanager
 from datetime import date, timedelta
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from scarletx.config import Settings
 from scarletx.db import Base
-from scarletx.models import AppSetting, NativeUsenetJob, Performer, TrackedDownload
+from scarletx.models import AppSetting, NativeUsenetJob, Performer, Scene, TrackedDownload
 from scarletx.schemas import RemotePerson, RemoteScene, RemoteStudio, SearchResponse
 from scarletx.wanted import calendar_items
 
@@ -133,7 +133,7 @@ class MutableCalendarMetadata:
 
 
 @pytest.mark.asyncio
-async def test_monitored_refresh_updates_release_date_when_head_scene_ids_are_unchanged(monkeypatch):
+async def test_monitored_performer_refresh_updates_release_date_without_calendar_membership(monkeypatch):
     from scarletx import monitored_entities
 
     factory = make_factory()
@@ -152,7 +152,7 @@ async def test_monitored_refresh_updates_release_date_when_head_scene_ids_are_un
     first = await monitored_entities.monitored_entity_discovery_cycle(factory, object())
     assert first["created"] == 1
     with factory() as db:
-        assert calendar_items(db, date.today(), date.today() + timedelta(days=90)) == []
+        assert calendar_items(db, date.today(), date.today() + timedelta(days=30)) == []
 
     future = date.today() + timedelta(days=14)
     fake.scene = RemoteScene(
@@ -167,6 +167,7 @@ async def test_monitored_refresh_updates_release_date_when_head_scene_ids_are_un
     assert second["refreshed"] == 1
     assert second["unchanged_entities"] == 0
     with factory() as db:
-        items = calendar_items(db, date.today(), date.today() + timedelta(days=90))
-    assert [item["title"] for item in items] == ["Calendar Scene"]
-    assert items[0]["date"] == future
+        scene = db.scalar(select(Scene).where(Scene.tpdb_id == "calendar-scene"))
+        assert scene is not None
+        assert scene.release_date == future
+        assert calendar_items(db, date.today(), date.today() + timedelta(days=30)) == []
