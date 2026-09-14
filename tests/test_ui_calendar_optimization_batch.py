@@ -31,8 +31,12 @@ def test_entity_requests_use_page_local_sequence_not_global_navigation_generatio
     assert "functionentityRequestCurrent(type,generation)" in compact
     assert "loadEntityLibrary=asyncfunction" in compact
     assert "searchEntity=asyncfunction" in compact
-    assert "entityRequestCurrent(type,generation)" in compact
-    assert "navigationGenerationCurrent(generation)" not in compact[compact.index("loadEntityLibrary=asyncfunction"):]
+    entity_requests = compact[
+        compact.index("loadEntityLibrary=asyncfunction"):
+        compact.index("loadAllPerformerScenes=asyncfunction")
+    ]
+    assert "entityRequestCurrent(type,generation)" in entity_requests
+    assert "navigationGenerationCurrent(generation)" not in entity_requests
 
 
 def test_top_left_x_mark_is_removed_but_brand_word_remains():
