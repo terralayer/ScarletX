@@ -22,3 +22,7 @@
 .library-studio-meta .library-studio{display:block;margin-top:0}
 .library-release{display:block;color:var(--muted,#8f95a3);font-size:12px;line-height:1.2}
 .dashboard-stat{appearance:none;width:100%;font:inherit;text-align:left;color:inherit}
+
+.studio-card-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:auto}
+.studio-card-footer .actions{margin:0}
+.studio-scene-count{margin-left:auto;text-align:right;color:var(--muted,#8f95a3);font-size:12px;line-height:1.2;white-space:nowrap}
