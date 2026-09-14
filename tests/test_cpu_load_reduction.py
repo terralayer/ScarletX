@@ -133,7 +133,7 @@ class MutableCalendarMetadata:
 
 
 @pytest.mark.asyncio
-async def test_monitored_performer_refresh_updates_release_date_without_calendar_membership(monkeypatch):
+async def test_monitored_performer_refresh_updates_release_date_and_calendar_membership(monkeypatch):
     from scarletx import monitored_entities
 
     factory = make_factory()
@@ -170,4 +170,5 @@ async def test_monitored_performer_refresh_updates_release_date_without_calendar
         scene = db.scalar(select(Scene).where(Scene.tpdb_id == "calendar-scene"))
         assert scene is not None
         assert scene.release_date == future
-        assert calendar_items(db, date.today(), date.today() + timedelta(days=30)) == []
+        items = calendar_items(db, date.today(), date.today() + timedelta(days=30))
+        assert [item["title"] for item in items] == ["Calendar Scene"]

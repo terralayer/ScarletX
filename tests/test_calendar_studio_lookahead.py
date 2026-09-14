@@ -1,4 +1,4 @@
-# Calendar is intentionally driven by monitored studios, not performer-only monitoring.
+# Calendar includes any scene monitored directly or through a monitored studio/performer.
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
 
@@ -51,7 +51,7 @@ def test_calendar_defaults_to_next_30_days():
     assert [item["title"] for item in items] == ["Day Thirty"]
 
 
-def test_calendar_membership_is_monitored_studio_only():
+def test_calendar_membership_includes_anything_monitored():
     factory = make_factory()
     future = date.today() + timedelta(days=7)
     with factory() as db:
@@ -60,6 +60,7 @@ def test_calendar_membership_is_monitored_studio_only():
         performer = Performer(tpdb_id="performer-1", name="Performer One", monitored=True, is_library=True)
         db.add_all([monitored_studio, other_studio, performer])
         db.flush()
+
         studio_scene = Scene(
             tpdb_id="studio-scene",
             title="Studio Scene",
@@ -72,17 +73,34 @@ def test_calendar_membership_is_monitored_studio_only():
             tpdb_id="performer-scene",
             title="Performer Scene",
             content_type="scene",
+            monitored=False,
+            release_date=future,
+            studio_id=other_studio.id,
+        )
+        direct_scene = Scene(
+            tpdb_id="direct-scene",
+            title="Direct Scene",
+            content_type="scene",
             monitored=True,
             release_date=future,
             studio_id=other_studio.id,
         )
-        db.add_all([studio_scene, performer_scene])
+        unmonitored_scene = Scene(
+            tpdb_id="unmonitored-scene",
+            title="Unmonitored Scene",
+            content_type="scene",
+            monitored=False,
+            release_date=future,
+            studio_id=other_studio.id,
+        )
+        db.add_all([studio_scene, performer_scene, direct_scene, unmonitored_scene])
         db.flush()
         db.execute(scene_performer.insert().values(scene_id=performer_scene.id, performer_id=performer.id))
         db.commit()
+
         items = calendar_items(db, date.today(), date.today() + timedelta(days=30), limit=500)
 
-    assert [item["title"] for item in items] == ["Studio Scene"]
+    assert [item["title"] for item in items] == ["Direct Scene", "Performer Scene", "Studio Scene"]
 
 
 class DeepStudioMetadata:
