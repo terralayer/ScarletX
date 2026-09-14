@@ -32,9 +32,12 @@ def test_route_and_method_contract_is_stable():
     runtime_extensions = [
         {"path": "/api/activity/count", "methods": ["GET"]},
         {"path": "/api/activity/page", "methods": ["GET"]},
+        {"path": "/api/artwork/studios/{identifier}/compact", "methods": ["GET"]},
         {"path": "/api/dashboard/performers", "methods": ["GET"]},
         {"path": "/api/dashboard/scenes", "methods": ["GET"]},
         {"path": "/api/dashboard/studios", "methods": ["GET"]},
+        {"path": "/api/library/performers/{item_id}/scenes", "methods": ["GET"]},
+        {"path": "/api/library/studios/{item_id}/scenes", "methods": ["GET"]},
     ]
     assert all(route in current for route in runtime_extensions)
     stable_contract = [route for route in current if route not in runtime_extensions]
