@@ -1,0 +1,45 @@
+name: PR80 calendar horizon fix
+
+on:
+  push:
+    branches:
+      - fix/calendar-dashboard-layout
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/calendar-dashboard-layout
+          fetch-depth: 0
+      - name: Patch calendar default horizon and UI copy
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          route = Path('scarletx/routes/application.py')
+          source = route.read_text(encoding='utf-8')
+          old = 'today = date.today(); start = start or today; end = end or (today + timedelta(days=90))'
+          new = 'today = date.today(); start = start or today; end = end or date.max'
+          if old not in source:
+              raise SystemExit('expected 90-day calendar default not found')
+          route.write_text(source.replace(old, new, 1), encoding='utf-8')
+
+          app = Path('frontend/app.js')
+          js = app.read_text(encoding='utf-8')
+          js = js.replace('No upcoming monitored releases in the next 90 days.', 'No upcoming monitored releases.')
+          app.write_text(js, encoding='utf-8')
+          PY
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/pr80-calendar-horizon-fix.yml
+          git config user.name 'TerraLayer Automation'
+          git config user.email '321948909+terralayer@users.noreply.github.com'
+          git add scarletx/routes/application.py frontend/app.js .github/workflows/pr80-calendar-horizon-fix.yml
+          git commit -m 'fix: show all known future calendar releases'
+          git push origin HEAD:fix/calendar-dashboard-layout
