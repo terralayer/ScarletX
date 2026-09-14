@@ -162,14 +162,16 @@ async def test_hourly_discovery_promotes_existing_related_scene_to_monitored(mon
         assert scene.monitored is True
 
 
-def test_monitored_discovery_batches_scene_upserts_in_one_session():
+def test_monitored_discovery_isolates_changed_scene_writes_off_event_loop():
     source = (ROOT / "scarletx" / "monitored_entities.py").read_text(encoding="utf-8")
     compact = "".join(source.split())
     helper_start = compact.index("def_persist_discovered_scenes(")
     helper_end = compact.index("asyncdefmonitored_entity_discovery_cycle", helper_start)
-    batch = compact[helper_start:helper_end]
-    assert 'upsert_scene(db,remote,monitored=True,content_type="scene",commit=False)' in batch
-    assert batch.count("db.commit()") == 1
+    persistence = compact[helper_start:helper_end]
+    assert 'upsert_scene(db,remote,monitored=True,content_type="scene",commit=False)' in persistence
+    assert "SCENE_WRITE_MAX_ATTEMPTS=3" in compact
+    assert "failed_remote_ids" in persistence
+    assert "_is_sqlite_locked_error(exc)" in persistence
     assert "awaitasyncio.to_thread(_persist_discovered_scenes" in compact
 
 
