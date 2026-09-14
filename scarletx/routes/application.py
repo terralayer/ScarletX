@@ -2271,7 +2271,7 @@ async def search_wanted(limit: int = Query(25, ge=1, le=100), db: Session = Depe
 
 @app.get("/api/calendar")
 def calendar(start: date | None = None, end: date | None = None, limit: int = Query(500, ge=1, le=2000), db: Session = Depends(get_session)):
-    today = date.today(); start = start or today; end = end or date.max
+    today = date.today(); start = start or today; end = end or (today + timedelta(days=30))
     if end < start: raise HTTPException(422, "Calendar end must not be before start")
     return calendar_items(db, start, end, limit)
 

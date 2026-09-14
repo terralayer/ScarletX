@@ -112,12 +112,12 @@ async def test_entity_failure_does_not_block_other_monitored_entities(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_future_scene_from_monitored_entity_appears_in_calendar(monkeypatch):
+async def test_future_scene_from_monitored_studio_appears_in_calendar(monkeypatch):
     from scarletx import monitored_entities
 
     factory = make_factory()
     with factory() as db:
-        db.add(Performer(tpdb_id="person-1", name="Performer One", monitored=True, is_library=True))
+        db.add(Studio(tpdb_id="studio-1", name="Studio One", monitored=True, is_library=True))
         db.commit()
 
     fake = FakeMetadata(future=True)
