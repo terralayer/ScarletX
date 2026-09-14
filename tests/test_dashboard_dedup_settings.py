@@ -45,24 +45,26 @@ def test_downloaded_scene_page_filters_metadata_only_and_missing_scenes(tmp_path
 
 
 def test_dashboard_uses_downloaded_scene_total_and_recent_page():
-    source = (ROOT / "frontend" / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
+    source = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    compatibility = (ROOT / "frontend" / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
 
     assert "/api/dashboard/scenes?limit=8" in source
     assert "recent.total" in source
-    assert "detail.textContent='Downloaded'" in source
+    assert "['▣','Scenes',recent.total||0,'Downloaded','library']" in source
     assert "No downloaded scenes yet." in source
+    assert "dashboard=async function" not in compatibility
     assert '<script src="/dashboard_settings_overrides.js"></script>' in index
     assert "COPY frontend/dashboard_settings_overrides.js /usr/share/nginx/html/dashboard_settings_overrides.js" in dockerfile
 
 
 def test_dashboard_scene_links_open_media_library():
-    source = (ROOT / "frontend" / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
+    source = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
 
     assert '<button class="linkbtn" data-go="library">View library</button>' in source
     assert "['▣','Scenes',recent.total||0,'Downloaded','library']" in source
-    assert 'data-go="${x[4]}"' in source
+    assert 'data-stat-go="${x[4]}"' in source
 
 
 def test_dashboard_downloaded_scene_route_is_registered_once():
