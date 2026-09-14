@@ -44,9 +44,35 @@ def _save_head_cursor(db, kind: str, local_id: int, head_ids: tuple[str, ...]) -
         row.value = value
 
 
+def _scene_head_fingerprint(scene) -> str:
+    """Fingerprint first-page fields that can change Calendar membership/display.
+
+    Older cursors stored only scene IDs. Those legacy values intentionally compare
+    different once after this upgrade, causing one metadata refresh before the new
+    fingerprints become the durable fast-path cursor.
+    """
+    release_date = getattr(scene, "release_date", None)
+    if hasattr(release_date, "isoformat"):
+        release_token = release_date.isoformat()
+    else:
+        release_token = str(release_date or "")
+    studio = getattr(scene, "studio", None)
+    studio_id = str(getattr(studio, "id", "") or "")
+    performer_ids = sorted(
+        str(getattr(performer, "id", "") or "")
+        for performer in (getattr(scene, "performers", None) or [])
+        if getattr(performer, "id", None)
+    )
+    return json.dumps(
+        [str(scene.id), str(getattr(scene, "title", "") or ""), release_token, studio_id, performer_ids],
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
 async def _performer_scan(tpdb, identifier: str, previous_head: tuple[str, ...]):
     first = await tpdb.get_performer_scenes(identifier, page=1, per_page=ENTITY_PAGE_SIZE)
-    head = tuple(str(scene.id) for scene in first.items)
+    head = tuple(_scene_head_fingerprint(scene) for scene in first.items)
     if previous_head and head == previous_head:
         return [], head, True
 
@@ -69,7 +95,7 @@ async def _studio_scan(tpdb, identifier: str, previous_head: tuple[str, ...]):
     if search_id is None:
         raise RuntimeError(f"Studio {identifier} has no searchable TPDB site ID")
     first = await tpdb.search_scenes(page=1, per_page=ENTITY_PAGE_SIZE, site_id=str(search_id))
-    head = tuple(str(scene.id) for scene in first.items)
+    head = tuple(_scene_head_fingerprint(scene) for scene in first.items)
     if previous_head and head == previous_head:
         return [], head, True
 
