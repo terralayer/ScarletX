@@ -82,15 +82,8 @@ async def test_transient_sqlite_lock_retries_scene_write_and_advances_marker(mon
             raise OperationalError("DELETE FROM scene_performer", {}, Exception("database is locked"))
         return SimpleNamespace(monitored=True, id=101)
 
-    with factory() as db:
-        bad = db.query(Performer).filter(Performer.tpdb_id == "performer-bad").one_or_none()
-        if bad is not None:
-            db.delete(bad)
-            db.commit()
-
     monkeypatch.setattr(monitored_entities, "client", fake_client)
     monkeypatch.setattr(monitored_entities, "upsert_scene", flaky_upsert)
-    monkeypatch.setattr(monitored_entities.time, "sleep", lambda _seconds: None, raising=False)
 
     result = await monitored_entities.monitored_entity_discovery_cycle(factory, object())
 
