@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from datetime import date
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import selectinload
 
 from .metadata import metadata_client
@@ -14,6 +16,8 @@ from .services import upsert_scene
 ENTITY_PAGE_SIZE = 48
 MAX_ENTITY_PAGES = 1000
 ENTITY_SCAN_CONCURRENCY = 3
+SCENE_WRITE_MAX_ATTEMPTS = 3
+SCENE_WRITE_RETRY_BASE_SECONDS = 0.25
 
 
 def client(settings):
@@ -143,6 +147,10 @@ def _scene_metadata_fingerprint(scene) -> str:
     )
 
 
+def _is_sqlite_locked_error(exc: Exception) -> bool:
+    return isinstance(exc, OperationalError) and "database is locked" in str(exc).lower()
+
+
 async def _performer_scan(
     tpdb,
     identifier: str,
@@ -202,15 +210,15 @@ async def _studio_scan(
 def _persist_discovered_scenes(
     session_factory,
     discovered: dict,
-    cursor_updates: list[tuple[str, int, tuple[str, ...]]],
-    studio_deep_scan_updates: list[int],
-    performer_deep_scan_updates: list[int],
+    entity_updates: list[tuple[str, int, tuple[str, ...], bool, frozenset[str]]],
 ) -> tuple[int, int, set[int], list[dict[str, str]]]:
-    """Persist only new/changed discovery results outside the web event loop.
+    """Persist changed discovery rows with isolated retries and entity markers.
 
-    A daily deep scan can return many thousands of already-known scenes. Compare a
-    compact Calendar/acquisition fingerprint first so identical historical rows do not
-    participate in the SQLite write transaction at all.
+    Unchanged historical rows never enter a write transaction. Each changed/new scene
+    gets its own transaction so one slow or malformed scene cannot hold the whole
+    batch open. Transient SQLite writer collisions are retried, and a final failure
+    keeps only the owning performer/studio scan due instead of invalidating every
+    monitored entity's deep-scan marker.
     """
     existing_fingerprints: dict[str, str] = {}
     if discovered:
@@ -237,34 +245,49 @@ def _persist_discovered_scenes(
     refreshed = 0
     persisted_scene_ids: set[int] = set()
     errors: list[dict[str, str]] = []
-    scene_write_failed = False
+    failed_remote_ids: set[str] = set()
 
-    with session_factory() as db:
-        for remote in pending:
+    for remote in pending:
+        final_error: Exception | None = None
+        scene_id: int | None = None
+
+        for attempt in range(SCENE_WRITE_MAX_ATTEMPTS):
             try:
-                # SAVEPOINT isolates one malformed remote scene while retaining a
-                # single outer commit for the much smaller changed-scene batch.
-                with db.begin_nested():
+                with session_factory() as db:
                     scene = upsert_scene(db, remote, monitored=True, content_type="scene", commit=False)
                     if not scene.monitored:
                         scene.monitored = True
-                    persisted_scene_ids.add(scene.id)
-                if remote.id in existing_fingerprints:
-                    refreshed += 1
-                else:
-                    created += 1
+                    scene_id = scene.id
+                    db.commit()
+                final_error = None
+                break
             except Exception as exc:
-                scene_write_failed = True
-                errors.append({"type": "scene", "id": remote.id, "name": remote.title, "error": str(exc)})
+                final_error = exc
+                if _is_sqlite_locked_error(exc) and attempt + 1 < SCENE_WRITE_MAX_ATTEMPTS:
+                    time.sleep(SCENE_WRITE_RETRY_BASE_SECONDS * (2**attempt))
+                    continue
+                break
 
-        # Advance remote cursors/deep-scan markers only when every changed/new scene
-        # was durably handled. A failed upsert retries the deeper scan next hour.
-        if cursor_updates and not scene_write_failed:
-            for kind, local_id, head in cursor_updates:
-                _save_head_cursor(db, kind, local_id, head)
-            for local_id in studio_deep_scan_updates:
+        if final_error is not None:
+            failed_remote_ids.add(remote.id)
+            errors.append({"type": "scene", "id": remote.id, "name": remote.title, "error": str(final_error)})
+            continue
+
+        if scene_id is not None:
+            persisted_scene_ids.add(scene_id)
+        if remote.id in existing_fingerprints:
+            refreshed += 1
+        else:
+            created += 1
+
+    with session_factory() as db:
+        for kind, local_id, head, deep_scanned, scene_ids in entity_updates:
+            if scene_ids & failed_remote_ids:
+                continue
+            _save_head_cursor(db, kind, local_id, head)
+            if deep_scanned and kind == "studio":
                 _save_studio_deep_scan(db, local_id)
-            for local_id in performer_deep_scan_updates:
+            if deep_scanned and kind == "performer":
                 _save_performer_deep_scan(db, local_id)
         db.commit()
 
@@ -322,9 +345,7 @@ async def monitored_entity_discovery_cycle(session_factory, settings) -> dict:
 
     discovered = {}
     errors: list[dict[str, str]] = []
-    cursor_updates: list[tuple[str, int, tuple[str, ...]]] = []
-    studio_deep_scan_updates: list[int] = []
-    performer_deep_scan_updates: list[int] = []
+    entity_updates: list[tuple[str, int, tuple[str, ...], bool, frozenset[str]]] = []
     unchanged_entities = 0
     semaphore = asyncio.Semaphore(ENTITY_SCAN_CONCURRENCY)
 
@@ -366,11 +387,8 @@ async def monitored_entity_discovery_cycle(session_factory, settings) -> dict:
         if unchanged:
             unchanged_entities += 1
             continue
-        cursor_updates.append((kind, local_id, head))
-        if kind == "studio" and deep_scanned:
-            studio_deep_scan_updates.append(local_id)
-        if kind == "performer" and deep_scanned:
-            performer_deep_scan_updates.append(local_id)
+        scene_ids = frozenset(str(scene.id) for scene in scenes if getattr(scene, "id", None))
+        entity_updates.append((kind, local_id, head, deep_scanned, scene_ids))
         for scene in scenes:
             discovered[scene.id] = scene
 
@@ -378,9 +396,7 @@ async def monitored_entity_discovery_cycle(session_factory, settings) -> dict:
         _persist_discovered_scenes,
         session_factory,
         discovered,
-        cursor_updates,
-        studio_deep_scan_updates,
-        performer_deep_scan_updates,
+        entity_updates,
     )
     candidate_scene_ids.update(persisted_scene_ids)
     errors.extend(persistence_errors)
