@@ -23,8 +23,7 @@ def _remove_legacy_web_route() -> None:
 
 
 def _fixed_runtime_settings(db, *args, **kwargs):
-    settings = load_database_settings(db, *args, **kwargs)
-    return settings.model_copy(update={"app_name": "ScarletX"})
+    return load_database_settings(db, *args, **kwargs)
 
 
 def _patch_route_call(path: str, method: str, replacement) -> None:
