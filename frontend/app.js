@@ -371,7 +371,7 @@ async function activity(){
 
 
 async function calendar(){
-  $('#app').innerHTML=pageHead('Calendar','Upcoming release dates for monitored scenes.')+`<div id="calendarBody"></div>`;try{let rows=await api('/api/calendar');if(view!=='calendar')return;$('#calendarBody').innerHTML=rows.length?`<div class="tablewrap"><table class="table"><thead><tr><th>Date</th><th>Scene</th><th>Monitored</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${fmtDate(x.date)}</td><td><b>${esc(x.title)}</b></td><td><span class="state ${x.monitored?'good':'warn'}">${x.monitored?'Yes':'No'}</span></td></tr>`).join('')}</tbody></table></div>`:empty('No upcoming monitored releases in the next 90 days.')}catch(e){notify(e.message,'error')}
+  $('#app').innerHTML=pageHead('Calendar','Upcoming release dates for monitored scenes.')+`<div id="calendarBody"></div>`;try{let rows=await api('/api/calendar');if(view!=='calendar')return;$('#calendarBody').innerHTML=rows.length?`<div class="tablewrap"><table class="table"><thead><tr><th>Date</th><th>Scene</th><th>Monitored</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${fmtDate(x.date)}</td><td><b>${esc(x.title)}</b></td><td><span class="state ${x.monitored?'good':'warn'}">${x.monitored?'Yes':'No'}</span></td></tr>`).join('')}</tbody></table></div>`:empty('No upcoming monitored releases.')}catch(e){notify(e.message,'error')}
 }
 
 let settingsTab='general';
