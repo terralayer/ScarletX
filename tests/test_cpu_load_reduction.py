@@ -1,6 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from sqlalchemy import create_engine
@@ -11,6 +11,7 @@ from scarletx.config import Settings
 from scarletx.db import Base
 from scarletx.models import AppSetting, NativeUsenetJob, Performer, TrackedDownload
 from scarletx.schemas import RemotePerson, RemoteScene, RemoteStudio, SearchResponse
+from scarletx.wanted import calendar_items
 
 
 def make_factory():
@@ -112,3 +113,60 @@ async def test_unchanged_monitored_entity_scan_uses_durable_head_cursor_and_skip
         cursor = db.get(AppSetting, f"monitored_scan:performer:{performer_id}")
         assert cursor is not None
         assert "scene-1" in cursor.value
+
+
+class MutableCalendarMetadata:
+    def __init__(self):
+        self.performer = RemotePerson(id="calendar-person", search_id=10, name="Calendar Performer")
+        self.studio = RemoteStudio(id="calendar-studio", search_id=77, name="Calendar Studio")
+        self.scene = RemoteScene(
+            id="calendar-scene",
+            title="Calendar Scene",
+            release_date=None,
+            studio=self.studio,
+            performers=[self.performer],
+        )
+
+    async def get_performer_scenes(self, identifier, page=1, per_page=48):
+        assert identifier == "calendar-person"
+        return SearchResponse(items=[self.scene] if page == 1 else [], total=1, page=page, per_page=per_page)
+
+
+@pytest.mark.asyncio
+async def test_monitored_refresh_updates_release_date_when_head_scene_ids_are_unchanged(monkeypatch):
+    from scarletx import monitored_entities
+
+    factory = make_factory()
+    with factory() as db:
+        db.add(Performer(tpdb_id="calendar-person", name="Calendar Performer", monitored=True, is_library=True))
+        db.commit()
+
+    fake = MutableCalendarMetadata()
+
+    @asynccontextmanager
+    async def fake_client(_settings):
+        yield fake
+
+    monkeypatch.setattr(monitored_entities, "client", fake_client)
+
+    first = await monitored_entities.monitored_entity_discovery_cycle(factory, object())
+    assert first["created"] == 1
+    with factory() as db:
+        assert calendar_items(db, date.today(), date.today() + timedelta(days=90)) == []
+
+    future = date.today() + timedelta(days=14)
+    fake.scene = RemoteScene(
+        id="calendar-scene",
+        title="Calendar Scene",
+        release_date=future,
+        studio=fake.studio,
+        performers=[fake.performer],
+    )
+
+    second = await monitored_entities.monitored_entity_discovery_cycle(factory, object())
+    assert second["refreshed"] == 1
+    assert second["unchanged_entities"] == 0
+    with factory() as db:
+        items = calendar_items(db, date.today(), date.today() + timedelta(days=90))
+    assert [item["title"] for item in items] == ["Calendar Scene"]
+    assert items[0]["date"] == future
