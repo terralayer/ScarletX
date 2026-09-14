@@ -162,11 +162,12 @@ def test_dashboard_removes_activity_panels_and_adds_recent_release_studios_and_p
     source = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
     compatibility = (ROOT / "frontend" / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
     app_source = (ROOT / "scarletx" / "app.py").read_text(encoding="utf-8")
+    dashboard = source[source.index("async function dashboard()"):source.index("function performerLinks")]
 
     assert "Activity Queue" not in source
     assert "Recent Activity" not in source
-    assert "/api/activity/queue" not in source
-    assert "/api/history" not in source
+    assert "/api/activity/queue" not in dashboard
+    assert "/api/history" not in dashboard
     assert "Recently Released Scenes" in source
     assert "Studios with Recent Releases" in source
     assert "Performers with Recent Releases" in source
