@@ -22,14 +22,14 @@ from ..models import (
     BackgroundJob, BackupRecord, History, IndexerFeedItem, LibraryItemConfig,
     MediaFile, MediaProbe, NativeUsenetJob, Performer, PlaybackState, QualityProfile, ReleaseBlocklist, ReleaseProfile,
     RootFolder, Scene, Studio, TrackedDownload, TrackedDownloadMeta, UnmatchedMediaFile,
-    UserTag, Webhook, library_user_tag, utcnow,
+    UserTag, Webhook, library_user_tag, scene_performer, utcnow,
 )
 from ..newznab import NewznabClient, NewznabError, close_shared_newznab_clients
 from ..metadata import MetadataProviderError, metadata_client, metadata_provider_status
 from ..tpdb import close_shared_tpdb_clients
 from ..automation import automatic_search_cycle, grab_specific_release, search_and_grab_scene
 from ..monitored_entities import monitored_entity_discovery_cycle
-from ..entity_hydration import queue_adult_entity_hydration as _queue_adult_entity_hydration
+from ..entity_hydration import queue_adult_entity_hydration as _queue_adult_entity_hydration, run_adult_entity_hydration
 from ..library_management import (
     FileImportError, ensure_library_config, import_specific_media_file,
     preview_media_rename, recycle_media_file, rename_media_file, scan_path_for_manual_import,
@@ -100,6 +100,7 @@ from ..migrations import (
 )
 from ..list_queries import performer_summary_page, scene_summary_page, studio_summary_page
 from ..event_stream import QueueEvent, format_sse, queue_event_broker, queue_event_pump
+from ..background_signals import completed_import_signal
 
 
 def _encode_cursor(*parts) -> str:
@@ -165,6 +166,23 @@ def migrate_to_scarletx(db: Session) -> None:
             cur = raw.cursor()
             cur.execute("PRAGMA foreign_keys=OFF")
             legacy_tables = {row[0] for row in cur.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if "performers" in legacy_tables:
+                performer_columns = {row[1] for row in cur.execute("PRAGMA table_info(performers)")}
+                performer_additions = {
+                    "gender": "VARCHAR(100)", "birthday": "DATE", "deathday": "DATE",
+                    "birthplace": "VARCHAR(500)", "birthplace_code": "VARCHAR(100)",
+                    "nationality": "VARCHAR(200)", "ethnicity": "VARCHAR(200)",
+                    "measurements": "VARCHAR(200)", "cup_size": "VARCHAR(100)",
+                    "fake_boobs": "BOOLEAN", "waist": "VARCHAR(100)", "hips": "VARCHAR(100)",
+                    "same_sex_only": "BOOLEAN", "status": "VARCHAR(100)",
+                    "height": "VARCHAR(100)", "weight": "VARCHAR(100)",
+                    "hair_color": "VARCHAR(100)", "eye_color": "VARCHAR(100)",
+                    "tattoos": "TEXT", "piercings": "TEXT", "astrology": "VARCHAR(100)",
+                    "career_start_year": "INTEGER", "career_end_year": "INTEGER", "links_json": "TEXT",
+                }
+                for column, sql_type in performer_additions.items():
+                    if column not in performer_columns:
+                        cur.execute(f"ALTER TABLE performers ADD COLUMN {column} {sql_type}")
             if "indexer_feed_items" in legacy_tables:
                 columns = {row[1] for row in cur.execute("PRAGMA table_info(indexer_feed_items)")}
                 if "episode_id" in columns:
@@ -266,7 +284,45 @@ def _runtime_settings_loader():
         return load_database_settings(runtime_db)
 
 
+COMPLETED_IMPORT_RECOVERY_SECONDS = 120
 MONITORED_ENTITY_DISCOVERY_INTERVAL_SECONDS = 3600
+
+
+async def resume_background_jobs(settings: Settings) -> list[asyncio.Task]:
+    """Resume durable long-running work that was interrupted by a restart."""
+    resumable: list[tuple[int, str, dict]] = []
+    with SessionLocal() as db:
+        jobs = db.scalars(select(BackgroundJob).where(BackgroundJob.status.in_(("queued", "running"))).order_by(BackgroundJob.id)).all()
+        for job in jobs:
+            try:
+                payload = json.loads(job.payload or "{}")
+            except (TypeError, json.JSONDecodeError):
+                payload = {}
+            if job.kind in {"performer_metadata_hydration", "studio_metadata_hydration", "performer_monitor_search", "studio_monitor_search", "media_library_scan"}:
+                job.status = "queued"
+                job.error = None
+                job.finished_at = None
+                resumable.append((job.id, job.kind, payload))
+            else:
+                job.status = "failed"
+                job.error = "Interrupted by application restart; this job type is not resumable"
+                job.finished_at = utcnow()
+        db.commit()
+    tasks: list[asyncio.Task] = []
+    for job_id, kind, payload in resumable:
+        if kind.endswith("_metadata_hydration"):
+            entity_type = str(payload.get("entity_type") or kind.split("_", 1)[0])
+            identifier = str(payload.get("identifier") or "")
+            if identifier:
+                tasks.append(asyncio.create_task(run_adult_entity_hydration(job_id, entity_type, identifier, settings, bool(payload.get("search_when_monitored")))))
+        elif kind.endswith("_monitor_search"):
+            entity_type = str(payload.get("entity_type") or kind.split("_", 1)[0])
+            identifier = str(payload.get("identifier") or "")
+            if identifier:
+                tasks.append(asyncio.create_task(run_adult_entity_monitor_search(job_id, entity_type, identifier, settings)))
+        elif kind == "media_library_scan":
+            tasks.append(asyncio.create_task(_run_media_scan(job_id)))
+    return tasks
 
 
 downloader_supervisor = DownloaderSupervisor(SessionLocal, _runtime_settings_loader)
@@ -276,17 +332,6 @@ downloader_supervisor = DownloaderSupervisor(SessionLocal, _runtime_settings_loa
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(engine)
     with SessionLocal() as db:
-        # In-process background tasks cannot survive a container restart. Leaving
-        # them marked active makes later Monitor All requests look like duplicates.
-        interrupted = db.scalars(
-            select(BackgroundJob).where(BackgroundJob.status.in_(("queued", "running")))
-        ).all()
-        for job in interrupted:
-            job.status = "failed"
-            job.error = "Interrupted by application restart"
-            job.finished_at = utcnow()
-        if interrupted:
-            db.commit()
         seed_database_settings(db)
         with engine.connect() as connection:
             needs_performance_index_migration = performance_index_migration_required(connection)
@@ -315,7 +360,8 @@ async def lifespan(_: FastAPI):
         except Exception as exc:
             emit_status("Status Console", "FAILED", exc.__class__.__name__, severity="error")
     await downloader_supervisor.start()
-    watchers = [
+    recovered_watchers = await resume_background_jobs(runtime)
+    watchers = recovered_watchers + [
         asyncio.create_task(completed_download_import_loop()),
         asyncio.create_task(automatic_search_loop()),
         asyncio.create_task(monitored_entity_discovery_loop()),
@@ -966,18 +1012,17 @@ async def process_completed_downloads() -> dict:
 
 
 async def completed_download_import_loop() -> None:
+    await completed_import_signal.bind()
     while True:
-        poll_seconds = 30
+        wait_seconds = COMPLETED_IMPORT_RECOVERY_SECONDS
         try:
             result = await process_completed_downloads()
-            poll_seconds = int(result.get("poll_seconds", 30))
+            wait_seconds = min(COMPLETED_IMPORT_RECOVERY_SECONDS, max(1, int(result.get("poll_seconds", COMPLETED_IMPORT_RECOVERY_SECONDS))))
         except asyncio.CancelledError:
             raise
         except Exception:
-            # A transient download/metadata/database failure must not stop the watcher.
-            pass
-        await asyncio.sleep(max(10, poll_seconds))
-
+            wait_seconds = COMPLETED_IMPORT_RECOVERY_SECONDS
+        await completed_import_signal.wait(wait_seconds)
 
 async def automatic_search_loop() -> None:
     while True:
@@ -2083,6 +2128,43 @@ def assign_library_tags(item_id: int, request: LibraryTagsWrite, db: Session = D
 
 
 
+def _cached_profile_scene_page(db: Session, stmt, page: int, per_page: int) -> dict:
+    total = int(db.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
+    scenes = db.scalars(stmt.options(selectinload(Scene.studio), selectinload(Scene.performers)).order_by(Scene.release_date.desc(), Scene.id.desc()).offset((page-1)*per_page).limit(per_page)).unique().all()
+    scene_ids = [scene.id for scene in scenes]
+    media = {}
+    if scene_ids:
+        for row in db.scalars(select(MediaFile).where(MediaFile.scene_id.in_(scene_ids)).order_by(MediaFile.imported_at.desc())).all():
+            media.setdefault(row.scene_id, row)
+    items=[]
+    for scene in scenes:
+        file = media.get(scene.id)
+        items.append({
+            "id":scene.tpdb_id,"tpdb_id":scene.tpdb_id,"local_id":scene.id,"title":scene.title,"description":scene.description,
+            "release_date":scene.release_date,"duration":scene.duration,"image_url":scene.image_url,"back_image_url":scene.back_image_url,"poster_url":scene.poster_url,
+            "studio":{"id":scene.studio.tpdb_id,"name":scene.studio.name,"logo_url":scene.studio.logo_url} if scene.studio else None,
+            "performers":[{"id":p.tpdb_id,"name":p.name,"image_url":p.image_url} for p in scene.performers],
+            "monitored":scene.monitored,"media_id":file.id if file else None,"download_status":"Downloaded" if file else ("Monitored" if scene.monitored else "Available"),
+        })
+    return {"items":items,"total":total,"page":page,"per_page":per_page}
+
+
+@app.get("/api/library/performers/{item_id}/scenes")
+def performer_cached_scenes(item_id:int,page:int=Query(1,ge=1),per_page:int=Query(100,ge=1,le=200),db:Session=Depends(get_session)):
+    performer=db.get(Performer,item_id)
+    if not performer or not performer.is_library: raise HTTPException(404,"Performer not found in library")
+    stmt=select(Scene).join(scene_performer,Scene.id==scene_performer.c.scene_id).where(scene_performer.c.performer_id==item_id,Scene.content_type=="scene")
+    return _cached_profile_scene_page(db,stmt,page,per_page)
+
+
+@app.get("/api/library/studios/{item_id}/scenes")
+def studio_cached_scenes(item_id:int,page:int=Query(1,ge=1),per_page:int=Query(100,ge=1,le=200),db:Session=Depends(get_session)):
+    studio=db.get(Studio,item_id)
+    if not studio or not studio.is_library: raise HTTPException(404,"Studio not found in library")
+    stmt=select(Scene).where(Scene.studio_id==item_id,Scene.content_type=="scene")
+    return _cached_profile_scene_page(db,stmt,page,per_page)
+
+
 @app.get("/api/manual-import/scan")
 def manual_import_scan(path: str = Query(min_length=1)):
     try: return scan_path_for_manual_import(path)
@@ -2189,7 +2271,7 @@ async def search_wanted(limit: int = Query(25, ge=1, le=100), db: Session = Depe
 
 @app.get("/api/calendar")
 def calendar(start: date | None = None, end: date | None = None, limit: int = Query(500, ge=1, le=2000), db: Session = Depends(get_session)):
-    today = datetime.now(UTC).date(); start = start or today; end = end or (today + timedelta(days=90))
+    today = date.today(); start = start or today; end = end or (today + timedelta(days=90))
     if end < start: raise HTTPException(422, "Calendar end must not be before start")
     return calendar_items(db, start, end, limit)
 
@@ -2215,14 +2297,31 @@ def studios_library_page(limit: int = Query(60, ge=1, le=200), offset: int = Que
 def performer_library_detail(item_id: int, db: Session = Depends(get_session)):
     x=db.get(Performer,item_id)
     if not x or not x.is_library: raise HTTPException(404,"Performer not found in library")
-    return {"id":x.id,"tpdb_id":x.tpdb_id,"name":x.name,"image_url":x.image_url,"bio":x.bio,"aliases":x.aliases,"monitored":x.monitored}
+    try:
+        links = json.loads(x.links_json or "{}")
+    except (TypeError, json.JSONDecodeError):
+        links = {}
+    birthday = x.birthday
+    deathday = x.deathday
+    age = None
+    if birthday:
+        end = deathday or date.today()
+        age = end.year - birthday.year - ((end.month, end.day) < (birthday.month, birthday.day))
+    return {
+        "id":x.id,"tpdb_id":x.tpdb_id,"name":x.name,"image_url":x.image_url,"bio":x.bio,"aliases":x.aliases,"monitored":x.monitored,
+        "gender":x.gender,"birthday":x.birthday,"deathday":x.deathday,"age":age,"birthplace":x.birthplace,"birthplace_code":x.birthplace_code,
+        "nationality":x.nationality,"ethnicity":x.ethnicity,"measurements":x.measurements,"cup_size":x.cup_size,"fake_boobs":x.fake_boobs,
+        "waist":x.waist,"hips":x.hips,"same_sex_only":x.same_sex_only,"status":x.status,"height":x.height,"weight":x.weight,
+        "hair_color":x.hair_color,"eye_color":x.eye_color,"tattoos":x.tattoos,"piercings":x.piercings,"astrology":x.astrology,
+        "career_start_year":x.career_start_year,"career_end_year":x.career_end_year,"links":links,
+    }
 
 
 @app.get("/api/library/studios/{item_id}/detail")
 def studio_library_detail(item_id: int, db: Session = Depends(get_session)):
     x=db.get(Studio,item_id)
     if not x or not x.is_library: raise HTTPException(404,"Studio not found in library")
-    return {"id":x.id,"tpdb_id":x.tpdb_id,"name":x.name,"image_url":x.poster_url or x.logo_url,"url":x.url,"description":x.description,"monitored":x.monitored}
+    return {"id":x.id,"tpdb_id":x.tpdb_id,"name":x.name,"image_url":x.poster_url or x.logo_url,"poster_url":x.poster_url,"logo_url":x.logo_url,"url":x.url,"description":x.description,"monitored":x.monitored}
 
 
 @app.get("/api/library/performers")

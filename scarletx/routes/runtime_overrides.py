@@ -30,10 +30,12 @@ def dashboard_performers_runtime(
 
 
 def update_general_settings_runtime(request, db: Session = Depends(get_session)):
-    """Preserve the legacy route shape while ignoring its obsolete app_name field."""
+    """Preserve the legacy route shape while persisting general settings."""
+    app_name = str(getattr(request, "app_name", "ScarletX") or "ScarletX").strip() or "ScarletX"
     level = str(getattr(request, "log_level", "INFO") or "INFO").strip().upper()
     if level not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
         level = "INFO"
+    set_setting(db, "app_name", app_name, commit=False)
     set_setting(db, "scarletx_log_level", level, commit=False)
     db.commit()
-    return {"log_level": level}
+    return {"app_name": app_name, "log_level": level}

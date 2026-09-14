@@ -45,24 +45,26 @@ def test_downloaded_scene_page_filters_metadata_only_and_missing_scenes(tmp_path
 
 
 def test_dashboard_uses_downloaded_scene_total_and_recent_page():
-    source = (ROOT / "frontend" / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
+    source = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    compatibility = (ROOT / "frontend" / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
 
     assert "/api/dashboard/scenes?limit=8" in source
     assert "recent.total" in source
-    assert "detail.textContent='Downloaded'" in source
+    assert "['▣','Scenes',recent.total||0,'Downloaded','library']" in source
     assert "No downloaded scenes yet." in source
+    assert "dashboard=async function" not in compatibility
     assert '<script src="/dashboard_settings_overrides.js"></script>' in index
     assert "COPY frontend/dashboard_settings_overrides.js /usr/share/nginx/html/dashboard_settings_overrides.js" in dockerfile
 
 
 def test_dashboard_scene_links_open_media_library():
-    source = (ROOT / "frontend" / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
+    source = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
 
     assert '<button class="linkbtn" data-go="library">View library</button>' in source
     assert "['▣','Scenes',recent.total||0,'Downloaded','library']" in source
-    assert 'data-go="${x[4]}"' in source
+    assert 'data-stat-go="${x[4]}"' in source
 
 
 def test_dashboard_downloaded_scene_route_is_registered_once():
@@ -163,16 +165,17 @@ def test_scanner_boundary_runs_exact_duplicate_cleanup():
     assert "full_sha256" in source
 
 
-def test_general_settings_no_longer_exposes_application_name():
-    frontend = (ROOT / "frontend" / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
+def test_general_settings_preserves_application_name_control():
+    frontend = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
     app_source = (ROOT / "scarletx" / "app.py").read_text(encoding="utf-8")
     runtime_source = (ROOT / "scarletx" / "routes" / "runtime_overrides.py").read_text(encoding="utf-8")
-    assert "Application name" not in frontend
-    assert 'id="appName"' not in frontend
-    assert "app_name:" not in frontend
-    assert "{log_level:val('#logLevel')}" in frontend
-    assert 'model_copy(update={"app_name": "ScarletX"})' in app_source
-    assert 'set_setting(db, "app_name"' not in runtime_source
+
+    assert "Application name" in frontend
+    assert 'id="appName"' in frontend
+    assert "app_name:val('#appName')" in frontend
+    assert "log_level:val('#logLevel')" in frontend
+    assert 'model_copy(update={"app_name": "ScarletX"})' not in app_source
+    assert 'set_setting(db, "app_name"' in runtime_source
 
     from scarletx.app import app
 

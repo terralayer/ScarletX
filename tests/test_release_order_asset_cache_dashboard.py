@@ -159,7 +159,8 @@ def test_recent_performers_follow_latest_downloaded_release(tmp_path):
 
 
 def test_dashboard_removes_activity_panels_and_adds_recent_release_studios_and_performers():
-    source = (ROOT / "frontend" / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
+    source = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    compatibility = (ROOT / "frontend" / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
     app_source = (ROOT / "scarletx" / "app.py").read_text(encoding="utf-8")
 
     assert "Activity Queue" not in source
@@ -174,6 +175,8 @@ def test_dashboard_removes_activity_panels_and_adds_recent_release_studios_and_p
     assert "data-dashboard-performer" in source
     assert source.index("Studios with Recent Releases") < source.index("Performers with Recent Releases")
     assert source.index("Performers with Recent Releases") < source.index("Upcoming")
+    assert "Recently Released Scenes" not in compatibility
+    assert "dashboard=async function" not in compatibility
     assert '"/api/dashboard/performers"' in app_source
 
 

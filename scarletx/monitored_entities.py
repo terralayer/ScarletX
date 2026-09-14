@@ -10,7 +10,7 @@ from .models import AppSetting, Performer, Scene, Studio, scene_performer
 from .services import upsert_scene
 
 ENTITY_PAGE_SIZE = 48
-MAX_ENTITY_PAGES = 50
+MAX_ENTITY_PAGES = 1000
 ENTITY_SCAN_CONCURRENCY = 3
 
 
@@ -55,7 +55,7 @@ async def _performer_scan(tpdb, identifier: str, previous_head: tuple[str, ...])
     while page <= MAX_ENTITY_PAGES and (page - 1) * first.per_page < first.total:
         response = await tpdb.get_performer_scenes(identifier, page=page, per_page=ENTITY_PAGE_SIZE)
         scenes.extend(response.items)
-        if not response.items or page * response.per_page >= response.total:
+        if page * response.per_page >= response.total:
             break
         page += 1
     return scenes, head, False
@@ -63,9 +63,12 @@ async def _performer_scan(tpdb, identifier: str, previous_head: tuple[str, ...])
 
 async def _studio_scan(tpdb, identifier: str, previous_head: tuple[str, ...]):
     studio = await tpdb.get_studio(identifier)
-    if studio.search_id is None:
+    search_id = studio.search_id
+    if search_id is None and identifier.isdigit():
+        search_id = int(identifier)
+    if search_id is None:
         raise RuntimeError(f"Studio {identifier} has no searchable TPDB site ID")
-    first = await tpdb.search_scenes(page=1, per_page=ENTITY_PAGE_SIZE, site_id=str(studio.search_id))
+    first = await tpdb.search_scenes(page=1, per_page=ENTITY_PAGE_SIZE, site_id=str(search_id))
     head = tuple(str(scene.id) for scene in first.items)
     if previous_head and head == previous_head:
         return [], head, True
@@ -76,10 +79,10 @@ async def _studio_scan(tpdb, identifier: str, previous_head: tuple[str, ...]):
         response = await tpdb.search_scenes(
             page=page,
             per_page=ENTITY_PAGE_SIZE,
-            site_id=str(studio.search_id),
+            site_id=str(search_id),
         )
         scenes.extend(response.items)
-        if not response.items or page * response.per_page >= response.total:
+        if page * response.per_page >= response.total:
             break
         page += 1
     return scenes, head, False

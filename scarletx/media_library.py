@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -338,7 +339,7 @@ def scan_library(
             # Probe changed/new files with separate DB sessions so ffprobe and
             # thumbnail generation can run concurrently without sharing a Session.
             if to_index:
-                workers = min(4, max(1, (os.cpu_count() or 2) // 2), len(to_index))
+                workers = min(2, max(1, (os.cpu_count() or 2) // 2), len(to_index))
                 with concurrent.futures.ThreadPoolExecutor(max_workers=workers, thread_name_prefix="scarletx-media") as pool:
                     futures = {
                         pool.submit(index_media_file_by_id, session_factory, media_id, generate_art=True): media_id
@@ -570,7 +571,7 @@ def ensure_browser_playback(
     if target.exists() and target.stat().st_size > 0 and target.stat().st_mtime >= source.stat().st_mtime:
         return target
 
-    temporary = root / "playback.tmp.mp4"
+    temporary = root / f"playback.{uuid.uuid4().hex}.tmp.mp4"
     temporary.unlink(missing_ok=True)
     command = [
         "ffmpeg", "-y", "-v", "error", "-i", str(source),
