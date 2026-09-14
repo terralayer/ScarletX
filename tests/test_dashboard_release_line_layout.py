@@ -3,7 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Dashboard-only layout contract: do not change the normal Scenes/Library table layout.
+# Dashboard-only layout contract for performers and recent scenes; normal Scenes/Library tables stay unchanged.
 
 
 def dashboard_source() -> str:
