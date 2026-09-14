@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from scarletx.db import Base
 from scarletx.models import Performer, Scene, Studio, scene_performer
+from scarletx.routes.application import calendar as calendar_route
 from scarletx.schemas import RemotePerson, RemoteScene, RemoteStudio, SearchResponse
 from scarletx.wanted import calendar_items
 
@@ -85,6 +86,23 @@ def test_calendar_includes_future_scene_via_monitored_studio_relationship():
         db.commit()
         items = calendar_items(db, date.today(), date.today() + timedelta(days=90))
     assert [item["title"] for item in items] == ["Studio Coming Soon"]
+
+
+def test_calendar_route_defaults_to_all_known_future_releases():
+    factory = make_factory()
+    far_future = date.today() + timedelta(days=180)
+    with factory() as db:
+        scene = Scene(
+            tpdb_id="s-beyond-90",
+            title="Beyond Ninety Days",
+            content_type="scene",
+            monitored=True,
+            release_date=far_future,
+        )
+        db.add(scene)
+        db.commit()
+        items = calendar_route(start=None, end=None, limit=500, db=db)
+    assert [item["title"] for item in items] == ["Beyond Ninety Days"]
 
 
 class UnchangedMetadata:
