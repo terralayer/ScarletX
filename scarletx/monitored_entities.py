@@ -5,6 +5,7 @@ import json
 from datetime import date
 
 from sqlalchemy import select, update
+from sqlalchemy.orm import selectinload
 
 from .metadata import metadata_client
 from .models import AppSetting, Performer, Scene, Studio, scene_performer
@@ -111,6 +112,37 @@ def _scene_head_fingerprint(scene) -> str:
     )
 
 
+def _entity_metadata_id(entity) -> str:
+    if entity is None:
+        return ""
+    return str(getattr(entity, "tpdb_id", None) or getattr(entity, "id", "") or "")
+
+
+def _scene_metadata_fingerprint(scene) -> str:
+    """Compare only discovery-critical metadata before rewriting an existing scene.
+
+    Daily deep discovery exists to discover new monitored releases and keep Calendar
+    ownership/date metadata current. Rewriting thousands of already-identical scenes
+    creates long SQLite writer transactions without changing acquisition behavior.
+    """
+    release_date = getattr(scene, "release_date", None)
+    if hasattr(release_date, "isoformat"):
+        release_token = release_date.isoformat()
+    else:
+        release_token = str(release_date or "")
+    studio_id = _entity_metadata_id(getattr(scene, "studio", None))
+    performer_ids = sorted(
+        _entity_metadata_id(performer)
+        for performer in (getattr(scene, "performers", None) or [])
+        if _entity_metadata_id(performer)
+    )
+    return json.dumps(
+        [str(getattr(scene, "title", "") or ""), release_token, studio_id, performer_ids],
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
 async def _performer_scan(
     tpdb,
     identifier: str,
@@ -174,18 +206,32 @@ def _persist_discovered_scenes(
     studio_deep_scan_updates: list[int],
     performer_deep_scan_updates: list[int],
 ) -> tuple[int, int, set[int], list[dict[str, str]]]:
-    """Persist a discovery batch outside the web server event loop.
+    """Persist only new/changed discovery results outside the web event loop.
 
-    This helper owns every SQLAlchemy session it creates so no session or ORM object
-    crosses threads. Keeping scene upserts and the final SQLite commit here prevents a
-    large daily discovery refresh from starving normal API/navigation requests.
+    A daily deep scan can return many thousands of already-known scenes. Compare a
+    compact Calendar/acquisition fingerprint first so identical historical rows do not
+    participate in the SQLite write transaction at all.
     """
-    with session_factory() as db:
-        existing_ids = (
-            set(db.scalars(select(Scene.tpdb_id).where(Scene.tpdb_id.in_(tuple(discovered)))).all())
-            if discovered
-            else set()
-        )
+    existing_fingerprints: dict[str, str] = {}
+    if discovered:
+        with session_factory() as db:
+            rows = db.scalars(
+                select(Scene)
+                .where(Scene.tpdb_id.in_(tuple(discovered)))
+                .options(selectinload(Scene.performers), selectinload(Scene.studio))
+            ).all()
+            existing_fingerprints = {
+                row.tpdb_id: _scene_metadata_fingerprint(row)
+                for row in rows
+                if row.tpdb_id
+            }
+
+    pending = [
+        remote
+        for remote in discovered.values()
+        if remote.id not in existing_fingerprints
+        or existing_fingerprints[remote.id] != _scene_metadata_fingerprint(remote)
+    ]
 
     created = 0
     refreshed = 0
@@ -194,16 +240,16 @@ def _persist_discovered_scenes(
     scene_write_failed = False
 
     with session_factory() as db:
-        for remote in discovered.values():
+        for remote in pending:
             try:
                 # SAVEPOINT isolates one malformed remote scene while retaining a
-                # single outer commit for the successful batch.
+                # single outer commit for the much smaller changed-scene batch.
                 with db.begin_nested():
                     scene = upsert_scene(db, remote, monitored=True, content_type="scene", commit=False)
                     if not scene.monitored:
                         scene.monitored = True
                     persisted_scene_ids.add(scene.id)
-                if remote.id in existing_ids:
+                if remote.id in existing_fingerprints:
                     refreshed += 1
                 else:
                     created += 1
@@ -211,7 +257,7 @@ def _persist_discovered_scenes(
                 scene_write_failed = True
                 errors.append({"type": "scene", "id": remote.id, "name": remote.title, "error": str(exc)})
 
-        # Advance remote cursors/deep-scan markers only when every discovered scene
+        # Advance remote cursors/deep-scan markers only when every changed/new scene
         # was durably handled. A failed upsert retries the deeper scan next hour.
         if cursor_updates and not scene_write_failed:
             for kind, local_id, head in cursor_updates:
@@ -231,8 +277,8 @@ async def monitored_entity_discovery_cycle(session_factory, settings) -> dict:
     Monitored performer/studio relationships are the durable source of truth for
     acquisition. Performer and studio discovery each perform one deep scan per local
     calendar day so future releases cannot remain hidden behind an unchanged first
-    page. New/changed TPDB scenes are written in one transaction to avoid one SQLite
-    commit per scene, and that synchronous persistence runs off the request event loop.
+    page. Only new/changed TPDB scenes are written, and synchronous persistence runs
+    off the request event loop.
     """
     with session_factory() as db:
         performers = [
