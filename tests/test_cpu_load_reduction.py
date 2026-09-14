@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import date
 
@@ -40,23 +41,22 @@ async def test_download_processing_backs_off_when_idle_and_stays_responsive_when
 
 
 @pytest.mark.asyncio
-async def test_native_downloader_uses_idle_backoff_when_queue_is_empty(monkeypatch):
+async def test_native_downloader_uses_signal_recovery_fallback_when_queue_is_empty(monkeypatch):
     from scarletx.usenet import worker
 
     factory = make_factory()
-    sleeps = []
+    waits = []
 
-    async def stop_after_first_sleep(seconds):
-        sleeps.append(seconds)
+    async def stop_after_first_wait(seconds):
+        waits.append(seconds)
         raise asyncio.CancelledError
 
-    import asyncio
-
-    monkeypatch.setattr(worker.asyncio, "sleep", stop_after_first_sleep)
+    monkeypatch.setattr(worker.native_queue_signal, "wait", stop_after_first_wait)
     with pytest.raises(asyncio.CancelledError):
         await worker.native_worker_loop(factory, lambda: Settings())
 
-    assert sleeps == [5.0]
+    assert waits == [worker.NATIVE_QUEUE_RECOVERY_SECONDS]
+    assert waits == [60]
 
 
 class PagedMetadata:
