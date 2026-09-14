@@ -29,12 +29,14 @@ class AsyncWakeSignal:
         await self.bind()
         assert self._event is not None
         if self._event.is_set():
-            self._event.clear(); return True
+            self._event.clear()
+            return True
         try:
             await asyncio.wait_for(self._event.wait(), timeout=timeout)
         except TimeoutError:
             return False
-        self._event.clear(); return True
+        self._event.clear()
+        return True
 
 
 native_queue_signal = AsyncWakeSignal()
