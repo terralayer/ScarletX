@@ -27,6 +27,10 @@ def _studio_deep_scan_key(local_id: int) -> str:
     return f"monitored_scan:studio_deep:{local_id}"
 
 
+def _performer_deep_scan_key(local_id: int) -> str:
+    return f"monitored_scan:performer_deep:{local_id}"
+
+
 def _load_head_cursor(db, kind: str, local_id: int) -> tuple[str, ...]:
     row = db.get(AppSetting, _cursor_key(kind, local_id))
     if row is None:
@@ -65,6 +69,22 @@ def _save_studio_deep_scan(db, local_id: int, today: date | None = None) -> None
         row.value = today.isoformat()
 
 
+def _performer_deep_scan_due(db, local_id: int, today: date | None = None) -> bool:
+    today = today or date.today()
+    row = db.get(AppSetting, _performer_deep_scan_key(local_id))
+    return row is None or row.value != today.isoformat()
+
+
+def _save_performer_deep_scan(db, local_id: int, today: date | None = None) -> None:
+    today = today or date.today()
+    key = _performer_deep_scan_key(local_id)
+    row = db.get(AppSetting, key)
+    if row is None:
+        db.add(AppSetting(key=key, value=today.isoformat(), is_secret=False))
+    else:
+        row.value = today.isoformat()
+
+
 def _scene_head_fingerprint(scene) -> str:
     """Fingerprint first-page fields that can change Calendar membership/display.
 
@@ -91,10 +111,16 @@ def _scene_head_fingerprint(scene) -> str:
     )
 
 
-async def _performer_scan(tpdb, identifier: str, previous_head: tuple[str, ...]):
+async def _performer_scan(
+    tpdb,
+    identifier: str,
+    previous_head: tuple[str, ...],
+    *,
+    force_deep: bool = False,
+):
     first = await tpdb.get_performer_scenes(identifier, page=1, per_page=ENTITY_PAGE_SIZE)
     head = tuple(_scene_head_fingerprint(scene) for scene in first.items)
-    if previous_head and head == previous_head:
+    if previous_head and head == previous_head and not force_deep:
         return [], head, True
 
     scenes = list(first.items)
@@ -145,14 +171,20 @@ async def monitored_entity_discovery_cycle(session_factory, settings) -> dict:
     """Incrementally refresh monitored performers/studios from TPDB.
 
     Monitored performer/studio relationships are the durable source of truth for
-    acquisition. Studio discovery additionally performs one deep scan per local
+    acquisition. Performer and studio discovery each perform one deep scan per local
     calendar day so future releases cannot remain hidden behind an unchanged first
     page. New/changed TPDB scenes are written in one transaction to avoid one SQLite
     commit per scene.
     """
     with session_factory() as db:
         performers = [
-            (row.id, row.tpdb_id, row.name, _load_head_cursor(db, "performer", row.id))
+            (
+                row.id,
+                row.tpdb_id,
+                row.name,
+                _load_head_cursor(db, "performer", row.id),
+                _performer_deep_scan_due(db, row.id),
+            )
             for row in db.scalars(select(Performer).where(Performer.monitored.is_(True))).all()
         ]
         studios = [
@@ -187,18 +219,24 @@ async def monitored_entity_discovery_cycle(session_factory, settings) -> dict:
     discovered = {}
     errors: list[dict[str, str]] = []
     cursor_updates: list[tuple[str, int, tuple[str, ...]]] = []
-    deep_scan_updates: list[int] = []
+    studio_deep_scan_updates: list[int] = []
+    performer_deep_scan_updates: list[int] = []
     unchanged_entities = 0
     semaphore = asyncio.Semaphore(ENTITY_SCAN_CONCURRENCY)
 
     async with client(settings) as tpdb:
-        async def scan_performer(local_id, identifier, name, previous_head):
+        async def scan_performer(local_id, identifier, name, previous_head, deep_scan_due):
             async with semaphore:
                 try:
-                    scenes, head, unchanged = await _performer_scan(tpdb, identifier, previous_head)
-                    return "performer", local_id, identifier, name, scenes, head, unchanged, False, None
+                    scenes, head, unchanged = await _performer_scan(
+                        tpdb,
+                        identifier,
+                        previous_head,
+                        force_deep=deep_scan_due,
+                    )
+                    return "performer", local_id, identifier, name, scenes, head, unchanged, deep_scan_due, None
                 except Exception as exc:
-                    return "performer", local_id, identifier, name, [], (), False, False, exc
+                    return "performer", local_id, identifier, name, [], (), False, deep_scan_due, exc
 
         async def scan_studio(local_id, identifier, name, previous_head, deep_scan_due):
             async with semaphore:
@@ -226,7 +264,9 @@ async def monitored_entity_discovery_cycle(session_factory, settings) -> dict:
             continue
         cursor_updates.append((kind, local_id, head))
         if kind == "studio" and deep_scanned:
-            deep_scan_updates.append(local_id)
+            studio_deep_scan_updates.append(local_id)
+        if kind == "performer" and deep_scanned:
+            performer_deep_scan_updates.append(local_id)
         for scene in scenes:
             discovered[scene.id] = scene
 
@@ -263,8 +303,10 @@ async def monitored_entity_discovery_cycle(session_factory, settings) -> dict:
         if cursor_updates and not scene_write_failed:
             for kind, local_id, head in cursor_updates:
                 _save_head_cursor(db, kind, local_id, head)
-            for local_id in deep_scan_updates:
+            for local_id in studio_deep_scan_updates:
                 _save_studio_deep_scan(db, local_id)
+            for local_id in performer_deep_scan_updates:
+                _save_performer_deep_scan(db, local_id)
         db.commit()
 
     return {
