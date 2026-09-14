@@ -55,3 +55,19 @@ def test_studio_summary_reports_downloaded_and_total_scene_counts(tmp_path):
         assert item["downloaded_scene_count"] == 1
         assert item["scene_count"] == 2
     engine.dispose()
+
+
+def test_studio_library_card_places_downloaded_total_count_right_of_actions():
+    app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    styles = (ROOT / "frontend" / "ui_overrides.css").read_text(encoding="utf-8")
+    card = app[app.index("function entityCard"):app.index("function bindEntityActions")]
+
+    assert "studio-card-footer" in card
+    assert "studio-scene-count" in card
+    assert "downloaded_scene_count" in card
+    assert "scene_count" in card
+    assert "type==='studios'&&inLibrary" in "".join(card.split())
+    assert ".studio-card-footer" in styles
+    assert "justify-content:space-between" in styles
+    assert ".studio-scene-count" in styles
+    assert "text-align:right" in styles
