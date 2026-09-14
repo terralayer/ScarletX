@@ -33,9 +33,9 @@
 
   // Explicitly restore the Performers column in every scene table, including
   // Recently Released Scenes on the dashboard.
-  sceneTable = function(rows, inLibrary = false) {
+  sceneTable = function(rows, inLibrary = false, releaseDateUnderScene = false) {
     if (!rows.length) return empty('No scenes found.');
-    return `<div class="tablewrap"><table class="table"><thead><tr><th>Scene</th><th>Studio</th><th>Performers</th><th>Status</th><th></th></tr></thead><tbody>${sceneRowsHtml(rows,inLibrary)}</tbody></table></div>`;
+    return `<div class="tablewrap"><table class="table"><thead><tr><th>Scene</th><th>Studio</th><th>Performers</th><th>Status</th><th></th></tr></thead><tbody>${releaseDateUnderScene ? sceneRowsHtml(rows,inLibrary,true) : sceneRowsHtml(rows,inLibrary)}</tbody></table></div>`;
   };
 
   function compactStudioSrc(src) {
