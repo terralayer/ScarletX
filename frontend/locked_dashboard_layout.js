@@ -35,7 +35,7 @@
   }
 
   function wireShortcutNavigation() {
-    const discover = document.querySelector('#discoverNav');
+    const discover = document.querySelector('[data-approved-nav="discover"]');
     if (discover && !discover.dataset.bound) {
       discover.dataset.bound = '1';
       discover.addEventListener('click', () => {
@@ -46,7 +46,7 @@
       });
     }
 
-    const indexers = document.querySelector('#indexersNav');
+    const indexers = document.querySelector('[data-approved-nav="indexers"]');
     if (indexers && !indexers.dataset.bound) {
       indexers.dataset.bound = '1';
       indexers.addEventListener('click', async () => {
