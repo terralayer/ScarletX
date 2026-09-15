@@ -6,9 +6,9 @@ FRONTEND = ROOT / "frontend"
 
 def test_shell_uses_approved_wordmark_and_emblem_favicon():
     index = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    assert '<div class="header-brand"><img src="/scarletx-wordmark.svg" alt="ScarletX"></div>' in index
-    assert '<div class="brand"><img src="/scarletx-wordmark.svg" alt="ScarletX"></div>' in index
-    assert '<link rel="icon" href="/scarletx-icon.svg" type="image/svg+xml">' in index
+    assert '<div class="header-brand"><img src="/scarletx-wordmark.svg?v=approved-20260915-2" alt="ScarletX"></div>' in index
+    assert '<div class="brand"><img src="/scarletx-wordmark.svg?v=approved-20260915-2" alt="ScarletX"></div>' in index
+    assert '<link rel="icon" href="/scarletx-icon.svg?v=approved-20260915-2" type="image/svg+xml">' in index
     assert "scarletx-logo.webp" not in index
     assert "scarletx-icon.webp" not in index
 
