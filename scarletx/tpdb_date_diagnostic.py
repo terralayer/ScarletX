@@ -16,7 +16,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from .models import Performer, Scene
+from .models import AppSetting, Performer, Scene
+from .secret_store import PREFIX as SECRET_PREFIX, SecretStoreError, decrypt_secret
 from .studio_policy import studio_only_reason_raw
 from .tpdb import normalize_scene
 from .wanted import calendar_items
@@ -172,6 +173,29 @@ def snapshot_engine(path):
     return create_engine('sqlite://', creator=lambda: snapshot, poolclass=StaticPool)
 
 
+def resolve_tpdb_credentials(db):
+    """Resolve TPDB access without modifying settings or exposing a stored secret."""
+    key = os.environ.get('SCARLETX_TPDB_API_KEY', '').strip()
+    if not key:
+        item = db.get(AppSetting, 'theporndb_api_key')
+        if item is not None:
+            stored = str(item.value or '')
+            if item.is_secret and stored.startswith(SECRET_PREFIX):
+                secret_path = Path(os.getenv('SCARLETX_SECRET_KEY_FILE', '.scarletx-secret.key')).expanduser()
+                if not secret_path.exists():
+                    raise ValueError('Stored TPDB key is encrypted but the ScarletX secret key file is unavailable')
+            try:
+                key = decrypt_secret(stored) if item.is_secret else stored
+            except SecretStoreError as exc:
+                raise ValueError('Stored TPDB key could not be decrypted') from exc
+
+    base_url = os.environ.get('SCARLETX_TPDB_BASE_URL', '').strip()
+    if not base_url:
+        item = db.get(AppSetting, 'theporndb_base_url')
+        base_url = str(item.value or '').strip() if item is not None else ''
+    return key.strip(), (base_url or 'https://api.theporndb.net').rstrip('/')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--database', required=True, help='Path to existing live SQLite database')
@@ -183,20 +207,25 @@ def main():
     parser.add_argument('--limit', type=int, default=500)
     parser.add_argument('--max-pages', type=int, default=1000)
     args = parser.parse_args()
-    key = os.environ.get('SCARLETX_TPDB_API_KEY', '')
-    if not key:
-        parser.error('Set SCARLETX_TPDB_API_KEY in the environment')
     engine = snapshot_engine(args.database)
 
-    async def run():
-        with Session(engine, autoflush=False) as db:
-            async with httpx.AsyncClient(
-                base_url=os.environ.get('SCARLETX_TPDB_BASE_URL', 'https://api.theporndb.net'),
-                headers={'Authorization': f'Bearer {key}', 'Accept': 'application/json'}, timeout=30,
-            ) as client:
-                return await run_sample(db, client, args.output, seed=args.seed, count=args.count,
-                                        start=args.start, end=args.end, limit=args.limit, max_pages=args.max_pages)
     try:
+        with Session(engine, autoflush=False) as db:
+            key, base_url = resolve_tpdb_credentials(db)
+        if not key:
+            parser.error('No TPDB API key found in the environment or ScarletX database')
+
+        async def run():
+            with Session(engine, autoflush=False) as db:
+                async with httpx.AsyncClient(
+                    base_url=base_url,
+                    headers={'Authorization': f'Bearer {key}', 'Accept': 'application/json'},
+                    timeout=30,
+                ) as client:
+                    return await run_sample(db, client, args.output, seed=args.seed, count=args.count,
+                                            start=args.start, end=args.end, limit=args.limit,
+                                            max_pages=args.max_pages)
+
         result = asyncio.run(run())
     finally:
         engine.dispose()
