@@ -6,6 +6,7 @@ from sqlalchemy import select, update
 
 from ..background_signals import native_queue_signal
 from ..models import NativeUsenetJob
+from ..resource_guard import check_disk_capacity
 from ..status_console import emit_status
 from . import worker
 
@@ -58,6 +59,30 @@ def _queued_job_ids(session_factory, *, limit: int, exclude: set[str] | None = N
             .limit(limit + len(excluded))
         ).all()
     return [job_id for job_id in rows if job_id not in excluded][:limit]
+
+
+def _resource_ready_for_job(session_factory, settings, job_id: str) -> bool:
+    """Admit a queued job only when its remaining bytes fit above the disk reserve."""
+
+    with session_factory() as db:
+        job = db.get(NativeUsenetJob, job_id)
+        if job is None or job.status != "queued":
+            return False
+        total_bytes = max(0, int(job.total_bytes or 0))
+        downloaded_bytes = max(0, int(job.downloaded_bytes or 0))
+
+    remaining_bytes = max(0, total_bytes - downloaded_bytes)
+    try:
+        reserve_gib = max(0.0, float(getattr(settings, "minimum_free_space_gb", 0.0) or 0.0))
+    except (TypeError, ValueError):
+        reserve_gib = 0.0
+    reserve_bytes = int(reserve_gib * 1024**3)
+    decision = check_disk_capacity(
+        getattr(settings, "native_usenet_incomplete_dir", "."),
+        required_bytes=remaining_bytes,
+        reserve_bytes=reserve_bytes,
+    )
+    return bool(decision.allowed)
 
 
 def _consume_finished(active: dict[str, asyncio.Task]) -> None:
@@ -121,6 +146,8 @@ async def native_worker_loop(session_factory, settings_loader, poll_seconds: flo
 
             started = False
             for job_id in _queued_job_ids(session_factory, limit=capacity, exclude=set(active)):
+                if not _resource_ready_for_job(session_factory, settings, job_id):
+                    continue
                 active[job_id] = asyncio.create_task(
                     worker.process_job(session_factory, settings, job_id),
                     name=f"scarletx-download-{job_id}",
