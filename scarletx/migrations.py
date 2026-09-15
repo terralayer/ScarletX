@@ -3,6 +3,8 @@ from __future__ import annotations
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Connection
 
+from .watchdog import ensure_watchdog_model_columns
+
 
 PERFORMANCE_INDEXES = (
     (
@@ -63,6 +65,42 @@ PERFORMANCE_INDEXES = (
 )
 
 
+def ensure_native_watchdog_columns(connection: Connection) -> None:
+    """Add durable watchdog state to an existing native queue in place."""
+
+    ensure_watchdog_model_columns()
+    if connection.dialect.name != "sqlite":
+        return
+    inspector = inspect(connection)
+    if "native_usenet_jobs" not in set(inspector.get_table_names()):
+        return
+
+    existing = {
+        str(column["name"])
+        for column in inspector.get_columns("native_usenet_jobs")
+    }
+    additions = (
+        (
+            "watchdog_retries",
+            "ALTER TABLE native_usenet_jobs "
+            "ADD COLUMN watchdog_retries INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+            "retry_after",
+            "ALTER TABLE native_usenet_jobs ADD COLUMN retry_after DATETIME",
+        ),
+        (
+            "quarantined",
+            "ALTER TABLE native_usenet_jobs "
+            "ADD COLUMN quarantined BOOLEAN NOT NULL DEFAULT 0",
+        ),
+    )
+    for column_name, statement in additions:
+        if column_name not in existing:
+            connection.exec_driver_sql(statement)
+            existing.add(column_name)
+
+
 def performance_index_migration_required(connection: Connection) -> bool:
     """Return whether this SQLite database still needs a performance index."""
     if connection.dialect.name != "sqlite":
@@ -85,10 +123,11 @@ def performance_index_migration_required(connection: Connection) -> bool:
 
 
 def ensure_performance_indexes(connection: Connection) -> None:
-    """Create SQLite worker and library indexes without rewriting user data."""
+    """Create SQLite worker/library indexes and small upgrade columns safely."""
     if connection.dialect.name != "sqlite":
         return
 
+    ensure_native_watchdog_columns(connection)
     tables = set(inspect(connection).get_table_names())
     for table, index_name, columns in PERFORMANCE_INDEXES:
         if table not in tables:
