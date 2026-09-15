@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/styles.css">
 <link rel="stylesheet" href="/ui_overrides.css">
 <link rel="stylesheet" href="/locked_dashboard.css">
+<link rel="stylesheet" href="/locked_dashboard_footer.css">
 </head>
 <body data-layout="approved-dashboard-v1">
 <div class="shell">
@@ -26,7 +27,6 @@
     </nav>
     <div class="side-spacer"></div>
     <div class="storage-card"><h4>Library Storage</h4><div class="bar"><i id="storageBar"></i></div><div class="storage-meta"><span id="storageUsed">—</span><span id="storagePct">—</span></div></div>
-    <div class="side-footer"><div class="avatar">SX</div><div><b>ScarletX</b><small id="versionSide">Local</small></div></div>
   </aside>
   <main class="main">
     <header class="topbar">
@@ -39,6 +39,7 @@
     </header>
     <section class="content" id="app"></section>
   </main>
+  <footer class="app-footer"><span class="footer-version">ScarletX <small id="versionSide">Local</small></span><span class="footer-motto">Discover More. Manage Smarter.</span></footer>
 </div>
 <div class="modalback" id="modal"><div class="modal"><div class="modal-head"><h2 id="modalTitle">Details</h2><button class="xbtn" id="closeModal">×</button></div><div class="modal-body" id="modalBody"></div></div></div>
 <script src="/app.js"></script>
