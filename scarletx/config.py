@@ -63,44 +63,7 @@ def _default_indexers() -> str:
     raw = os.getenv("SCARLETX_NEWZNAB_INDEXERS_JSON", "")
     if raw.strip():
         return raw
-    return json.dumps([
-        {
-            "name": "NZBGeek",
-            "url": DEV_NZBGEEK_API_URL,
-            "api_key": DEV_NZBGEEK_API_KEY,
-            "adult_categories": list(DEFAULT_ADULT_INDEXER_CATEGORIES),
-            "enabled": True,
-            "rss_enabled": True,
-            "priority": 25,
-        },
-        {
-            "name": "Treasure Maps",
-            "url": DEV_TREASURE_MAPS_API_URL,
-            "api_key": DEV_TREASURE_MAPS_API_KEY,
-            "adult_categories": list(DEFAULT_ADULT_INDEXER_CATEGORIES),
-            "enabled": True,
-            "rss_enabled": True,
-            "priority": 20,
-        },
-        {
-            "name": "NZB.life",
-            "url": DEV_NZBLIFE_API_URL,
-            "api_key": DEV_NZBLIFE_API_KEY,
-            "adult_categories": list(DEFAULT_ADULT_INDEXER_CATEGORIES),
-            "enabled": True,
-            "rss_enabled": True,
-            "priority": 15,
-        },
-        {
-            "name": "Usenet-Crawler",
-            "url": DEV_USENET_CRAWLER_API_URL,
-            "api_key": DEV_USENET_CRAWLER_API_KEY,
-            "adult_categories": list(DEFAULT_ADULT_INDEXER_CATEGORIES),
-            "enabled": True,
-            "rss_enabled": True,
-            "priority": 10,
-        }
-    ])
+    return "[]"
 
 
 class Settings(BaseModel):
