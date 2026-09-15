@@ -19,7 +19,7 @@ def test_dashboard_cards_prefer_native_explicit_navigation_targets():
 
     app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
     assert "dashboardStat(dashboardIcons.scenes" in app
-    assert "'In your library','library'" in app.replace(" ", "")
+    assert "'Inyourlibrary','library'" in app.replace(" ", "")
 
 
 def test_approved_sidebar_shortcuts_are_wired_without_legacy_layout_script():
