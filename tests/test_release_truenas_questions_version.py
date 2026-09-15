@@ -32,6 +32,11 @@ def test_release_helper_versions_truenas_questions_service_names(tmp_path):
                 f'[project]\nname = "scarletx"\nversion = "{current}"\n',
                 encoding="utf-8",
             )
+        elif relative_path == module.CATALOG_METADATA_PATH:
+            path.write_text(
+                f"app_version: {current}\nversion: 1.0.6\n",
+                encoding="utf-8",
+            )
         elif relative_path == questions:
             path.write_text(
                 f"- value: scarletx-{current}-backend\n"
@@ -46,3 +51,5 @@ def test_release_helper_versions_truenas_questions_service_names(tmp_path):
     assert current not in updated
     assert f"scarletx-{expected}-backend" in updated
     assert f"scarletx-{expected}-web" in updated
+    app = (tmp_path / module.CATALOG_METADATA_PATH).read_text(encoding="utf-8")
+    assert "version: 1.0.7" in app

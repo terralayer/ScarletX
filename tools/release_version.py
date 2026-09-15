@@ -8,6 +8,7 @@ from pathlib import Path
 EXPECTED_MAJOR = 0
 EXPECTED_MINOR = 4
 EXPECTED_SERIES = "0.4"
+CATALOG_METADATA_PATH = "packaging/truenas/scarletx/app.yaml"
 
 VERSIONED_FILES = (
     "pyproject.toml",
@@ -84,12 +85,29 @@ def replace_version_in_file(path: Path, current: str, next_version: str) -> None
     path.write_text(updated, encoding="utf-8")
 
 
+def bump_truenas_catalog_version(root: Path) -> tuple[str, str]:
+    path = root / CATALOG_METADATA_PATH
+    text = path.read_text(encoding="utf-8")
+    match = re.search(r"(?m)^version:\s*(\d+)\.(\d+)\.(\d+)\s*$", text)
+    if not match:
+        raise ValueError(f"No TrueNAS catalog version found in {path}")
+
+    major, minor, patch = (int(part) for part in match.groups())
+    current = f"{major}.{minor}.{patch}"
+    next_version = f"{major}.{minor}.{patch + 1}"
+    updated = text[: match.start()] + f"version: {next_version}" + text[match.end() :]
+    path.write_text(updated, encoding="utf-8")
+    return current, next_version
+
+
 def apply_release(root: Path, notes: str) -> str:
     current = read_project_version(root)
     next_version = next_release_version(current)
 
     for relative_path in VERSIONED_FILES:
         replace_version_in_file(root / relative_path, current, next_version)
+
+    bump_truenas_catalog_version(root)
 
     notes_path = root / f"RELEASE-NOTES-{next_version}.md"
     if notes_path.exists():
