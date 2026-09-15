@@ -127,3 +127,30 @@ async def test_bad_pages_always_produce_incomplete_summary(tmp_path, payload):
         assert report['completed_performers'] == 0
         assert len(report['errors']) == 1
         assert (tmp_path / 'summary.json').exists()
+
+
+def test_snapshot_can_resolve_tpdb_credentials_from_database(tmp_path, monkeypatch):
+    from scarletx.models import AppSetting
+    from scarletx.secret_store import encrypt_secret
+
+    key_file = tmp_path / 'secret.key'
+    monkeypatch.setenv('SCARLETX_SECRET_KEY_FILE', str(key_file))
+    path = tmp_path / 'credentials.db'
+    source_engine = create_engine(f'sqlite:///{path}')
+    Base.metadata.create_all(source_engine)
+    with Session(source_engine) as db:
+        db.add_all([
+            AppSetting(key='theporndb_api_key', value=encrypt_secret('database-key'), is_secret=True),
+            AppSetting(key='theporndb_base_url', value='https://tpdb.example', is_secret=False),
+        ])
+        db.commit()
+    source_engine.dispose()
+
+    engine = diagnostic.snapshot_engine(path)
+    try:
+        with Session(engine) as db:
+            resolver = getattr(diagnostic, 'resolve_tpdb_credentials', None)
+            assert callable(resolver)
+            assert resolver(db) == ('database-key', 'https://tpdb.example')
+    finally:
+        engine.dispose()
