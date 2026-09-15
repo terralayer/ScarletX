@@ -38,7 +38,7 @@ COPY frontend/locked_dashboard_layout.js /usr/share/nginx/html/locked_dashboard_
 # Nginx serves the finished page directly; Python never renders or rewrites UI.
 RUN set -eux; \
     sed -i 's#</head>#<link rel="stylesheet" href="/auth.css"></head>#' /usr/share/nginx/html/index.html; \
-    sed -i 's#<body>#<body><script src="/auth.js"></script>#' /usr/share/nginx/html/index.html; \
+    sed -i 's#<body\([^>]*\)>#<body\1><script src="/auth.js"></script>#' /usr/share/nginx/html/index.html; \
     sed -i 's/^[[:space:]]*boot();[[:space:]]*$/authGateBoot(boot);/' /usr/share/nginx/html/app.js; \
     grep -q '/auth.css' /usr/share/nginx/html/index.html; \
     grep -q '/auth.js' /usr/share/nginx/html/index.html; \
