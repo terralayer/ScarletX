@@ -24,17 +24,25 @@ def _concurrency_limit(settings) -> int:
     return max(1, min(requested, MAX_CONCURRENT_DOWNLOADS))
 
 
-def _queued_job_ids(session_factory, *, limit: int, exclude: set[str]) -> list[str]:
+def _queued_job_ids(
+    session_factory,
+    *,
+    limit: int,
+    exclude: set[str] | None = None,
+) -> list[str]:
+    """Return the oldest runnable queue entries without active duplicates."""
+
     if limit <= 0:
         return []
+    excluded = set(exclude or ())
     with session_factory() as db:
         rows = db.scalars(
             select(NativeUsenetJob.id)
             .where(NativeUsenetJob.status == "queued")
             .order_by(NativeUsenetJob.created_at.asc(), NativeUsenetJob.id.asc())
-            .limit(limit + len(exclude))
+            .limit(limit + len(excluded))
         ).all()
-    return [job_id for job_id in rows if job_id not in exclude][:limit]
+    return [job_id for job_id in rows if job_id not in excluded][:limit]
 
 
 def _consume_finished(active: dict[str, asyncio.Task]) -> None:
@@ -47,9 +55,6 @@ def _consume_finished(active: dict[str, asyncio.Task]) -> None:
         except asyncio.CancelledError:
             pass
         except Exception as exc:
-            # process_job normally persists its own terminal failure. A defensive
-            # scheduler guard keeps one unexpected task failure from killing every
-            # other download slot.
             emit_status(
                 "Native Downloader",
                 "WORKER FAILED",
@@ -59,12 +64,7 @@ def _consume_finished(active: dict[str, asyncio.Task]) -> None:
 
 
 async def native_worker_loop(session_factory, settings_loader, poll_seconds: float = 5.0) -> None:
-    """Run a bounded set of independent scene downloads.
-
-    Scene-job concurrency is intentionally separate from NNTP connection
-    concurrency. Individual jobs continue to use the shared provider pools; this
-    scheduler only decides how many scene jobs may be active at once.
-    """
+    """Run a bounded set of independent scene downloads."""
 
     emit_status(
         "Native Downloader",
@@ -74,8 +74,6 @@ async def native_worker_loop(session_factory, settings_loader, poll_seconds: flo
     )
     await native_queue_signal.bind()
 
-    # Jobs interrupted by an app/container restart retain their durable partial
-    # files and counters. Requeue them once before claiming fresh work.
     with session_factory() as db:
         db.execute(
             update(NativeUsenetJob)
@@ -110,9 +108,6 @@ async def native_worker_loop(session_factory, settings_loader, poll_seconds: flo
                 )
                 continue
 
-            # When spare capacity remains there is no queued work at this instant.
-            # New enqueue operations signal immediately; the timeout is only a
-            # recovery fallback for missed signals or external database writes.
             await native_queue_signal.wait(worker.NATIVE_QUEUE_RECOVERY_SECONDS)
     finally:
         tasks = tuple(active.values())
