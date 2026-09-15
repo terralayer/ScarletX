@@ -21,4 +21,4 @@ jobs:
           gh workflow run release.yml \
             --repo terralayer/ScarletX \
             --ref main \
-            -f release_notes='Updates ScarletX branding with the newly approved horizontal scarlet ribbon wordmark and matching ribbon-only favicon/app icon, while preserving the approved dashboard banner, SVG navigation icons, existing configuration, and TrueNAS deployment behavior.'
+            -f release_notes='Corrects ScarletX branding by shipping the exact approved horizontal logo artwork and exact approved ribbon-only favicon/app icon instead of reconstructed SVG approximations. Adds cache-busted UI references so browsers load the corrected assets immediately, while preserving the approved dashboard banner, navigation icons, configuration, and TrueNAS deployment behavior.'
