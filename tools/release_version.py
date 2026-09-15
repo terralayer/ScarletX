@@ -8,6 +8,7 @@ from pathlib import Path
 EXPECTED_MAJOR = 0
 EXPECTED_MINOR = 4
 EXPECTED_SERIES = "0.4"
+LOCKED_RELEASE_VERSION = "0.4.4"
 CATALOG_METADATA_PATH = "packaging/truenas/scarletx/app.yaml"
 
 VERSIONED_FILES = (
@@ -58,14 +59,21 @@ def parse_release_version(version: str) -> tuple[int, int, int, int | None]:
 
 def next_patch_version(current: str) -> str:
     major, minor, patch = parse_version(current)
-    return f"{major}.{minor}.{patch + 1}"
+    candidate = f"{major}.{minor}.{patch + 1}"
+    if tuple(map(int, candidate.split("."))) > tuple(map(int, LOCKED_RELEASE_VERSION.split("."))):
+        raise ValueError(f"ScarletX release version is locked at {LOCKED_RELEASE_VERSION}")
+    return candidate
 
 
 def next_release_version(current: str) -> str:
     major, minor, patch, beta = parse_release_version(current)
     if beta is not None:
-        return f"{major}.{minor}.{patch}"
-    return f"{major}.{minor}.{patch + 1}"
+        candidate = f"{major}.{minor}.{patch}"
+    else:
+        candidate = f"{major}.{minor}.{patch + 1}"
+    if tuple(map(int, candidate.split("."))) > tuple(map(int, LOCKED_RELEASE_VERSION.split("."))):
+        raise ValueError(f"ScarletX release version is locked at {LOCKED_RELEASE_VERSION}")
+    return candidate
 
 
 def read_project_version(root: Path) -> str:
