@@ -35,11 +35,36 @@ PERFORMANCE_INDEXES = (
         "ix_history_event_type_created_at",
         "event_type, created_at",
     ),
+    (
+        "scenes",
+        "ix_scenes_type_release_id",
+        "content_type, release_date DESC, id DESC",
+    ),
+    (
+        "scenes",
+        "ix_scenes_studio_type",
+        "studio_id, content_type",
+    ),
+    (
+        "performers",
+        "ix_performers_library_name",
+        "is_library, name",
+    ),
+    (
+        "studios",
+        "ix_studios_library_name",
+        "is_library, name",
+    ),
+    (
+        "media_files",
+        "ix_media_files_scene_id",
+        "scene_id",
+    ),
 )
 
 
 def performance_index_migration_required(connection: Connection) -> bool:
-    """Return whether this SQLite database still needs any PR-2 worker index."""
+    """Return whether this SQLite database still needs a performance index."""
     if connection.dialect.name != "sqlite":
         return False
 
@@ -60,7 +85,7 @@ def performance_index_migration_required(connection: Connection) -> bool:
 
 
 def ensure_performance_indexes(connection: Connection) -> None:
-    """Create the 0.3.10 SQLite worker indexes without rewriting user data."""
+    """Create SQLite worker and library indexes without rewriting user data."""
     if connection.dialect.name != "sqlite":
         return
 
