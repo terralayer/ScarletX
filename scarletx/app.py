@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from .auth_routes import router as auth_router
 from .compact_studio_art import install_compact_studio_art_route
-from .db import SessionLocal
+from .db import SessionLocal, engine
 from .downloader_state_hotfix import install_downloader_state_hotfixes
 from .http_security import install_authentication, install_security_headers, remove_legacy_api_key_middleware
 from .main import app
 from .media_dedup import install_runtime_dedup
+from .observability import install_observability
 from .routes import application as legacy_application
 from .routes.runtime_overrides import (
     dashboard_performers_runtime,
@@ -71,3 +72,4 @@ install_authentication(
     settings_loader=_fixed_runtime_settings,
 )
 install_security_headers(app)
+install_observability(app, engine)
