@@ -32,6 +32,7 @@ COPY frontend/scarletx-wordmark.svg /usr/share/nginx/html/scarletx-wordmark.svg
 COPY frontend/scarletx-icon.svg /usr/share/nginx/html/scarletx-icon.svg
 COPY frontend/scarletx-hero.svg /usr/share/nginx/html/scarletx-hero.svg
 COPY frontend/locked_dashboard.css /usr/share/nginx/html/locked_dashboard.css
+COPY frontend/locked_dashboard_footer.css /usr/share/nginx/html/locked_dashboard_footer.css
 COPY frontend/locked_dashboard_layout.js /usr/share/nginx/html/locked_dashboard_layout.js
 
 # Bake the authentication assets into the static HTML at image-build time.
@@ -45,6 +46,7 @@ RUN set -eux; \
     grep -q '/styles.css' /usr/share/nginx/html/index.html; \
     grep -q '/ui_overrides.css' /usr/share/nginx/html/index.html; \
     grep -q '/locked_dashboard.css' /usr/share/nginx/html/index.html; \
+    grep -q '/locked_dashboard_footer.css' /usr/share/nginx/html/index.html; \
     grep -q '/app.js' /usr/share/nginx/html/index.html; \
     grep -q '/navigation_error_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/ui_overrides.js' /usr/share/nginx/html/index.html; \
