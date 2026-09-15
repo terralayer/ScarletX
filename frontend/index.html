@@ -4,37 +4,38 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ScarletX</title>
+<link rel="icon" href="/scarletx-icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/styles.css">
 <link rel="stylesheet" href="/ui_overrides.css">
+<link rel="stylesheet" href="/locked_dashboard.css">
 </head>
-<body>
+<body data-layout="approved-dashboard-v1">
 <div class="shell">
   <aside class="sidebar">
-    <div class="brand"><div class="brandword">Scarlet<b>X</b></div></div>
+    <div class="brand"><img src="/scarletx-icon.svg" alt="ScarletX" style="width:42px;height:42px"></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico">⌂</span><span>Dashboard</span></button>
-      <div class="nav-section">Discover</div>
-      <button data-view="scenes"><span class="ico">▣</span><span>Scenes</span></button>
-      <button data-view="library"><span class="ico">▶</span><span>Library</span></button>
       <button data-view="performers"><span class="ico">♙</span><span>Performers</span></button>
+      <button data-view="scenes"><span class="ico">▣</span><span>Scenes</span></button>
       <button data-view="studios"><span class="ico">▥</span><span>Studios</span></button>
-      <button data-view="wanted"><span class="ico">◎</span><span>Wanted</span></button>
-      <div class="nav-section">Manage</div>
-      <button data-view="activity"><span class="ico">↓</span><span>Activity</span></button>
-      <button data-view="calendar"><span class="ico">◷</span><span>Calendar</span></button>
-      <div class="nav-section">System</div>
+      <button data-view="calendar"><span class="ico">▦</span><span>Calendar</span></button>
+      <button type="button" id="discoverNav"><span class="ico">⌕</span><span>Discover</span></button>
+      <button data-view="activity"><span class="ico">⇩</span><span>Downloads</span></button>
+      <button type="button" id="indexersNav"><span class="ico">⬡</span><span>Indexers</span></button>
       <button data-view="settings"><span class="ico">⚙</span><span>Settings</span></button>
     </nav>
     <div class="side-spacer"></div>
     <div class="storage-card"><h4>Library Storage</h4><div class="bar"><i id="storageBar"></i></div><div class="storage-meta"><span id="storageUsed">—</span><span id="storagePct">—</span></div></div>
-    <div class="side-footer"><div class="avatar">SX</div><div><b style="font-size:11px">ScarletX</b><small id="versionSide">Local</small></div></div>
+    <div class="side-footer"><div class="avatar">SX</div><div><b>ScarletX</b><small id="versionSide">Local</small></div></div>
   </aside>
   <main class="main">
     <header class="topbar">
-      <form class="global-search" id="globalSearch"><span class="searchmark">⌕</span><input id="globalSearchInput" placeholder="Search scenes, performers, studios…"></form>
+      <div class="header-brand"><img src="/scarletx-wordmark.svg" alt="ScarletX"></div>
+      <form class="global-search" id="globalSearch"><span class="searchmark">⌕</span><input id="globalSearchInput" placeholder="Search performers, scenes, studios…"></form>
+      <div class="header-tagline">Your Adult Media Library, Automated.</div>
       <div class="top-spacer"></div>
-      <button class="bell queue-pill" id="queueShortcut" type="button" title="Open download activity" aria-label="Open download activity"><span class="queue-glyph">↓</span><span class="queue-label">Downloads</span><span class="bell-badge" id="queueBadge">0</span></button>
-      <div class="status-pill"><span class="dot" id="statusDot"></span><div><b id="hostLabel">local</b><small id="onlineText">Online</small></div></div>
+      <button class="bell queue-pill" id="queueShortcut" type="button" title="Open download activity" aria-label="Open download activity"><span class="queue-glyph">♧</span><span class="queue-label">Downloads</span><span class="bell-badge" id="queueBadge">0</span></button>
+      <div class="status-pill"><img class="approved-user-icon" src="/scarletx-icon.svg" alt=""><span class="dot" id="statusDot"></span><div><b id="hostLabel">local</b><small id="onlineText">Online</small></div></div>
     </header>
     <section class="content" id="app"></section>
   </main>
@@ -48,5 +49,6 @@
 <script src="/studio_art_overrides.js"></script>
 <script src="/dashboard_settings_overrides.js"></script>
 <script src="/dashboard_regression_hotfix.js"></script>
+<script src="/locked_dashboard_layout.js"></script>
 </body>
 </html>
