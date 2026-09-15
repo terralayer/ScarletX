@@ -1,4 +1,5 @@
 import json
+from importlib.metadata import version as package_version
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -144,7 +145,7 @@ def test_system_metrics_endpoint_reports_operational_runtime_state():
     assert payload["disk"]["total_bytes"] >= payload["disk"]["free_bytes"] > 0
 
 
-def test_health_contract_stays_lightweight_and_version_remains_040():
+def test_health_contract_stays_lightweight_and_matches_package_version():
     from scarletx.app import app
 
     response = TestClient(app).get("/api/health")
@@ -152,6 +153,6 @@ def test_health_contract_stays_lightweight_and_version_remains_040():
     assert response.json() == {
         "status": "ok",
         "app": "ScarletX",
-        "version": "0.4.0",
+        "version": package_version("scarletx"),
         "upstream": "SceneCore 0.7.16",
     }
