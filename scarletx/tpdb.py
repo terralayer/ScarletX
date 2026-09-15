@@ -186,8 +186,6 @@ def _optional_bool(value: Any) -> bool | None:
 
 
 def normalize_performer(raw: dict[str, Any]) -> RemotePerson:
-    # Scene credits are PerformerSite resources. Prefer their canonical parent
-    # performer so clicking a scene credit always opens the real performer page.
     source = raw.get("parent") or raw
     aliases = source.get("aliases") or []
     extras = source.get("extras") or source.get("extra") or {}
@@ -263,8 +261,6 @@ class ThePornDBClient:
 
     async def _get(self, path: str, params: dict | None = None) -> dict:
         cache_path = _cache_key(path, params)
-        # Search pages change more often than entity details. Both are persistent
-        # and stale cache is used as an offline/TPDB-outage fallback.
         ttl = 300 if params else 86400
         now = time.time()
         memory_cached = await _TPDB_MEMORY_CACHE.get(cache_path, now)
@@ -310,7 +306,6 @@ class ThePornDBClient:
                     if attempt + 1 < min(self.max_retries, 2):
                         await asyncio.sleep(0.35 * (attempt + 1))
                 except httpx.HTTPStatusError as exc:
-                    # Do not hide authorization/not-found errors behind stale cache.
                     if exc.response.status_code not in {429, 500, 502, 503, 504}:
                         raise ThePornDBError(f"ThePornDB returned HTTP {exc.response.status_code}") from exc
                     last_error = exc
@@ -321,6 +316,7 @@ class ThePornDBClient:
                         cache="network",
                     )
             if stale is not None:
+                _record_tpdb(0.0, success=True, cache="disk")
                 return stale
             raise ThePornDBError("ThePornDB is unavailable") from last_error
 
