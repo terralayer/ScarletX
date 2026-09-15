@@ -16,8 +16,6 @@ LEGACY_BUNDLED_INDEXER_NAMES = {
     "usenet crawler",
     "usenetcrawler",
 }
-# Retained for compatibility with older settings migrations. These are
-# intentionally blank: indexers must be added explicitly by the user.
 DEV_NZBGEEK_API_KEY = ""
 DEV_NZBGEEK_API_URL = os.getenv("SCARLETX_NZBGEEK_API_URL", "https://api.nzbgeek.info/api")
 DEV_TREASURE_MAPS_API_KEY = ""
@@ -41,7 +39,6 @@ DEV_NEWSHOSTING_CONNECTIONS = int(os.getenv("SCARLETX_NEWSHOSTING_CONNECTIONS", 
 def _effective_cpu_count() -> int:
     """Return the CPU capacity visible to ScarletX, honoring container quotas."""
     logical = max(1, int(os.cpu_count() or 1))
-
     try:
         with open("/sys/fs/cgroup/cpu.max", "r", encoding="utf-8") as handle:
             quota_raw, period_raw = handle.read().strip().split()[:2]
@@ -49,8 +46,7 @@ def _effective_cpu_count() -> int:
             quota = int(quota_raw)
             period = int(period_raw)
             if quota > 0 and period > 0:
-                quota_cpus = max(1, (quota + period - 1) // period)
-                logical = min(logical, quota_cpus)
+                logical = min(logical, max(1, (quota + period - 1) // period))
     except (OSError, ValueError, IndexError):
         try:
             with open("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", "r", encoding="utf-8") as handle:
@@ -58,11 +54,9 @@ def _effective_cpu_count() -> int:
             with open("/sys/fs/cgroup/cpu/cpu.cfs_period_us", "r", encoding="utf-8") as handle:
                 period = int(handle.read().strip())
             if quota > 0 and period > 0:
-                quota_cpus = max(1, (quota + period - 1) // period)
-                logical = min(logical, quota_cpus)
+                logical = min(logical, max(1, (quota + period - 1) // period))
         except (OSError, ValueError):
             pass
-
     return logical
 
 
@@ -75,9 +69,6 @@ def _interactive_connection_cap(requested: int, *, effective_cpus: int | None = 
 
 
 def _default_indexers() -> str:
-    # Fresh ScarletX installs intentionally start with zero indexers. An
-    # administrator may still provide an explicit JSON configuration via the
-    # generic indexer environment variable.
     raw = os.getenv("SCARLETX_NEWZNAB_INDEXERS_JSON", "")
     return raw if raw.strip() else "[]"
 
@@ -94,6 +85,7 @@ class Settings(BaseModel):
     native_usenet_complete_dir: str = os.getenv("SCARLETX_USENET_COMPLETE_DIR", "./downloads/complete")
     native_usenet_max_connections: int = _interactive_connection_cap(int(os.getenv("SCARLETX_USENET_MAX_CONNECTIONS", "200")))
     native_usenet_concurrent_downloads: int = int(os.getenv("SCARLETX_USENET_CONCURRENT_DOWNLOADS", "2"))
+    native_usenet_concurrent_processing: int = int(os.getenv("SCARLETX_USENET_CONCURRENT_PROCESSING", "1"))
     native_usenet_max_retries: int = int(os.getenv("SCARLETX_USENET_MAX_RETRIES", "2"))
     native_usenet_speed_limit_mb_s: float = float(os.getenv("SCARLETX_USENET_SPEED_LIMIT_MB_S", "0"))
     native_usenet_repair_enabled: bool = os.getenv("SCARLETX_USENET_REPAIR", "true").strip().lower() not in {"0","false","no","off"}
@@ -130,6 +122,11 @@ class Settings(BaseModel):
     def _limit_native_usenet_concurrent_downloads(cls, value: int) -> int:
         return max(1, min(int(value), 5))
 
+    @field_validator("native_usenet_concurrent_processing")
+    @classmethod
+    def _limit_native_usenet_concurrent_processing(cls, value: int) -> int:
+        return max(1, min(int(value), 3))
+
     def native_usenet_providers(self):
         from .native_usenet import UsenetProviderConfig
         try:
@@ -144,13 +141,9 @@ class Settings(BaseModel):
         cleaned = []
         for item in raw:
             item = dict(item)
-            # Remove the old bundled blank placeholders on upgraded installs.
-            # A real user-configured row, including one of these services with
-            # an API key, is preserved.
             name = str(item.get("name") or "").strip().casefold()
             if name in LEGACY_BUNDLED_INDEXER_NAMES and not str(item.get("api_key") or "").strip():
                 continue
-            # Old SceneCore fields are ignored; only adult Newznab categories remain.
             if not item.get("adult_categories"):
                 item["adult_categories"] = item.get("categories") or list(DEFAULT_ADULT_INDEXER_CATEGORIES)
             for key in ("categories", "tv_categories", "movie_categories", "implementation"):
@@ -161,15 +154,8 @@ class Settings(BaseModel):
 
 def effective_native_usenet_connection_capacity(settings: Settings) -> int:
     """Return the maximum NNTP connections ScarletX can actually use right now."""
-    providers = [
-        provider for provider in settings.native_usenet_providers()
-        if provider.enabled and provider.host
-    ]
+    providers = [provider for provider in settings.native_usenet_providers() if provider.enabled and provider.host]
     provider_capacity = sum(max(0, int(provider.connections)) for provider in providers)
     if provider_capacity <= 0:
         return 0
-    return min(
-        provider_capacity,
-        max(1, int(settings.native_usenet_max_connections)),
-        200,
-    )
+    return min(provider_capacity, max(1, int(settings.native_usenet_max_connections)), 200)
