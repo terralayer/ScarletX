@@ -6,8 +6,8 @@ import tomllib
 from pathlib import Path
 
 EXPECTED_MAJOR = 0
-EXPECTED_MINOR = 3
-EXPECTED_SERIES = "0.3"
+EXPECTED_MINOR = 4
+EXPECTED_SERIES = "0.4"
 
 VERSIONED_FILES = (
     "pyproject.toml",
