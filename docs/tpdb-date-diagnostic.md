@@ -1,19 +1,31 @@
 # TPDB date diagnostic
 
-Run from the ScarletX checkout using its Python environment, with access to the
-live SQLite database and a TPDB API key in `SCARLETX_TPDB_API_KEY`. No app server
-startup, settings seeding, scene persistence, or discovery marker updates occur.
-The source database opens read-only and is backed up into an in-memory snapshot.
-Allow memory for that snapshot. TPDB requests bypass ScarletX's caches, including
-stale fallback, so an unavailable page is recorded as an error.
+Run from the ScarletX Python environment with access to the live SQLite database.
+If `SCARLETX_TPDB_API_KEY` is set, it is used as an explicit override. Otherwise,
+the sampler reads the existing TPDB API key and base URL from the read-only database
+snapshot. Encrypted database credentials require the installation's matching
+`SCARLETX_SECRET_KEY_FILE`; the TrueNAS backend already mounts that key under
+`/config/.scarletx-secret.key`.
+
+No app server startup, settings seeding, scene persistence, or discovery marker
+updates occur. The source database opens read-only and is backed up into an in-memory
+snapshot. Allow memory for that snapshot. TPDB requests bypass ScarletX's caches,
+including stale fallback, so an unavailable page is recorded as an error.
+
+For an installed TrueNAS backend container, the default Calendar window on
+September 15, 2026 can be sampled directly with:
 
 ```sh
 python -m scarletx.tpdb_date_diagnostic \
-  --database /path/to/scarletx.db \
-  --output /path/to/new-diagnostic-directory \
+  --database /config/scarletx.db \
+  --output /config/tpdb-date-diagnostic-20260915 \
   --count 100 --seed 20260915 \
-  --start 2026-09-01 --end 2026-09-30 --limit 500
+  --start 2026-09-15 --end 2026-10-15 --limit 500
 ```
+
+From a separate ScarletX checkout, use the same command with paths that point to the
+installation database and a new output directory. Set `SCARLETX_TPDB_API_KEY` only
+when you intentionally want to override the key stored in that database.
 
 Use the date range and limit of the affected Calendar request. The default window
 is today through 30 days ahead. The endpoint supports limits through 2000; use the
