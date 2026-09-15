@@ -9,29 +9,44 @@ from ..models import NativeUsenetJob
 from ..status_console import emit_status
 from . import worker
 
-
 DEFAULT_CONCURRENT_DOWNLOADS = 2
 MAX_CONCURRENT_DOWNLOADS = 5
+DEFAULT_CONCURRENT_PROCESSING = 1
 
 
 def _concurrency_limit(settings) -> int:
     try:
-        requested = int(
-            getattr(settings, "native_usenet_concurrent_downloads", DEFAULT_CONCURRENT_DOWNLOADS)
-        )
+        requested = int(getattr(settings, "native_usenet_concurrent_downloads", DEFAULT_CONCURRENT_DOWNLOADS))
     except (TypeError, ValueError):
         requested = DEFAULT_CONCURRENT_DOWNLOADS
     return max(1, min(requested, MAX_CONCURRENT_DOWNLOADS))
 
 
-def _queued_job_ids(
-    session_factory,
-    *,
-    limit: int,
-    exclude: set[str] | None = None,
-) -> list[str]:
-    """Return the oldest runnable queue entries without active duplicates."""
+def _processing_limit(settings) -> int:
+    try:
+        requested = int(getattr(settings, "native_usenet_concurrent_processing", DEFAULT_CONCURRENT_PROCESSING))
+    except (TypeError, ValueError):
+        requested = DEFAULT_CONCURRENT_PROCESSING
+    return max(1, min(requested, 3))
 
+
+def _network_capacity(statuses: dict[str, str], *, download_limit: int) -> int:
+    active_network = sum(1 for status in statuses.values() if str(status or "").casefold() != "postprocessing")
+    return max(0, max(1, int(download_limit)) - active_network)
+
+
+def _active_statuses(session_factory, job_ids: set[str]) -> dict[str, str]:
+    if not job_ids:
+        return {}
+    with session_factory() as db:
+        rows = db.execute(select(NativeUsenetJob.id, NativeUsenetJob.status).where(NativeUsenetJob.id.in_(job_ids))).all()
+    statuses = {str(job_id): str(status or "queued") for job_id, status in rows}
+    for job_id in job_ids:
+        statuses.setdefault(job_id, "queued")
+    return statuses
+
+
+def _queued_job_ids(session_factory, *, limit: int, exclude: set[str] | None = None) -> list[str]:
     if limit <= 0:
         return []
     excluded = set(exclude or ())
@@ -55,25 +70,26 @@ def _consume_finished(active: dict[str, asyncio.Task]) -> None:
         except asyncio.CancelledError:
             pass
         except Exception as exc:
-            emit_status(
-                "Native Downloader",
-                "WORKER FAILED",
-                f"{job_id}: {exc.__class__.__name__}",
-                severity="error",
-            )
+            emit_status("Native Downloader", "WORKER FAILED", f"{job_id}: {exc.__class__.__name__}", severity="error")
+
+
+async def _wait_for_capacity_change(active: dict[str, asyncio.Task]) -> None:
+    signal_task = asyncio.create_task(native_queue_signal.wait(worker.NATIVE_QUEUE_RECOVERY_SECONDS))
+    try:
+        await asyncio.wait(
+            [*active.values(), signal_task],
+            timeout=worker.NATIVE_QUEUE_RECOVERY_SECONDS,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+    finally:
+        if not signal_task.done():
+            signal_task.cancel()
+            await asyncio.gather(signal_task, return_exceptions=True)
 
 
 async def native_worker_loop(session_factory, settings_loader, poll_seconds: float = 5.0) -> None:
-    """Run a bounded set of independent scene downloads."""
-
-    emit_status(
-        "Native Downloader",
-        "ACTIVE",
-        "concurrent scene scheduler; event driven; 60s recovery fallback",
-        severity="active",
-    )
+    emit_status("Native Downloader", "ACTIVE", "independent download and processing capacity", severity="active")
     await native_queue_signal.bind()
-
     with session_factory() as db:
         db.execute(
             update(NativeUsenetJob)
@@ -87,28 +103,27 @@ async def native_worker_loop(session_factory, settings_loader, poll_seconds: flo
         while True:
             _consume_finished(active)
             settings = settings_loader()
-            limit = _concurrency_limit(settings)
+            download_limit = _concurrency_limit(settings)
+            processing_limit = _processing_limit(settings)
+            configure_processing = getattr(worker, "configure_processing_limit", None)
+            if configure_processing is not None:
+                configure_processing(processing_limit)
+            statuses = _active_statuses(session_factory, set(active))
+            network_capacity = _network_capacity(statuses, download_limit=download_limit)
+            total_capacity = max(0, download_limit + processing_limit - len(active))
+            capacity = min(network_capacity, total_capacity)
 
-            capacity = max(0, limit - len(active))
-            for job_id in _queued_job_ids(
-                session_factory,
-                limit=capacity,
-                exclude=set(active),
-            ):
+            started = False
+            for job_id in _queued_job_ids(session_factory, limit=capacity, exclude=set(active)):
                 active[job_id] = asyncio.create_task(
                     worker.process_job(session_factory, settings, job_id),
                     name=f"scarletx-download-{job_id}",
                 )
-
-            if len(active) >= limit and active:
-                await asyncio.wait(
-                    tuple(active.values()),
-                    timeout=worker.NATIVE_QUEUE_RECOVERY_SECONDS,
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
+                started = True
+            if started:
+                await asyncio.sleep(0)
                 continue
-
-            await native_queue_signal.wait(worker.NATIVE_QUEUE_RECOVERY_SECONDS)
+            await _wait_for_capacity_change(active)
     finally:
         tasks = tuple(active.values())
         for task in tasks:
