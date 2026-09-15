@@ -1,3 +1,4 @@
+from hashlib import sha256
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -9,6 +10,7 @@ def test_approved_dashboard_is_native_in_core_runtime():
     app = (FRONTEND / "app.js").read_text(encoding="utf-8")
     css = (FRONTEND / "locked_dashboard.css").read_text(encoding="utf-8")
     footer_css = (FRONTEND / "locked_dashboard_footer.css").read_text(encoding="utf-8")
+    approved_assets_css = (FRONTEND / "approved_assets.css").read_text(encoding="utf-8")
 
     assert 'data-layout="approved-dashboard-v1"' in index
     assert 'data-dashboard-render="native-v2"' in index
@@ -27,6 +29,7 @@ def test_approved_dashboard_is_native_in_core_runtime():
     assert '<script src="/locked_dashboard_layout.js"></script>' not in index
     assert '<link rel="stylesheet" href="/locked_dashboard.css">' in index
     assert '<link rel="stylesheet" href="/locked_dashboard_footer.css">' in index
+    assert '<link rel="stylesheet" href="/approved_assets.css">' in index
     assert 'class="app-footer"' in index
     assert 'Discover More. Manage Smarter.' in index
 
@@ -51,6 +54,14 @@ def test_approved_dashboard_is_native_in_core_runtime():
     assert '.approved-dashboard-grid' in css
     assert '--approved-accent:#ff234f' in css.replace(' ', '')
     assert '.app-footer' in footer_css
+    assert "url('/scarletx-banner.webp')" in approved_assets_css
+    assert 'aspect-ratio:1321 / 163' in approved_assets_css
+    assert '.dashboard-hero::after{display:none!important}' in approved_assets_css
+
+
+def test_approved_banner_is_the_exact_locked_mock_crop():
+    banner = (FRONTEND / "scarletx-banner.webp").read_bytes()
+    assert sha256(banner).hexdigest() == "95cc5f51a068a850a9b3654de867de01e90468feea9ce2077c5e351cb9055dab"
 
 
 def test_frontend_image_build_has_no_dashboard_override_or_mutation_script():
@@ -58,12 +69,14 @@ def test_frontend_image_build_has_no_dashboard_override_or_mutation_script():
     for asset in (
         "scarletx-logo.webp",
         "scarletx-icon.webp",
-        "scarletx-hero.svg",
+        "scarletx-banner.webp",
         "locked_dashboard.css",
         "locked_dashboard_footer.css",
+        "approved_assets.css",
     ):
         assert f"COPY frontend/{asset} /usr/share/nginx/html/{asset}" in dockerfile
 
+    assert "COPY frontend/scarletx-hero.svg" not in dockerfile
     assert "COPY frontend/dashboard_v2.js" not in dockerfile
     assert "COPY frontend/locked_dashboard_layout.js" not in dockerfile
     assert "grep -q '/dashboard_v2.js'" not in dockerfile
