@@ -45,9 +45,9 @@ def test_known_blank_bundled_placeholders_are_hidden_but_real_config_is_kept():
 
 def test_approved_exact_logo_assets_are_used_in_shell():
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
-    assert '<div class="header-brand"><img src="/scarletx-wordmark.svg"' in index
-    assert '<div class="brand"><img src="/scarletx-wordmark.svg"' in index
-    assert 'href="/scarletx-icon.svg"' in index
+    assert '<div class="header-brand"><img src="/scarletx-wordmark.svg?v=approved-20260915-2"' in index
+    assert '<div class="brand"><img src="/scarletx-wordmark.svg?v=approved-20260915-2"' in index
+    assert 'href="/scarletx-icon.svg?v=approved-20260915-2"' in index
     assert "scarletx-logo.webp" not in index
     assert "scarletx-icon.webp" not in index
 
