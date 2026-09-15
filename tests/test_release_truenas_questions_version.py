@@ -22,8 +22,8 @@ def test_release_helper_versions_truenas_questions_service_names(tmp_path):
 
     assert questions in module.VERSIONED_FILES
 
-    current = "0.3.10-beta.4"
-    expected = "0.3.10"
+    current = "0.4.10-beta.4"
+    expected = "0.4.10"
     for relative_path in module.VERSIONED_FILES:
         path = tmp_path / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)

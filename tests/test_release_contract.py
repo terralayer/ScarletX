@@ -31,12 +31,12 @@ def load_release_version_module():
 
 
 def test_release_version_is_consistent():
-    assert VERSION.startswith("0.3.")
+    assert VERSION.startswith("0.4.")
     assert f'version = "{VERSION}"' in text("pyproject.toml")
     app = text("packaging/truenas/scarletx/app.yaml")
     values = text("packaging/truenas/scarletx/ix_values.yaml")
     assert f"app_version: {VERSION}" in app
-    assert "version: 1.0.5" in app
+    assert "version: 1.0.6" in app
     assert "changelog_url: https://github.com/terralayer/ScarletX/releases" in app
     assert re.search(rf"(?m)^\s+tag: {re.escape(VERSION)}$", values)
     assert "ghcr.io/terralayer/scarletx-web" in values
@@ -183,19 +183,19 @@ def test_release_notes_stay_in_release_tree_but_not_runtime_image():
 
 def test_release_version_calculator_only_increments_third_component():
     module = load_release_version_module()
-    assert module.next_patch_version("0.3.8") == "0.3.9"
-    assert module.next_patch_version("0.3.9") == "0.3.10"
-    assert module.next_patch_version("0.3.99") == "0.3.100"
+    assert module.next_patch_version("0.4.8") == "0.4.9"
+    assert module.next_patch_version("0.4.9") == "0.4.10"
+    assert module.next_patch_version("0.4.99") == "0.4.100"
 
-    for invalid in ("0.4.0", "1.3.8", "0.3", "0.3.8.1", "v0.3.8"):
+    for invalid in ("0.5.0", "1.3.8", "0.3", "0.4.8.1", "v0.4.8"):
         with pytest.raises(ValueError):
             module.next_patch_version(invalid)
 
 
 def test_release_apply_updates_versioned_files_and_creates_notes(tmp_path):
     module = load_release_version_module()
-    current = "0.3.8"
-    expected = "0.3.9"
+    current = "0.4.8"
+    expected = "0.4.9"
 
     for relative_path in module.VERSIONED_FILES:
         path = tmp_path / relative_path
@@ -247,15 +247,15 @@ def test_readme_documents_two_container_nginx_deployment():
 
 def test_release_calculator_promotes_beta_to_matching_stable_release():
     module = load_release_version_module()
-    assert module.next_release_version("0.3.9") == "0.3.10"
-    assert module.next_release_version("0.3.10-beta.1") == "0.3.10"
-    assert module.next_release_version("0.3.10-beta.2") == "0.3.10"
+    assert module.next_release_version("0.4.9") == "0.4.10"
+    assert module.next_release_version("0.4.10-beta.1") == "0.4.10"
+    assert module.next_release_version("0.4.10-beta.2") == "0.4.10"
 
 
 def test_release_apply_promotes_beta_without_incrementing_patch(tmp_path):
     module = load_release_version_module()
-    current = "0.3.10-beta.1"
-    expected = "0.3.10"
+    current = "0.4.10-beta.1"
+    expected = "0.4.10"
 
     for relative_path in module.VERSIONED_FILES:
         path = tmp_path / relative_path
@@ -268,7 +268,7 @@ def test_release_apply_promotes_beta_without_incrementing_patch(tmp_path):
         else:
             path.write_text(f"release marker {current}\n", encoding="utf-8")
 
-    next_version = module.apply_release(tmp_path, "Stable 0.3.10 release notes.")
+    next_version = module.apply_release(tmp_path, "Stable 0.4.10 release notes.")
     assert next_version == expected
     for relative_path in module.VERSIONED_FILES:
         updated = (tmp_path / relative_path).read_text(encoding="utf-8")
@@ -277,7 +277,7 @@ def test_release_apply_promotes_beta_without_incrementing_patch(tmp_path):
 
     notes = (tmp_path / f"RELEASE-NOTES-{expected}.md").read_text(encoding="utf-8")
     assert notes.startswith(f"# ScarletX {expected}\n")
-    assert "Stable 0.3.10 release notes." in notes
+    assert "Stable 0.4.10 release notes." in notes
 
 
 def test_release_helper_tracks_current_version_bearing_modules():
