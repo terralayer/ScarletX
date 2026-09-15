@@ -3,6 +3,8 @@ import json
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 
 def test_runtime_observability_records_request_and_database_metrics():
@@ -88,3 +90,68 @@ def test_install_observability_records_request_and_query_once_when_installed_twi
     after = runtime_observability.snapshot()
     assert after["requests"]["count"] - before["requests"]["count"] == 1
     assert after["database"]["count"] - before["database"]["count"] == 1
+
+
+def test_system_metrics_endpoint_reports_operational_runtime_state():
+    from scarletx.db import Base, get_session
+    from scarletx.models import NativeUsenetJob
+    from scarletx.observability_routes import router
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as db:
+        db.add(
+            NativeUsenetJob(
+                title="Active scene",
+                nzb_url="https://example.invalid/scene.nzb",
+                status="downloading",
+                speed_bps=2048.0,
+            )
+        )
+        db.commit()
+
+    app = FastAPI()
+    app.include_router(router)
+
+    def override_session():
+        with factory() as db:
+            yield db
+
+    app.dependency_overrides[get_session] = override_session
+    response = TestClient(app).get("/api/system/metrics")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert set(payload) == {
+        "requests",
+        "database",
+        "tpdb",
+        "queues",
+        "downloads",
+        "imports",
+        "process",
+        "disk",
+    }
+    assert payload["queues"]["native"]["downloading"] == 1
+    assert payload["downloads"]["active_speed_bps"] == 2048.0
+    assert payload["process"]["uptime_seconds"] >= 0
+    assert payload["process"]["cpu_seconds"] >= 0
+    assert payload["disk"]["total_bytes"] >= payload["disk"]["free_bytes"] > 0
+
+
+def test_health_contract_stays_lightweight_and_version_remains_040():
+    from scarletx.app import app
+
+    response = TestClient(app).get("/api/health")
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "app": "ScarletX",
+        "version": "0.4.0",
+        "upstream": "SceneCore 0.7.16",
+    }
