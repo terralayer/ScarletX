@@ -1,5 +1,9 @@
 import json
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, text
+
 
 def test_runtime_observability_records_request_and_database_metrics():
     from scarletx.observability import RuntimeObservability
@@ -59,3 +63,28 @@ def test_runtime_observability_distinguishes_tpdb_network_and_cache_latency():
     assert snapshot["network_avg_ms"] == 55.0
     assert snapshot["network_max_ms"] == 60.0
     assert snapshot["cache_hits"] == {"memory": 1, "disk": 1}
+
+
+def test_install_observability_records_request_and_query_once_when_installed_twice():
+    from scarletx.observability import install_observability, runtime_observability
+
+    app = FastAPI()
+
+    @app.get("/ping")
+    def ping():
+        return {"ok": True}
+
+    engine = create_engine("sqlite:///:memory:")
+    before = runtime_observability.snapshot()
+
+    install_observability(app, engine)
+    install_observability(app, engine)
+
+    response = TestClient(app).get("/ping")
+    assert response.status_code == 200
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT 1")).scalar_one() == 1
+
+    after = runtime_observability.snapshot()
+    assert after["requests"]["count"] - before["requests"]["count"] == 1
+    assert after["database"]["count"] - before["database"]["count"] == 1
