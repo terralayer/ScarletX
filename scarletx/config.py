@@ -93,6 +93,7 @@ class Settings(BaseModel):
     native_usenet_incomplete_dir: str = os.getenv("SCARLETX_USENET_INCOMPLETE_DIR", "./downloads/incomplete")
     native_usenet_complete_dir: str = os.getenv("SCARLETX_USENET_COMPLETE_DIR", "./downloads/complete")
     native_usenet_max_connections: int = _interactive_connection_cap(int(os.getenv("SCARLETX_USENET_MAX_CONNECTIONS", "200")))
+    native_usenet_concurrent_downloads: int = int(os.getenv("SCARLETX_USENET_CONCURRENT_DOWNLOADS", "2"))
     native_usenet_max_retries: int = int(os.getenv("SCARLETX_USENET_MAX_RETRIES", "2"))
     native_usenet_speed_limit_mb_s: float = float(os.getenv("SCARLETX_USENET_SPEED_LIMIT_MB_S", "0"))
     native_usenet_repair_enabled: bool = os.getenv("SCARLETX_USENET_REPAIR", "true").strip().lower() not in {"0","false","no","off"}
@@ -123,6 +124,11 @@ class Settings(BaseModel):
     @classmethod
     def _limit_native_usenet_connections(cls, value: int) -> int:
         return _interactive_connection_cap(value)
+
+    @field_validator("native_usenet_concurrent_downloads")
+    @classmethod
+    def _limit_native_usenet_concurrent_downloads(cls, value: int) -> int:
+        return max(1, min(int(value), 5))
 
     def native_usenet_providers(self):
         from .native_usenet import UsenetProviderConfig
