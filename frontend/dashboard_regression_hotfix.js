@@ -21,6 +21,38 @@
     render();
   }
 
+  function setApprovedNavActive(name) {
+    document.querySelectorAll('#nav button').forEach(button => {
+      button.classList.toggle('active', button.dataset.approvedNav === name);
+    });
+  }
+
+  function wireApprovedSidebarShortcuts() {
+    const discover = document.querySelector('[data-approved-nav="discover"]');
+    if (discover && !discover.dataset.bound) {
+      discover.dataset.bound = '1';
+      discover.addEventListener('click', () => {
+        view = 'scenes';
+        entityMode.scenes = 'search';
+        nav();
+        setApprovedNavActive('discover');
+        renderEntities('scenes');
+      });
+    }
+
+    const indexers = document.querySelector('[data-approved-nav="indexers"]');
+    if (indexers && !indexers.dataset.bound) {
+      indexers.dataset.bound = '1';
+      indexers.addEventListener('click', () => {
+        settingsTab = 'indexers';
+        view = 'settings';
+        nav();
+        setApprovedNavActive('indexers');
+        render();
+      });
+    }
+  }
+
   // Capture the click before any late-loaded override can swallow or replace it.
   document.addEventListener('click', event => {
     const card = event.target.closest('#stats .dashboard-stat');
@@ -69,6 +101,7 @@
     }
   });
 
+  wireApprovedSidebarShortcuts();
   observer.observe(document.documentElement, {childList: true, subtree: true});
   repairCompactStudioIcons();
 })();
