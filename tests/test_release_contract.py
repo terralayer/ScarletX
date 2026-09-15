@@ -36,7 +36,7 @@ def test_release_version_is_consistent():
     app = text("packaging/truenas/scarletx/app.yaml")
     values = text("packaging/truenas/scarletx/ix_values.yaml")
     assert f"app_version: {VERSION}" in app
-    assert "version: 1.0.6" in app
+    assert re.search(r"(?m)^version: \d+\.\d+\.\d+$", app)
     assert "changelog_url: https://github.com/terralayer/ScarletX/releases" in app
     assert re.search(rf"(?m)^\s+tag: {re.escape(VERSION)}$", values)
     assert "ghcr.io/terralayer/scarletx-web" in values
@@ -192,6 +192,19 @@ def test_release_version_calculator_only_increments_third_component():
             module.next_patch_version(invalid)
 
 
+def test_truenas_catalog_version_increments_for_release(tmp_path):
+    module = load_release_version_module()
+    app = tmp_path / module.CATALOG_METADATA_PATH
+    app.parent.mkdir(parents=True, exist_ok=True)
+    app.write_text("app_version: 0.4.8\nversion: 1.0.6\n", encoding="utf-8")
+
+    current, next_version = module.bump_truenas_catalog_version(tmp_path)
+
+    assert current == "1.0.6"
+    assert next_version == "1.0.7"
+    assert "version: 1.0.7" in app.read_text(encoding="utf-8")
+
+
 def test_release_apply_updates_versioned_files_and_creates_notes(tmp_path):
     module = load_release_version_module()
     current = "0.4.8"
@@ -205,6 +218,11 @@ def test_release_apply_updates_versioned_files_and_creates_notes(tmp_path):
                 f'[project]\nname = "scarletx"\nversion = "{current}"\n',
                 encoding="utf-8",
             )
+        elif relative_path == module.CATALOG_METADATA_PATH:
+            path.write_text(
+                f"app_version: {current}\nversion: 1.0.6\n",
+                encoding="utf-8",
+            )
         else:
             path.write_text(f"release marker {current}\n", encoding="utf-8")
 
@@ -214,6 +232,9 @@ def test_release_apply_updates_versioned_files_and_creates_notes(tmp_path):
         updated = (tmp_path / relative_path).read_text(encoding="utf-8")
         assert current not in updated
         assert expected in updated
+
+    app = (tmp_path / module.CATALOG_METADATA_PATH).read_text(encoding="utf-8")
+    assert "version: 1.0.7" in app
 
     notes = (tmp_path / f"RELEASE-NOTES-{expected}.md").read_text(encoding="utf-8")
     assert notes.startswith(f"# ScarletX {expected}\n")
@@ -265,6 +286,11 @@ def test_release_apply_promotes_beta_without_incrementing_patch(tmp_path):
                 f'[project]\nname = "scarletx"\nversion = "{current}"\n',
                 encoding="utf-8",
             )
+        elif relative_path == module.CATALOG_METADATA_PATH:
+            path.write_text(
+                f"app_version: {current}\nversion: 1.0.6\n",
+                encoding="utf-8",
+            )
         else:
             path.write_text(f"release marker {current}\n", encoding="utf-8")
 
@@ -274,6 +300,9 @@ def test_release_apply_promotes_beta_without_incrementing_patch(tmp_path):
         updated = (tmp_path / relative_path).read_text(encoding="utf-8")
         assert current not in updated
         assert expected in updated
+
+    app = (tmp_path / module.CATALOG_METADATA_PATH).read_text(encoding="utf-8")
+    assert "version: 1.0.7" in app
 
     notes = (tmp_path / f"RELEASE-NOTES-{expected}.md").read_text(encoding="utf-8")
     assert notes.startswith(f"# ScarletX {expected}\n")
