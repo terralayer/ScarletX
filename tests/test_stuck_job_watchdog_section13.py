@@ -6,6 +6,14 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 
 
+def _same_timezone(value, reference):
+    if value is None:
+        return None
+    if value.tzinfo is None and reference.tzinfo is not None:
+        return value.replace(tzinfo=reference.tzinfo)
+    return value
+
+
 def test_watchdog_columns_upgrade_existing_native_queue(tmp_path):
     from scarletx.migrations import ensure_native_watchdog_columns
 
@@ -60,7 +68,8 @@ def test_stale_job_retries_then_quarantines_without_blocking_other_work(tmp_path
         healthy = db.get(NativeUsenetJob, "healthy")
         assert stuck.status == "queued"
         assert stuck.watchdog_retries == 1
-        assert stuck.retry_after is not None and stuck.retry_after > now
+        retry_after = _same_timezone(stuck.retry_after, now)
+        assert retry_after is not None and retry_after > now
         assert stuck.quarantined is False
         assert healthy.status == "downloading"
 
