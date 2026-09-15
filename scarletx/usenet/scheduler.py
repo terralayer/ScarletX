@@ -74,13 +74,19 @@ def _consume_finished(active: dict[str, asyncio.Task]) -> None:
 
 
 async def _wait_for_capacity_change(active: dict[str, asyncio.Task]) -> None:
+    if not active:
+        await native_queue_signal.wait(worker.NATIVE_QUEUE_RECOVERY_SECONDS)
+        return
+
     signal_task = asyncio.create_task(native_queue_signal.wait(worker.NATIVE_QUEUE_RECOVERY_SECONDS))
     try:
-        await asyncio.wait(
+        done, _pending = await asyncio.wait(
             [*active.values(), signal_task],
             timeout=worker.NATIVE_QUEUE_RECOVERY_SECONDS,
             return_when=asyncio.FIRST_COMPLETED,
         )
+        if signal_task in done:
+            signal_task.result()
     finally:
         if not signal_task.done():
             signal_task.cancel()
