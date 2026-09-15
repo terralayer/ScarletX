@@ -108,6 +108,7 @@ def test_system_metrics_endpoint_reports_operational_runtime_state():
     with factory() as db:
         db.add(
             NativeUsenetJob(
+                id=1,
                 title="Active scene",
                 nzb_url="https://example.invalid/scene.nzb",
                 status="downloading",
