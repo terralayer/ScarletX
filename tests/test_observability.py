@@ -3,6 +3,8 @@ from importlib.metadata import version as package_version
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import httpx
+import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -144,6 +146,38 @@ def test_system_metrics_endpoint_reports_operational_runtime_state():
     assert payload["process"]["uptime_seconds"] >= 0
     assert payload["process"]["cpu_seconds"] >= 0
     assert payload["disk"]["total_bytes"] >= payload["disk"]["free_bytes"] > 0
+
+
+@pytest.mark.asyncio
+async def test_tpdb_get_records_network_latency_once_then_memory_cache_hit(tmp_path, monkeypatch):
+    from scarletx import tpdb
+    from scarletx.observability import RuntimeObservability
+
+    metrics = RuntimeObservability()
+    monkeypatch.setattr(tpdb, "runtime_observability", metrics, raising=False)
+    monkeypatch.setattr(tpdb, "TPDB_CACHE_ROOT", tmp_path / "tpdb")
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"id": "observed"}}, request=request)
+
+    client = tpdb.ThePornDBClient(
+        api_key="",
+        base_url="https://observability.invalid",
+        transport=httpx.MockTransport(handler),
+        max_retries=1,
+    )
+    path = "/scenes/observability-network-timing"
+    try:
+        assert await client._get(path) == {"data": {"id": "observed"}}
+        assert await client._get(path) == {"data": {"id": "observed"}}
+    finally:
+        await client.aclose()
+
+    snapshot = metrics.snapshot()["tpdb"]
+    assert snapshot["network_requests"] == 1
+    assert snapshot["network_failures"] == 0
+    assert snapshot["network_max_ms"] >= 0
+    assert snapshot["cache_hits"]["memory"] == 1
 
 
 def test_health_contract_stays_lightweight_and_matches_package_version():
