@@ -10,8 +10,8 @@ def test_approved_dashboard_shell_and_brand_assets_are_wired():
     behavior = (FRONTEND / "locked_dashboard_layout.js").read_text(encoding="utf-8")
 
     assert 'data-layout="approved-dashboard-v1"' in index
-    assert '/scarletx-wordmark.png' in index
-    assert '/scarletx-icon.png' in index
+    assert '/scarletx-wordmark.svg' in index
+    assert '/scarletx-icon.svg' in index
     assert '<span>Dashboard</span>' in index
     assert '<span>Performers</span>' in index
     assert '<span>Scenes</span>' in index
@@ -37,9 +37,9 @@ def test_approved_dashboard_shell_and_brand_assets_are_wired():
 def test_frontend_image_build_copies_locked_layout_assets():
     dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
     for asset in (
-        "scarletx-wordmark.png",
-        "scarletx-icon.png",
-        "scarletx-hero.jpg",
+        "scarletx-wordmark.svg",
+        "scarletx-icon.svg",
+        "scarletx-hero.svg",
         "locked_dashboard.css",
         "locked_dashboard_layout.js",
     ):
