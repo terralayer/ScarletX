@@ -1,0 +1,106 @@
+name: Prepare ScarletX 0.4.0
+
+on:
+  push:
+    branches: ["release/0.4.0"]
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release branch
+        uses: actions/checkout@v5
+        with:
+          ref: release/0.4.0
+          fetch-depth: 0
+
+      - name: Apply 0.4.0 release series metadata
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          current = "0.3.10"
+          target = "0.4.0"
+
+          versioned_files = (
+              "pyproject.toml",
+              "scarletx/__init__.py",
+              "scarletx/routes/application.py",
+              "README.md",
+              "BUILD-INFO.txt",
+              "start-scarletx.sh",
+              "Start-ScarletX.ps1",
+              "docker-compose.truenas.yml",
+              "scarletx/tpdb.py",
+              "scarletx/remote_art.py",
+              "scarletx/newznab.py",
+              "scarletx/usenet/worker.py",
+              "packaging/truenas/scarletx/app.yaml",
+              "packaging/truenas/scarletx/ix_values.yaml",
+              "packaging/truenas/scarletx/questions.yaml",
+          )
+
+          for relative in versioned_files:
+              path = Path(relative)
+              text = path.read_text(encoding="utf-8")
+              if current not in text:
+                  raise SystemExit(f"missing {current} release marker in {relative}")
+              path.write_text(text.replace(current, target), encoding="utf-8")
+
+          app_yaml = Path("packaging/truenas/scarletx/app.yaml")
+          text = app_yaml.read_text(encoding="utf-8")
+          if "version: 1.0.5" not in text:
+              raise SystemExit("expected TrueNAS catalog version 1.0.5")
+          app_yaml.write_text(text.replace("version: 1.0.5", "version: 1.0.6"), encoding="utf-8")
+
+          helper = Path("tools/release_version.py")
+          text = helper.read_text(encoding="utf-8")
+          text = text.replace("EXPECTED_MINOR = 3", "EXPECTED_MINOR = 4")
+          text = text.replace('EXPECTED_SERIES = "0.3"', 'EXPECTED_SERIES = "0.4"')
+          helper.write_text(text, encoding="utf-8")
+
+          contract = Path("tests/test_release_contract.py")
+          text = contract.read_text(encoding="utf-8")
+          text = text.replace('(\"0.4.0\", \"1.3.8\"', '(\"0.5.0\", \"1.3.8\"')
+          text = text.replace("0.3.", "0.4.")
+          text = text.replace("version: 1.0.5", "version: 1.0.6")
+          contract.write_text(text, encoding="utf-8")
+
+          qtest = Path("tests/test_release_truenas_questions_version.py")
+          qtest.write_text(qtest.read_text(encoding="utf-8").replace("0.3.", "0.4."), encoding="utf-8")
+
+          release_workflow = Path(".github/workflows/release.yml")
+          release_workflow.write_text(
+              release_workflow.read_text(encoding="utf-8").replace("0.3.x", "0.4.x"),
+              encoding="utf-8",
+          )
+
+          notes = Path("RELEASE-NOTES-0.4.0.md")
+          if notes.exists():
+              raise SystemExit("RELEASE-NOTES-0.4.0.md already exists")
+          notes.write_text(
+              "# ScarletX 0.4.0\n\n"
+              "ScarletX 0.4.0 introduces the approved redesigned dashboard and branding as the new release line.\n\n"
+              "Highlights:\n"
+              "- New ScarletX ribbon wordmark and application icon.\n"
+              "- Full-width dark dashboard shell with the approved header, sidebar, hero, statistics, recent scenes, upcoming releases, and footer layout.\n"
+              "- Existing ScarletX metadata, monitoring, library, search, downloader, and TrueNAS behavior retained.\n"
+              "- Fresh-install indexer placeholders remain blank while generic indexer functionality stays available.\n"
+              "- 0.4.x becomes the active release series for future patch releases.\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Commit prepared release metadata
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml scarletx README.md BUILD-INFO.txt start-scarletx.sh Start-ScarletX.ps1 docker-compose.truenas.yml packaging/truenas/scarletx tools/release_version.py tests/test_release_contract.py tests/test_release_truenas_questions_version.py .github/workflows/release.yml RELEASE-NOTES-0.4.0.md
+          git commit -m "Release ScarletX 0.4.0 metadata"
+          git push origin HEAD:release/0.4.0
