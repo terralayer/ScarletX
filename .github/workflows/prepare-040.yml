@@ -74,12 +74,6 @@ jobs:
           qtest = Path("tests/test_release_truenas_questions_version.py")
           qtest.write_text(qtest.read_text(encoding="utf-8").replace("0.3.", "0.4."), encoding="utf-8")
 
-          release_workflow = Path(".github/workflows/release.yml")
-          release_workflow.write_text(
-              release_workflow.read_text(encoding="utf-8").replace("0.3.x", "0.4.x"),
-              encoding="utf-8",
-          )
-
           notes = Path("RELEASE-NOTES-0.4.0.md")
           if notes.exists():
               raise SystemExit("RELEASE-NOTES-0.4.0.md already exists")
@@ -101,6 +95,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add pyproject.toml scarletx README.md BUILD-INFO.txt start-scarletx.sh Start-ScarletX.ps1 docker-compose.truenas.yml packaging/truenas/scarletx tools/release_version.py tests/test_release_contract.py tests/test_release_truenas_questions_version.py .github/workflows/release.yml RELEASE-NOTES-0.4.0.md
+          git add pyproject.toml scarletx README.md BUILD-INFO.txt start-scarletx.sh Start-ScarletX.ps1 docker-compose.truenas.yml packaging/truenas/scarletx tools/release_version.py tests/test_release_contract.py tests/test_release_truenas_questions_version.py RELEASE-NOTES-0.4.0.md
           git commit -m "Release ScarletX 0.4.0 metadata"
           git push origin HEAD:release/0.4.0
