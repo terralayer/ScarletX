@@ -8,6 +8,7 @@ from .http_security import install_authentication, install_security_headers, rem
 from .main import app
 from .media_dedup import install_runtime_dedup
 from .observability import install_observability
+from .observability_routes import router as observability_router
 from .routes import application as legacy_application
 from .routes.runtime_overrides import (
     dashboard_performers_runtime,
@@ -66,6 +67,7 @@ install_downloader_state_hotfixes(app)
 install_compact_studio_art_route(app)
 remove_legacy_api_key_middleware(app)
 app.include_router(auth_router)
+app.include_router(observability_router)
 install_authentication(
     app,
     session_factory=SessionLocal,
