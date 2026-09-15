@@ -40,10 +40,12 @@ def test_entity_requests_use_page_local_sequence_not_global_navigation_generatio
     assert "navigationGenerationCurrent(generation)" not in entity_requests
 
 
-def test_top_left_x_mark_is_removed_but_brand_word_remains():
+def test_top_left_brand_uses_approved_wordmark_without_legacy_mark():
     source = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     assert 'class="brandmark"' not in source
-    assert 'class="brandword">Scarlet<b>X</b>' in source
+    assert 'class="brandword"' not in source
+    assert '<img src="/scarletx-wordmark.svg" alt="ScarletX">' in source
+    assert '<link rel="icon" href="/scarletx-icon.svg" type="image/svg+xml">' in source
 
 
 def test_scene_and_library_studio_art_is_large_enough_to_read():

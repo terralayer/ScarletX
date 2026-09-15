@@ -22,12 +22,13 @@ def test_scarlet_dark_design_tokens_are_the_default_theme():
     assert "--line:#252b34" in page
 
 
-def test_sidebar_uses_wordmark_without_separate_x_logo():
+def test_header_uses_approved_ribbon_wordmark_and_app_icon():
     page = html()
     assert 'class="brandmark"' not in page
     assert '<span class="xslash xslash-a"></span>' not in page
     assert '<span class="xslash xslash-b"></span>' not in page
-    assert '<div class="brandword">Scarlet<b>X</b></div>' in page
+    assert '<img src="/scarletx-wordmark.svg" alt="ScarletX">' in page
+    assert '<link rel="icon" href="/scarletx-icon.svg" type="image/svg+xml">' in page
 
 
 def test_dark_theme_covers_primary_ui_surfaces():
