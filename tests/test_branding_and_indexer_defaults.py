@@ -37,7 +37,10 @@ def test_known_blank_bundled_placeholders_are_hidden_but_real_config_is_kept():
         {"name": "Custom", "url": "https://custom.invalid/api", "api_key": "", "enabled": True},
     ]))
     rows = settings.newznab_indexers()
-    assert [(row.name, row.api_key) for row in rows] == [("NZBGeek", "configured"), ("Custom", "")]
+    assert [(row.name, row.api_key.get_secret_value()) for row in rows] == [
+        ("NZBGeek", "configured"),
+        ("Custom", ""),
+    ]
 
 
 def test_approved_exact_logo_assets_are_used_in_shell():
