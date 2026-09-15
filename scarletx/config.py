@@ -1,15 +1,30 @@
 import json
 import os
-from pydantic import BaseModel, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator
 
 DEFAULT_ADULT_INDEXER_CATEGORIES = [6000, 6010, 6020, 6040]
-DEV_NZBGEEK_API_KEY = os.getenv("SCARLETX_NZBGEEK_API_KEY", "")
+LEGACY_BUNDLED_INDEXER_NAMES = {
+    "nzbgeek",
+    "treasure maps",
+    "treasure-maps",
+    "scenenzbs",
+    "nzb.life",
+    "nzb life",
+    "nzb.su",
+    "nzb su",
+    "usenet-crawler",
+    "usenet crawler",
+    "usenetcrawler",
+}
+# Retained for compatibility with older settings migrations. These are
+# intentionally blank: indexers must be added explicitly by the user.
+DEV_NZBGEEK_API_KEY = ""
 DEV_NZBGEEK_API_URL = os.getenv("SCARLETX_NZBGEEK_API_URL", "https://api.nzbgeek.info/api")
-DEV_TREASURE_MAPS_API_KEY = os.getenv("SCARLETX_TREASURE_MAPS_API_KEY", "")
+DEV_TREASURE_MAPS_API_KEY = ""
 DEV_TREASURE_MAPS_API_URL = os.getenv("SCARLETX_TREASURE_MAPS_API_URL", "https://treasure-maps.com/api")
-DEV_NZBLIFE_API_KEY = os.getenv("SCARLETX_NZBLIFE_API_KEY", "")
+DEV_NZBLIFE_API_KEY = ""
 DEV_NZBLIFE_API_URL = os.getenv("SCARLETX_NZBLIFE_API_URL", "https://api.nzb.life")
-DEV_USENET_CRAWLER_API_KEY = os.getenv("SCARLETX_USENET_CRAWLER_API_KEY", "")
+DEV_USENET_CRAWLER_API_KEY = ""
 DEV_USENET_CRAWLER_API_URL = os.getenv("SCARLETX_USENET_CRAWLER_API_URL", "https://www.usenet-crawler.com/api")
 DEV_ASTRAWEB_HOST = os.getenv("SCARLETX_ASTRAWEB_HOST", "us.astraweb.com")
 DEV_ASTRAWEB_PORT = int(os.getenv("SCARLETX_ASTRAWEB_PORT", "563"))
@@ -60,47 +75,11 @@ def _interactive_connection_cap(requested: int, *, effective_cpus: int | None = 
 
 
 def _default_indexers() -> str:
+    # Fresh ScarletX installs intentionally start with zero indexers. An
+    # administrator may still provide an explicit JSON configuration via the
+    # generic indexer environment variable.
     raw = os.getenv("SCARLETX_NEWZNAB_INDEXERS_JSON", "")
-    if raw.strip():
-        return raw
-    return json.dumps([
-        {
-            "name": "NZBGeek",
-            "url": DEV_NZBGEEK_API_URL,
-            "api_key": DEV_NZBGEEK_API_KEY,
-            "adult_categories": list(DEFAULT_ADULT_INDEXER_CATEGORIES),
-            "enabled": True,
-            "rss_enabled": True,
-            "priority": 25,
-        },
-        {
-            "name": "Treasure Maps",
-            "url": DEV_TREASURE_MAPS_API_URL,
-            "api_key": DEV_TREASURE_MAPS_API_KEY,
-            "adult_categories": list(DEFAULT_ADULT_INDEXER_CATEGORIES),
-            "enabled": True,
-            "rss_enabled": True,
-            "priority": 20,
-        },
-        {
-            "name": "NZB.life",
-            "url": DEV_NZBLIFE_API_URL,
-            "api_key": DEV_NZBLIFE_API_KEY,
-            "adult_categories": list(DEFAULT_ADULT_INDEXER_CATEGORIES),
-            "enabled": True,
-            "rss_enabled": True,
-            "priority": 15,
-        },
-        {
-            "name": "Usenet-Crawler",
-            "url": DEV_USENET_CRAWLER_API_URL,
-            "api_key": DEV_USENET_CRAWLER_API_KEY,
-            "adult_categories": list(DEFAULT_ADULT_INDEXER_CATEGORIES),
-            "enabled": True,
-            "rss_enabled": True,
-            "priority": 10,
-        }
-    ])
+    return raw if raw.strip() else "[]"
 
 
 class Settings(BaseModel):
@@ -108,7 +87,7 @@ class Settings(BaseModel):
     ui_auth_enabled: bool = False
     theporndb_api_key: SecretStr = SecretStr(os.getenv("SCARLETX_TPDB_API_KEY", ""))
     theporndb_base_url: str = os.getenv("SCARLETX_TPDB_BASE_URL", "https://api.theporndb.net")
-    newznab_indexers_json: SecretStr = SecretStr(_default_indexers())
+    newznab_indexers_json: SecretStr = Field(default_factory=lambda: SecretStr(_default_indexers()))
     native_usenet_enabled: bool = os.getenv("SCARLETX_NATIVE_USENET_ENABLED", "true").strip().lower() not in {"0","false","no","off"}
     native_usenet_providers_json: SecretStr = SecretStr(os.getenv("SCARLETX_USENET_PROVIDERS_JSON", "[]"))
     native_usenet_incomplete_dir: str = os.getenv("SCARLETX_USENET_INCOMPLETE_DIR", "./downloads/incomplete")
@@ -153,13 +132,18 @@ class Settings(BaseModel):
             raw = []
         return [UsenetProviderConfig.model_validate(item) for item in raw]
 
-
     def newznab_indexers(self):
         from .newznab import NewznabIndexer
         raw = json.loads(self.newznab_indexers_json.get_secret_value() or "[]")
         cleaned = []
         for item in raw:
             item = dict(item)
+            # Remove the old bundled blank placeholders on upgraded installs.
+            # A real user-configured row, including one of these services with
+            # an API key, is preserved.
+            name = str(item.get("name") or "").strip().casefold()
+            if name in LEGACY_BUNDLED_INDEXER_NAMES and not str(item.get("api_key") or "").strip():
+                continue
             # Old SceneCore fields are ignored; only adult Newznab categories remain.
             if not item.get("adult_categories"):
                 item["adult_categories"] = item.get("categories") or list(DEFAULT_ADULT_INDEXER_CATEGORIES)

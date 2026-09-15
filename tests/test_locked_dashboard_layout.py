@@ -12,8 +12,8 @@ def test_approved_dashboard_is_native_in_core_runtime():
 
     assert 'data-layout="approved-dashboard-v1"' in index
     assert 'data-dashboard-render="native-v2"' in index
-    assert '/scarletx-wordmark.svg' not in index
-    assert '/scarletx-icon.svg' in index
+    assert '/scarletx-logo.webp' in index
+    assert '/scarletx-icon.webp' in index
     assert '<span>Dashboard</span>' in index
     assert '<span>Performers</span>' in index
     assert '<span>Scenes</span>' in index
@@ -56,7 +56,8 @@ def test_approved_dashboard_is_native_in_core_runtime():
 def test_frontend_image_build_has_no_dashboard_override_or_mutation_script():
     dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
     for asset in (
-        "scarletx-icon.svg",
+        "scarletx-logo.webp",
+        "scarletx-icon.webp",
         "scarletx-hero.svg",
         "locked_dashboard.css",
         "locked_dashboard_footer.css",
