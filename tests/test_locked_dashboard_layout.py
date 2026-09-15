@@ -7,6 +7,7 @@ FRONTEND = ROOT / "frontend"
 def test_approved_dashboard_shell_and_brand_assets_are_wired():
     index = (FRONTEND / "index.html").read_text(encoding="utf-8")
     css = (FRONTEND / "locked_dashboard.css").read_text(encoding="utf-8")
+    footer_css = (FRONTEND / "locked_dashboard_footer.css").read_text(encoding="utf-8")
     behavior = (FRONTEND / "locked_dashboard_layout.js").read_text(encoding="utf-8")
 
     assert 'data-layout="approved-dashboard-v1"' in index
@@ -23,11 +24,15 @@ def test_approved_dashboard_shell_and_brand_assets_are_wired():
     assert '<span>Settings</span>' in index
     assert '<script src="/locked_dashboard_layout.js"></script>' in index
     assert '<link rel="stylesheet" href="/locked_dashboard.css">' in index
+    assert '<link rel="stylesheet" href="/locked_dashboard_footer.css">' in index
+    assert 'class="app-footer"' in index
+    assert 'Discover More. Manage Smarter.' in index
 
     assert '.dashboard-hero' in css
     assert '.approved-stat-grid' in css
     assert '.approved-dashboard-grid' in css
     assert '--approved-accent:#ff234f' in css.replace(' ', '')
+    assert '.app-footer' in footer_css
 
     assert 'function applyApprovedDashboardLayout' in behavior
     assert 'Your Adult Media Library, Automated.' in behavior
@@ -41,6 +46,7 @@ def test_frontend_image_build_copies_locked_layout_assets():
         "scarletx-icon.svg",
         "scarletx-hero.svg",
         "locked_dashboard.css",
+        "locked_dashboard_footer.css",
         "locked_dashboard_layout.js",
     ):
         assert f"COPY frontend/{asset} /usr/share/nginx/html/{asset}" in dockerfile
