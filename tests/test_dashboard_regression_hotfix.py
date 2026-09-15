@@ -8,14 +8,18 @@ def test_dashboard_hotfix_is_loaded_last():
     assert '<script src="/dashboard_regression_hotfix.js"></script>' in index
 
 
-def test_dashboard_cards_are_force_bound_to_respective_pages():
+def test_dashboard_cards_prefer_native_explicit_navigation_targets():
     source = (ROOT / "frontend" / "dashboard_regression_hotfix.js").read_text(encoding="utf-8")
     assert "#stats .dashboard-stat" in source
-    assert "Scenes: 'scenes'" in source
+    assert "return card.dataset.statGo || dashboardTargets[label] || null" in source
     assert "Performers: 'performers'" in source
     assert "Studios: 'studios'" in source
     assert "Wanted: 'wanted'" in source
     assert "Storage: 'library'" in source
+
+    app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    assert "dashboardStat(dashboardIcons.scenes" in app
+    assert "'In your library','library'" in app.replace(" ", "")
 
 
 def test_dashboard_scene_table_restores_performers_column():
