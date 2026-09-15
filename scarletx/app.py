@@ -8,7 +8,7 @@ from .http_security import install_authentication, install_security_headers, rem
 from .main import app
 from .media_dedup import install_runtime_dedup
 from .observability import install_observability
-from .observability_routes import router as observability_router
+from .observability_routes import system_metrics
 from .routes import application as legacy_application
 from .routes.runtime_overrides import (
     dashboard_performers_runtime,
@@ -56,6 +56,13 @@ def _add_dashboard_routes() -> None:
         app.add_api_route(path, endpoint, methods=["GET"], name=name)
 
 
+def _add_observability_route() -> None:
+    path = "/api/system/metrics"
+    if any(getattr(route, "path", None) == path for route in app.router.routes):
+        return
+    app.add_api_route(path, system_metrics, methods=["GET"], name="system_metrics")
+
+
 # The legacy module still owns most domain API route objects. Patch behavior in
 # place where possible so route ownership, middleware, and compatibility remain stable.
 _remove_legacy_web_route()
@@ -67,7 +74,7 @@ install_downloader_state_hotfixes(app)
 install_compact_studio_art_route(app)
 remove_legacy_api_key_middleware(app)
 app.include_router(auth_router)
-app.include_router(observability_router)
+_add_observability_route()
 install_authentication(
     app,
     session_factory=SessionLocal,
