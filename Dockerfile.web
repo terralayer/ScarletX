@@ -30,10 +30,21 @@ COPY frontend/dashboard_settings_overrides.js /usr/share/nginx/html/dashboard_se
 COPY frontend/dashboard_regression_hotfix.js /usr/share/nginx/html/dashboard_regression_hotfix.js
 COPY frontend/scarletx-logo.webp /usr/share/nginx/html/scarletx-logo.webp
 COPY frontend/scarletx-icon.webp /usr/share/nginx/html/scarletx-icon.webp
-COPY frontend/scarletx-banner.webp /usr/share/nginx/html/scarletx-banner.webp
+COPY frontend/scarletx-banner.b64.1 /tmp/scarletx-banner.b64.1
+COPY frontend/scarletx-banner.b64.2 /tmp/scarletx-banner.b64.2
+COPY frontend/scarletx-banner.b64.3 /tmp/scarletx-banner.b64.3
+COPY frontend/scarletx-banner.b64.4 /tmp/scarletx-banner.b64.4
 COPY frontend/locked_dashboard.css /usr/share/nginx/html/locked_dashboard.css
 COPY frontend/locked_dashboard_footer.css /usr/share/nginx/html/locked_dashboard_footer.css
 COPY frontend/approved_assets.css /usr/share/nginx/html/approved_assets.css
+
+# Reconstruct the approved dashboard crop byte-for-byte and fail the image
+# build if the checked-in source is ever modified unexpectedly.
+RUN set -eux; \
+    cat /tmp/scarletx-banner.b64.1 /tmp/scarletx-banner.b64.2 /tmp/scarletx-banner.b64.3 /tmp/scarletx-banner.b64.4 \
+      | base64 -d > /usr/share/nginx/html/scarletx-banner.webp; \
+    echo '236fc1fdadd8c34fa5909dcf7d5dae6e346b410e04bf89c0409fc341fee02cad  /usr/share/nginx/html/scarletx-banner.webp' | sha256sum -c -; \
+    rm -f /tmp/scarletx-banner.b64.*
 
 # Bake the authentication assets into the static HTML at image-build time.
 # Nginx serves the finished page directly; Python never renders or rewrites UI.
