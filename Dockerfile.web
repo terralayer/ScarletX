@@ -30,9 +30,10 @@ COPY frontend/dashboard_settings_overrides.js /usr/share/nginx/html/dashboard_se
 COPY frontend/dashboard_regression_hotfix.js /usr/share/nginx/html/dashboard_regression_hotfix.js
 COPY frontend/scarletx-logo.webp /usr/share/nginx/html/scarletx-logo.webp
 COPY frontend/scarletx-icon.webp /usr/share/nginx/html/scarletx-icon.webp
-COPY frontend/scarletx-hero.svg /usr/share/nginx/html/scarletx-hero.svg
+COPY frontend/scarletx-banner.webp /usr/share/nginx/html/scarletx-banner.webp
 COPY frontend/locked_dashboard.css /usr/share/nginx/html/locked_dashboard.css
 COPY frontend/locked_dashboard_footer.css /usr/share/nginx/html/locked_dashboard_footer.css
+COPY frontend/approved_assets.css /usr/share/nginx/html/approved_assets.css
 
 # Bake the authentication assets into the static HTML at image-build time.
 # Nginx serves the finished page directly; Python never renders or rewrites UI.
@@ -46,6 +47,7 @@ RUN set -eux; \
     grep -q '/ui_overrides.css' /usr/share/nginx/html/index.html; \
     grep -q '/locked_dashboard.css' /usr/share/nginx/html/index.html; \
     grep -q '/locked_dashboard_footer.css' /usr/share/nginx/html/index.html; \
+    grep -q '/approved_assets.css' /usr/share/nginx/html/index.html; \
     grep -q '/app.js' /usr/share/nginx/html/index.html; \
     grep -q '/navigation_error_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/ui_overrides.js' /usr/share/nginx/html/index.html; \
