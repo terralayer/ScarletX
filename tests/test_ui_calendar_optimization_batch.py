@@ -44,8 +44,8 @@ def test_top_left_brand_uses_approved_exact_logo():
     source = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     assert 'class="brandmark"' not in source
     assert 'class="brandword"' not in source
-    assert '<div class="header-brand"><img src="/scarletx-wordmark.svg" alt="ScarletX"></div>' in source
-    assert '<link rel="icon" href="/scarletx-icon.svg" type="image/svg+xml">' in source
+    assert '<div class="header-brand"><img src="/scarletx-wordmark.svg?v=approved-20260915-2" alt="ScarletX"></div>' in source
+    assert '<link rel="icon" href="/scarletx-icon.svg?v=approved-20260915-2" type="image/svg+xml">' in source
 
 
 def test_scene_and_library_studio_art_is_large_enough_to_read():
