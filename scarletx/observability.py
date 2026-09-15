@@ -6,9 +6,15 @@ import logging
 import os
 import re
 import threading
+import time
+
+from fastapi import FastAPI
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 
 _LOG = logging.getLogger("scarletx.observability")
 _TABLE_RE = re.compile(r"\b(?:FROM|INTO|UPDATE|JOIN)\s+[\"`\[]?([A-Za-z_][A-Za-z0-9_]*)", re.IGNORECASE)
+_DB_TIMER_KEY = "_scarletx_observability_query_starts"
 
 
 def _milliseconds(seconds: float) -> float:
@@ -140,3 +146,67 @@ class RuntimeObservability:
 
 
 runtime_observability = RuntimeObservability()
+
+
+def install_observability(app: FastAPI, engine: Engine) -> None:
+    """Install low-overhead request and SQL timing exactly once."""
+
+    if not getattr(app.state, "scarletx_observability_installed", False):
+        @app.middleware("http")
+        async def _observe_request(request, call_next):
+            started = time.perf_counter()
+            status_code = 500
+            try:
+                response = await call_next(request)
+                status_code = response.status_code
+                return response
+            finally:
+                try:
+                    runtime_observability.record_request(
+                        request.method,
+                        request.url.path,
+                        status_code,
+                        time.perf_counter() - started,
+                    )
+                except Exception:
+                    pass
+
+        app.state.scarletx_observability_installed = True
+
+    if getattr(engine, "_scarletx_observability_installed", False):
+        return
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def _before_cursor_execute(conn, _cursor, _statement, _parameters, _context, _executemany):
+        try:
+            conn.info.setdefault(_DB_TIMER_KEY, []).append(time.perf_counter())
+        except Exception:
+            pass
+
+    @event.listens_for(engine, "after_cursor_execute")
+    def _after_cursor_execute(conn, _cursor, statement, _parameters, _context, _executemany):
+        try:
+            starts = conn.info.get(_DB_TIMER_KEY) or []
+            if not starts:
+                return
+            started = starts.pop()
+            runtime_observability.record_db_query(statement, time.perf_counter() - started)
+        except Exception:
+            pass
+
+    @event.listens_for(engine, "handle_error")
+    def _handle_cursor_error(exception_context):
+        try:
+            conn = exception_context.connection
+            if conn is None:
+                return
+            starts = conn.info.get(_DB_TIMER_KEY) or []
+            if not starts:
+                return
+            started = starts.pop()
+            statement = getattr(exception_context, "statement", None) or "UNKNOWN"
+            runtime_observability.record_db_query(statement, time.perf_counter() - started)
+        except Exception:
+            pass
+
+    setattr(engine, "_scarletx_observability_installed", True)
