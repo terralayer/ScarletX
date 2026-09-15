@@ -158,7 +158,7 @@ def test_recent_performers_follow_latest_downloaded_release(tmp_path):
     engine.dispose()
 
 
-def test_dashboard_removes_activity_panels_and_adds_recent_release_studios_and_performers():
+def test_dashboard_uses_approved_native_recent_and_upcoming_panels():
     source = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
     compatibility = (ROOT / "frontend" / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
     app_source = (ROOT / "scarletx" / "app.py").read_text(encoding="utf-8")
@@ -166,16 +166,17 @@ def test_dashboard_removes_activity_panels_and_adds_recent_release_studios_and_p
 
     assert "Activity Queue" not in source
     assert "Recent Activity" not in source
-    assert "/api/activity/queue" not in dashboard
+    assert "/api/activity/queue" in dashboard
     assert "/api/history" not in dashboard
-    assert "Recently Released Scenes" in source
-    assert "Studios with Recent Releases" in source
-    assert "Performers with Recent Releases" in source
-    assert "/api/dashboard/studios?limit=8" in source
-    assert "/api/dashboard/performers?limit=8" in source
-    assert "data-dashboard-performer" in source
-    assert source.index("Studios with Recent Releases") < source.index("Performers with Recent Releases")
-    assert source.index("Performers with Recent Releases") < source.index("Upcoming")
+    assert "Recent Scenes" in dashboard
+    assert "Upcoming Releases" in dashboard
+    assert "Studios with Recent Releases" not in dashboard
+    assert "Performers with Recent Releases" not in dashboard
+    assert "Recently Released Scenes" not in dashboard
+    assert "/api/dashboard/studios?limit=8" not in dashboard
+    assert "/api/dashboard/performers?limit=8" not in dashboard
+    assert "data-dashboard-performer" not in dashboard
+    assert "dashboardStat(dashboardIcons.downloads" in dashboard
     assert "Recently Released Scenes" not in compatibility
     assert "dashboard=async function" not in compatibility
     assert '"/api/dashboard/performers"' in app_source

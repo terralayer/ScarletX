@@ -52,7 +52,10 @@ def test_dashboard_uses_downloaded_scene_total_and_recent_page():
 
     assert "/api/dashboard/scenes?limit=8" in source
     assert "recent.total" in source
-    assert "['▣','Scenes',recent.total||0,'Downloaded','library']" in source
+    assert "dashboardStat(dashboardIcons.scenes" in source
+    assert "recent.total || 0" in source
+    assert "'In your library'" in source
+    assert "'library'" in source
     assert "No downloaded scenes yet." in source
     assert "dashboard=async function" not in compatibility
     assert '<script src="/dashboard_settings_overrides.js"></script>' in index
@@ -61,10 +64,14 @@ def test_dashboard_uses_downloaded_scene_total_and_recent_page():
 
 def test_dashboard_scene_links_open_media_library():
     source = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    dashboard = source[source.index("async function dashboard()"):source.index("function performerLinks")]
+    dashboard_core = source[source.index("function bindDashboardStats"):source.index("function performerLinks")]
 
-    assert '<button class="linkbtn" data-go="library">View library</button>' in source
-    assert "['▣','Scenes',recent.total||0,'Downloaded','library']" in source
-    assert 'data-stat-go="${x[4]}"' in source
+    assert 'data-go="library">View All</button>' in dashboard
+    assert "dashboardStat(dashboardIcons.scenes" in dashboard
+    assert "recent.total || 0" in dashboard
+    assert "'library'" in dashboard
+    assert 'data-stat-go="${target}"' in dashboard_core
 
 
 def test_dashboard_downloaded_scene_route_is_registered_once():
