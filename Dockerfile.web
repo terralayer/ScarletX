@@ -21,6 +21,7 @@ COPY frontend/auth.css /usr/share/nginx/html/auth.css
 COPY frontend/auth.js /usr/share/nginx/html/auth.js
 COPY frontend/styles.css /usr/share/nginx/html/styles.css
 COPY frontend/app.js /usr/share/nginx/html/app.js
+COPY frontend/dashboard_v2.js /usr/share/nginx/html/dashboard_v2.js
 COPY frontend/navigation_error_overrides.js /usr/share/nginx/html/navigation_error_overrides.js
 COPY frontend/ui_overrides.css /usr/share/nginx/html/ui_overrides.css
 COPY frontend/ui_overrides.js /usr/share/nginx/html/ui_overrides.js
@@ -33,7 +34,6 @@ COPY frontend/scarletx-icon.svg /usr/share/nginx/html/scarletx-icon.svg
 COPY frontend/scarletx-hero.svg /usr/share/nginx/html/scarletx-hero.svg
 COPY frontend/locked_dashboard.css /usr/share/nginx/html/locked_dashboard.css
 COPY frontend/locked_dashboard_footer.css /usr/share/nginx/html/locked_dashboard_footer.css
-COPY frontend/locked_dashboard_layout.js /usr/share/nginx/html/locked_dashboard_layout.js
 
 # Bake the authentication assets into the static HTML at image-build time.
 # Nginx serves the finished page directly; Python never renders or rewrites UI.
@@ -48,13 +48,13 @@ RUN set -eux; \
     grep -q '/locked_dashboard.css' /usr/share/nginx/html/index.html; \
     grep -q '/locked_dashboard_footer.css' /usr/share/nginx/html/index.html; \
     grep -q '/app.js' /usr/share/nginx/html/index.html; \
+    grep -q '/dashboard_v2.js' /usr/share/nginx/html/index.html; \
     grep -q '/navigation_error_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/ui_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/activity_studio_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/studio_art_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/dashboard_settings_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/dashboard_regression_hotfix.js' /usr/share/nginx/html/index.html; \
-    grep -q '/locked_dashboard_layout.js' /usr/share/nginx/html/index.html; \
     grep -q '/scarletx-wordmark.svg' /usr/share/nginx/html/index.html; \
     grep -q 'authGateBoot(boot);' /usr/share/nginx/html/app.js
 
