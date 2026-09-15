@@ -45,13 +45,14 @@ def test_known_blank_bundled_placeholders_are_hidden_but_real_config_is_kept():
 
 def test_approved_exact_logo_assets_are_used_in_shell():
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
-    assert '<div class="header-brand"><img src="/scarletx-logo.webp"' in index
-    assert '<div class="brand"><img src="/scarletx-logo.webp"' in index
-    assert 'href="/scarletx-icon.webp"' in index
-    assert 'class="approved-user-icon" src="/scarletx-icon.webp"' in index
+    assert '<div class="header-brand"><img src="/scarletx-wordmark.svg"' in index
+    assert '<div class="brand"><img src="/scarletx-wordmark.svg"' in index
+    assert 'href="/scarletx-icon.svg"' in index
+    assert "scarletx-logo.webp" not in index
+    assert "scarletx-icon.webp" not in index
 
 
 def test_exact_logo_assets_are_bundled_into_web_image():
     dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
-    assert "COPY frontend/scarletx-logo.webp /usr/share/nginx/html/scarletx-logo.webp" in dockerfile
-    assert "COPY frontend/scarletx-icon.webp /usr/share/nginx/html/scarletx-icon.webp" in dockerfile
+    assert "COPY frontend/scarletx-wordmark.svg /usr/share/nginx/html/scarletx-wordmark.svg" in dockerfile
+    assert "COPY frontend/scarletx-icon.svg /usr/share/nginx/html/scarletx-icon.svg" in dockerfile

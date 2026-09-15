@@ -1,0 +1,10 @@
+body[data-layout="approved-dashboard-v1"] .nav .ico{width:22px;height:22px;display:grid;place-items:center;flex:0 0 22px;color:#b9c5d4;font-size:0}
+body[data-layout="approved-dashboard-v1"] .nav .ico svg{width:22px;height:22px;display:block;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+body[data-layout="approved-dashboard-v1"] .nav button.active .ico{color:#ff5272}
+body[data-layout="approved-dashboard-v1"] .searchmark{display:grid;place-items:center;width:24px;height:24px;top:10px;font-size:0}
+body[data-layout="approved-dashboard-v1"] .searchmark svg{width:22px;height:22px;display:block;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+body[data-layout="approved-dashboard-v1"] .queue-glyph{display:grid;place-items:center;width:24px;height:24px;font-size:0}
+body[data-layout="approved-dashboard-v1"] .queue-glyph svg{width:22px;height:22px;display:block;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+body[data-layout="approved-dashboard-v1"] .profile-glyph{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:#bfc9d7;background:transparent}
+body[data-layout="approved-dashboard-v1"] .profile-glyph svg{width:28px;height:28px;display:block;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+body[data-layout="approved-dashboard-v1"] .header-brand img{display:block;width:282px;max-width:100%;height:auto}
