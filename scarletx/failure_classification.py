@@ -22,8 +22,11 @@ class FailureClassification:
 
 def _safe_detail(exc: BaseException) -> str:
     text = f"{exc.__class__.__name__}: {exc}".strip()
-    text = _SECRET_ASSIGNMENT.sub(lambda match: f"{match.group(1)}=[REDACTED]", text)
-    text = _BEARER_VALUE.sub("Bearer [REDACTED]", text)
+    # Remove the secret-bearing assignment as a whole instead of preserving the
+    # key name. This keeps diagnostics from exposing either credentials or a
+    # searchable credential-shaped token such as ``password=...``.
+    text = _SECRET_ASSIGNMENT.sub("[REDACTED]", text)
+    text = _BEARER_VALUE.sub("[REDACTED]", text)
     # Keep operational messages useful while preventing giant provider/tool output
     # from being copied into queue rows and history events.
     return text[:_MAX_DETAIL]
