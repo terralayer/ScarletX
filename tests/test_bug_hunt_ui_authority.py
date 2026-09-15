@@ -11,10 +11,14 @@ def test_recent_release_dashboard_lives_in_core_and_all_stats_navigate():
     dashboard = app[app.index("async function dashboard()"):app.index("function performerLinks")]
 
     assert "dashboard=async function" not in stale
-    assert "Studios with Recent Releases" in dashboard
-    assert "Performers with Recent Releases" in dashboard
-    assert "Recently Released Scenes" in dashboard
-    for target in ("library", "performers", "studios", "wanted"):
+    assert "Welcome to <span>ScarletX</span>" in dashboard
+    assert "Discover. Monitor. Organize. Enjoy." in dashboard
+    assert "Recent Scenes" in dashboard
+    assert "Upcoming Releases" in dashboard
+    assert "Studios with Recent Releases" not in dashboard
+    assert "Performers with Recent Releases" not in dashboard
+    assert "Recently Released Scenes" not in dashboard
+    for target in ("library", "performers", "studios", "calendar", "activity"):
         assert f"'{target}'" in dashboard
     assert "data-stat-go" in dashboard
     assert "bindDashboardStats()" in dashboard
