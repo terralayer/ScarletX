@@ -1,4 +1,3 @@
-import base64
 from hashlib import sha256
 from pathlib import Path
 
@@ -61,12 +60,8 @@ def test_approved_dashboard_is_native_in_core_runtime():
     assert '.dashboard-hero::after{display:none!important}' in approved_assets_css
 
 
-def test_approved_banner_source_reconstructs_to_locked_bytes():
-    encoded = "".join(
-        (FRONTEND / f"scarletx-banner.b64.{part}").read_text(encoding="ascii").strip()
-        for part in range(1, 5)
-    )
-    banner = base64.b64decode(encoded, validate=True)
+def test_approved_banner_is_byte_locked():
+    banner = (FRONTEND / "scarletx-banner.webp").read_bytes()
     assert sha256(banner).hexdigest() == BANNER_SHA256
     assert banner.startswith(b"RIFF")
     assert b"WEBP" in banner[:16]
@@ -77,17 +72,14 @@ def test_frontend_image_build_has_no_dashboard_override_or_mutation_script():
     for asset in (
         "scarletx-logo.webp",
         "scarletx-icon.webp",
+        "scarletx-banner.webp",
         "locked_dashboard.css",
         "locked_dashboard_footer.css",
         "approved_assets.css",
     ):
         assert f"COPY frontend/{asset} /usr/share/nginx/html/{asset}" in dockerfile
 
-    for part in range(1, 5):
-        assert f"COPY frontend/scarletx-banner.b64.{part} /tmp/scarletx-banner.b64.{part}" in dockerfile
     assert BANNER_SHA256 in dockerfile
-    assert "base64 -d > /usr/share/nginx/html/scarletx-banner.webp" in dockerfile
-    assert "COPY frontend/scarletx-banner.webp" not in dockerfile
     assert "COPY frontend/scarletx-hero.svg" not in dockerfile
     assert "COPY frontend/dashboard_v2.js" not in dockerfile
     assert "COPY frontend/locked_dashboard_layout.js" not in dockerfile
