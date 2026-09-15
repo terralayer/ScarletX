@@ -1,6 +1,6 @@
 import json
 import os
-from pydantic import BaseModel, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator
 
 DEFAULT_ADULT_INDEXER_CATEGORIES = [6000, 6010, 6020, 6040]
 LEGACY_BUNDLED_INDEXER_NAMES = {
@@ -87,7 +87,7 @@ class Settings(BaseModel):
     ui_auth_enabled: bool = False
     theporndb_api_key: SecretStr = SecretStr(os.getenv("SCARLETX_TPDB_API_KEY", ""))
     theporndb_base_url: str = os.getenv("SCARLETX_TPDB_BASE_URL", "https://api.theporndb.net")
-    newznab_indexers_json: SecretStr = SecretStr(_default_indexers())
+    newznab_indexers_json: SecretStr = Field(default_factory=lambda: SecretStr(_default_indexers()))
     native_usenet_enabled: bool = os.getenv("SCARLETX_NATIVE_USENET_ENABLED", "true").strip().lower() not in {"0","false","no","off"}
     native_usenet_providers_json: SecretStr = SecretStr(os.getenv("SCARLETX_USENET_PROVIDERS_JSON", "[]"))
     native_usenet_incomplete_dir: str = os.getenv("SCARLETX_USENET_INCOMPLETE_DIR", "./downloads/incomplete")
