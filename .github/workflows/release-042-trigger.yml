@@ -1,0 +1,24 @@
+name: Trigger ScarletX 0.4.2 Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/release-042-trigger.yml"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch verified 0.4.2 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run release.yml \
+            --repo terralayer/ScarletX \
+            --ref main \
+            -f release_notes='Fixes ScarletX branding and navigation visuals: restores the approved ribbon wordmark, uses the matching emblem favicon, replaces platform-dependent Unicode sidebar/topbar glyphs with consistent SVG icons, and preserves the approved dashboard banner and empty-indexer defaults.'
