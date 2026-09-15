@@ -14,11 +14,11 @@ jobs:
   trigger:
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch verified ScarletX patch release
+      - name: Dispatch locked ScarletX 0.4.4 release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh workflow run release.yml \
             --repo terralayer/ScarletX \
             --ref main \
-            -f release_notes='Corrects ScarletX branding by shipping the exact approved horizontal logo artwork and exact approved ribbon-only favicon/app icon instead of reconstructed SVG approximations. Adds cache-busted UI references so browsers load the corrected assets immediately, while preserving the approved dashboard banner, navigation icons, configuration, and TrueNAS deployment behavior.'
+            -f release_notes='Corrects ScarletX branding by shipping the exact approved horizontal logo artwork and exact approved ribbon-only favicon/app icon instead of reconstructed SVG approximations. Adds cache-busted UI references so browsers load the corrected assets immediately, preserves the approved dashboard banner and navigation icons, and locks the release version at 0.4.4.'
