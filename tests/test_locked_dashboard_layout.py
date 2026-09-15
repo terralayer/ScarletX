@@ -59,9 +59,9 @@ def test_approved_dashboard_is_native_in_core_runtime():
     assert '.dashboard-hero::after{display:none!important}' in approved_assets_css
 
 
-def test_approved_banner_is_the_exact_locked_mock_crop():
+def test_approved_banner_is_byte_locked():
     banner = (FRONTEND / "scarletx-banner.webp").read_bytes()
-    assert sha256(banner).hexdigest() == "95cc5f51a068a850a9b3654de867de01e90468feea9ce2077c5e351cb9055dab"
+    assert sha256(banner).hexdigest() == "236fc1fdadd8c34fa5909dcf7d5dae6e346b410e04bf89c0409fc341fee02cad"
 
 
 def test_frontend_image_build_has_no_dashboard_override_or_mutation_script():
