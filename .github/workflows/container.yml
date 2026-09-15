@@ -38,7 +38,6 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=main,enable={{is_default_branch}}
-            type=raw,value=0.3.10,enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=sha,prefix=sha-
 
@@ -49,7 +48,6 @@ jobs:
           images: ghcr.io/terralayer/scarletx-web
           tags: |
             type=raw,value=main,enable={{is_default_branch}}
-            type=raw,value=0.3.10,enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=sha,prefix=sha-
 
