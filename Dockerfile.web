@@ -24,8 +24,8 @@ COPY frontend/activity_studio_overrides.js /usr/share/nginx/html/activity_studio
 COPY frontend/studio_art_overrides.js /usr/share/nginx/html/studio_art_overrides.js
 COPY frontend/dashboard_settings_overrides.js /usr/share/nginx/html/dashboard_settings_overrides.js
 COPY frontend/dashboard_regression_hotfix.js /usr/share/nginx/html/dashboard_regression_hotfix.js
-COPY frontend/scarletx-logo.webp /usr/share/nginx/html/scarletx-logo.webp
-COPY frontend/scarletx-icon.webp /usr/share/nginx/html/scarletx-icon.webp
+COPY frontend/scarletx-wordmark.svg /usr/share/nginx/html/scarletx-wordmark.svg
+COPY frontend/scarletx-icon.svg /usr/share/nginx/html/scarletx-icon.svg
 COPY frontend/scarletx-banner.b64.1 /tmp/scarletx-banner.b64.1
 COPY frontend/scarletx-banner.b64.2 /tmp/scarletx-banner.b64.2
 COPY frontend/scarletx-banner.b64.3 /tmp/scarletx-banner.b64.3
@@ -33,6 +33,7 @@ COPY frontend/scarletx-banner.b64.4 /tmp/scarletx-banner.b64.4
 COPY frontend/locked_dashboard.css /usr/share/nginx/html/locked_dashboard.css
 COPY frontend/locked_dashboard_footer.css /usr/share/nginx/html/locked_dashboard_footer.css
 COPY frontend/approved_assets.css /usr/share/nginx/html/approved_assets.css
+COPY frontend/ui_icons.css /usr/share/nginx/html/ui_icons.css
 
 RUN set -eux; \
     cat /tmp/scarletx-banner.b64.1 /tmp/scarletx-banner.b64.2 /tmp/scarletx-banner.b64.3 /tmp/scarletx-banner.b64.4 \
@@ -51,6 +52,7 @@ RUN set -eux; \
     grep -q '/locked_dashboard.css' /usr/share/nginx/html/index.html; \
     grep -q '/locked_dashboard_footer.css' /usr/share/nginx/html/index.html; \
     grep -q '/approved_assets.css' /usr/share/nginx/html/index.html; \
+    grep -q '/ui_icons.css' /usr/share/nginx/html/index.html; \
     grep -q '/app.js' /usr/share/nginx/html/index.html; \
     grep -q '/navigation_error_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/ui_overrides.js' /usr/share/nginx/html/index.html; \
@@ -58,8 +60,8 @@ RUN set -eux; \
     grep -q '/studio_art_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/dashboard_settings_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/dashboard_regression_hotfix.js' /usr/share/nginx/html/index.html; \
-    grep -q '/scarletx-logo.webp' /usr/share/nginx/html/index.html; \
-    grep -q '/scarletx-icon.webp' /usr/share/nginx/html/index.html; \
+    grep -q '/scarletx-wordmark.svg' /usr/share/nginx/html/index.html; \
+    grep -q '/scarletx-icon.svg' /usr/share/nginx/html/index.html; \
     grep -q 'authGateBoot(boot);' /usr/share/nginx/html/app.js
 
 EXPOSE 8690

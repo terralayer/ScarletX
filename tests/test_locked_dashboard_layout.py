@@ -26,8 +26,8 @@ def test_approved_dashboard_is_native_in_core_runtime():
 
     assert 'data-layout="approved-dashboard-v1"' in index
     assert 'data-dashboard-render="native-v2"' in index
-    assert '/scarletx-logo.webp' in index
-    assert '/scarletx-icon.webp' in index
+    assert '/scarletx-wordmark.svg' in index
+    assert '/scarletx-icon.svg' in index
     assert '<span>Dashboard</span>' in index
     assert '<span>Performers</span>' in index
     assert '<span>Scenes</span>' in index
@@ -40,6 +40,7 @@ def test_approved_dashboard_is_native_in_core_runtime():
     assert '<script src="/dashboard_v2.js"></script>' not in index
     assert '<script src="/locked_dashboard_layout.js"></script>' not in index
     assert '<link rel="stylesheet" href="/approved_assets.css">' in index
+    assert '<link rel="stylesheet" href="/ui_icons.css">' in index
     assert 'Discover More. Manage Smarter.' in index
 
     dashboard_start = app.index("async function dashboard()")
@@ -75,11 +76,12 @@ def test_approved_banner_source_reconstructs_to_locked_bytes():
 def test_frontend_image_build_has_no_dashboard_override_or_mutation_script():
     dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
     for asset in (
-        "scarletx-logo.webp",
-        "scarletx-icon.webp",
+        "scarletx-wordmark.svg",
+        "scarletx-icon.svg",
         "locked_dashboard.css",
         "locked_dashboard_footer.css",
         "approved_assets.css",
+        "ui_icons.css",
     ):
         assert f"COPY frontend/{asset} /usr/share/nginx/html/{asset}" in dockerfile
     for part in range(1, 5):
