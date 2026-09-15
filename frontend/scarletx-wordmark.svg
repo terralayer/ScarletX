@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 470 120" role="img" aria-labelledby="title">
+<title id="title">ScarletX</title>
+<defs>
+  <linearGradient id="a" x1="18" y1="8" x2="104" y2="112" gradientUnits="userSpaceOnUse"><stop stop-color="#ff3158"/><stop offset=".5" stop-color="#e3153f"/><stop offset="1" stop-color="#650017"/></linearGradient>
+  <linearGradient id="b" x1="104" y1="12" x2="26" y2="112" gradientUnits="userSpaceOnUse"><stop stop-color="#79001b"/><stop offset=".48" stop-color="#bd0730"/><stop offset="1" stop-color="#ff274f"/></linearGradient>
+  <linearGradient id="x" x1="385" y1="24" x2="448" y2="92" gradientUnits="userSpaceOnUse"><stop stop-color="#ff2c53"/><stop offset="1" stop-color="#c70935"/></linearGradient>
+</defs>
+<g transform="translate(4 4) scale(.86)">
+  <path fill="url(#a)" d="M63.8 8.5c5.5 0 10.7 1.5 15.4 4.3l26.1 15.1c6.2 3.6 9.7 10.5 8.7 17.6-.7 5.1-3.3 9.5-7.4 12.4-3.8 2.7-8.6 3.8-13.2 3L64 43.8V94L35.6 77.6C28.4 73.4 24 65.7 24 57.4V39.9c0-6.8 3.6-13 9.5-16.4l15.4-8.9c4.6-2.7 9.6-4.1 14.9-4.1z"/>
+  <path fill="url(#b)" d="M22.8 68.7c4.2-7.2 13.3-9.6 20.5-5.5L64 75.1l29.4-17c7.2-4.2 16.4-1.7 20.5 5.5 4.1 7.2 1.7 16.4-5.5 20.5L79.2 101c-9.4 5.4-21 5.4-30.4 0L28.3 89.2c-7.2-4.1-9.6-13.3-5.5-20.5z"/>
+  <path fill="#ce0d39" d="M51.6 45.8c0-3.9 4.2-6.3 7.5-4.4l27.1 15.7c3.4 2 3.4 6.8 0 8.8L59.1 81.6c-3.3 1.9-7.5-.5-7.5-4.4V45.8z"/>
+</g>
+<text x="118" y="78" fill="#f3f4f7" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="66" font-weight="760" letter-spacing="-3">Scarlet</text>
+<text x="367" y="78" fill="url(#x)" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="70" font-weight="800" letter-spacing="-4">X</text>
+</svg>
