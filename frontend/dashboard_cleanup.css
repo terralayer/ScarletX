@@ -25,6 +25,18 @@ body[data-layout="approved-dashboard-v1"] .approved-dashboard-grid .panel-head{
   box-sizing:border-box!important;
 }
 
+body[data-layout="approved-dashboard-v1"] .approved-recent-list,
+body[data-layout="approved-dashboard-v1"] .approved-upcoming .rows{
+  padding:4px 20px 14px!important;
+}
+
+body[data-layout="approved-dashboard-v1"] .approved-recent-row,
+body[data-layout="approved-dashboard-v1"] .approved-upcoming .row{
+  min-height:64px!important;
+  padding:8px 0!important;
+  box-sizing:border-box!important;
+}
+
 /* Keep the five desktop summary cards fluid until the existing tablet breakpoint. */
 @media(min-width:981px){
   body[data-layout="approved-dashboard-v1"] .stats.approved-stat-grid{
