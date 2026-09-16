@@ -1,5 +1,25 @@
 /* Approved ScarletX visual assets. Keep these rules last so the dashboard
    renders the exact locked mock assets without DOM mutation or recreated art. */
+.brand img{
+  display:block;
+  width:180px;
+  max-width:100%;
+  height:auto;
+  object-fit:contain;
+}
+.header-brand{
+  display:flex;
+  align-items:center;
+  flex:0 0 auto;
+}
+.header-brand img{
+  display:block;
+  width:150px;
+  max-width:100%;
+  max-height:48px;
+  height:auto;
+  object-fit:contain;
+}
 .dashboard-hero{
   aspect-ratio:1321 / 163;
   min-height:0!important;
