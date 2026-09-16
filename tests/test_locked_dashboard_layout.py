@@ -56,6 +56,14 @@ def test_approved_dashboard_is_native_in_core_runtime():
     assert '.dashboard-hero::after{display:none!important}' in approved_assets_css
 
 
+def test_approved_layout_hides_legacy_side_footer_entirely():
+    index = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    css = (FRONTEND / "locked_dashboard.css").read_text(encoding="utf-8")
+
+    assert 'class="side-footer"' not in index
+    assert 'body[data-layout="approved-dashboard-v1"] .side-footer{display:none!important}' in css
+
+
 def test_dashboard_cleanup_hides_profile_and_banner_copy_and_aligns_panels():
     cleanup = FRONTEND / "dashboard_cleanup.css"
     assert cleanup.exists()
