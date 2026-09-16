@@ -1,0 +1,25 @@
+name: Dispatch ScarletX 0.4.8 Release
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/release-048-dispatch.yml"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch explicitly authorized 0.4.8 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh workflow run release.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f release_notes="ScarletX 0.4.8 aligns Recent Scenes and Upcoming Releases with a shared top baseline and identical row rhythm, and publishes TrueNAS package 1.0.15."
