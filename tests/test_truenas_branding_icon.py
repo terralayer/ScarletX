@@ -17,4 +17,4 @@ def test_truenas_catalog_package_bumps_for_branding_asset_change():
     app_yaml = (ROOT / "packaging" / "truenas" / "scarletx" / "app.yaml").read_text(encoding="utf-8")
 
     assert "app_version: 0.4.8" in app_yaml
-    assert "\nversion: 1.0.15\n" in app_yaml
+    assert app_yaml.rstrip().endswith("version: 1.0.15")
