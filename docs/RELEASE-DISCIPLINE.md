@@ -14,7 +14,7 @@ ScarletX roadmap work is intentionally separated from release-version work.
 
 Roadmap work progresses in small mergeable slices: foundation, reliability, concurrency, imports, library/features, hardening, and validation. Beta or stable releases are cut only from an explicit release change after the intended slice is complete; feature PRs do not silently advance versions.
 
-Ordinary `main` pushes publish only moving development tags (`main` and SHA tags) and never overwrite a stable release tag. A dedicated release change may arm a one-shot `main` push trigger scoped to that release's notes file so the already-tested, already-staged release is published immediately after its release PR merges. The locked release workflow still refuses to advance beyond its explicitly selected version and tags the exact release commit it verifies and builds.
+The stable release workflow is intentionally manual-only, so ordinary merges to `main` cannot start a release implicitly. Normal `main` builds publish only moving development tags (`main` and SHA tags) and never overwrite a stable release tag. A stable release is published only through an explicit manual dispatch of the release workflow, which is locked to the selected version and tags the exact release commit it verifies and builds.
 
 ## Version-helper contract
 
