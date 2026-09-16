@@ -1,13 +1,12 @@
-name: Container
+name: Sidebar Icons 0.4.1
 
 on:
   push:
-    branches: [main]
-    tags: ["v*"]
+    branches: ["fix/sidebar-icons-0.4.1"]
   workflow_dispatch:
 
 concurrency:
-  group: container-${{ github.ref }}
+  group: sidebar-icons-041-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -15,7 +14,7 @@ permissions:
   packages: write
 
 jobs:
-  build:
+  build-web:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -31,46 +30,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate backend image metadata
-        id: meta_backend
-        uses: docker/metadata-action@v6
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=raw,value=main,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=sha,prefix=sha-
-
-      - name: Generate web image metadata
-        id: meta_web
-        uses: docker/metadata-action@v6
-        with:
-          images: ghcr.io/terralayer/scarletx-web
-          tags: |
-            type=raw,value=main,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=sha,prefix=sha-
-
-      - name: Build and push backend image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: Dockerfile
-          push: true
-          platforms: linux/amd64
-          tags: ${{ steps.meta_backend.outputs.tags }}
-          labels: ${{ steps.meta_backend.outputs.labels }}
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,mode=max,scope=backend
-
-      - name: Build and push web image
+      - name: Build and push icon-only web image
         uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.web
           push: true
           platforms: linux/amd64
-          tags: ${{ steps.meta_web.outputs.tags }}
-          labels: ${{ steps.meta_web.outputs.labels }}
+          tags: ghcr.io/terralayer/scarletx-web:0.4.1-icons
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
