@@ -196,8 +196,11 @@ def test_dashboard_never_echoes_secret_like_detail_values():
 def test_lifespan_wires_startup_dashboard_and_worker_lifecycle_events():
     root = Path(__file__).resolve().parents[1]
     main_source = (root / "scarletx" / "routes" / "application.py").read_text()
-    assert "collect_startup_status" in main_source
-    assert "render_dashboard" in main_source
+    startup_source = (root / "scarletx" / "startup_status.py").read_text()
+    assert "emit_startup_status_snapshot" in main_source
+    assert "asyncio.create_task(emit_startup_status_snapshot(runtime))" in main_source
+    assert "collect_startup_status" in startup_source
+    assert "render_dashboard" in startup_source
     assert 'emit_status("Background Workers", "ACTIVE"' in main_source
     assert 'emit_status("Background Workers", "STOPPED"' in main_source
 
