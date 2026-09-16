@@ -46,6 +46,16 @@ services:
     networks:
       - scarletx-net
       - scarletx-egress
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import json,urllib.request; d=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/health',timeout=3)); raise SystemExit(0 if d.get('app')=='ScarletX' else 1)"
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
 
   scarletx-web:
     build:
