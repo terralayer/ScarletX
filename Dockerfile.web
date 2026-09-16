@@ -24,8 +24,8 @@ COPY frontend/activity_studio_overrides.js /usr/share/nginx/html/activity_studio
 COPY frontend/studio_art_overrides.js /usr/share/nginx/html/studio_art_overrides.js
 COPY frontend/dashboard_settings_overrides.js /usr/share/nginx/html/dashboard_settings_overrides.js
 COPY frontend/dashboard_regression_hotfix.js /usr/share/nginx/html/dashboard_regression_hotfix.js
-COPY frontend/scarletx-wordmark.svg /usr/share/nginx/html/scarletx-wordmark.svg
-COPY frontend/scarletx-icon.svg /usr/share/nginx/html/scarletx-icon.svg
+COPY frontend/scarletx-wordmark.svg /tmp/scarletx-wordmark.svg
+COPY frontend/scarletx-icon.svg /tmp/scarletx-icon.svg
 COPY frontend/scarletx-banner.b64.1 /tmp/scarletx-banner.b64.1
 COPY frontend/scarletx-banner.b64.2 /tmp/scarletx-banner.b64.2
 COPY frontend/scarletx-banner.b64.3 /tmp/scarletx-banner.b64.3
@@ -38,19 +38,20 @@ COPY frontend/ui_icons.css /usr/share/nginx/html/ui_icons.css
 RUN set -eux; \
     cat /tmp/scarletx-banner.b64.1 /tmp/scarletx-banner.b64.2 /tmp/scarletx-banner.b64.3 /tmp/scarletx-banner.b64.4 \
       | base64 -d > /usr/share/nginx/html/scarletx-banner.webp; \
-    sed -n 's#.*href="data:image/webp;base64,\([^"]*\)".*#\1#p' /usr/share/nginx/html/scarletx-wordmark.svg \
+    sed -n 's#.*href="data:image/webp;base64,\([^"]*\)".*#\1#p' /tmp/scarletx-wordmark.svg \
       | base64 -d > /usr/share/nginx/html/scarletx-wordmark.webp; \
-    sed -n 's#.*href="data:image/webp;base64,\([^"]*\)".*#\1#p' /usr/share/nginx/html/scarletx-icon.svg \
+    sed -n 's#.*href="data:image/webp;base64,\([^"]*\)".*#\1#p' /tmp/scarletx-icon.svg \
       | base64 -d > /usr/share/nginx/html/scarletx-icon.webp; \
     echo '236fc1fdadd8c34fa5909dcf7d5dae6e346b410e04bf89c0409fc341fee02cad  /usr/share/nginx/html/scarletx-banner.webp' | sha256sum -c -; \
     test -s /usr/share/nginx/html/scarletx-wordmark.webp; \
     test -s /usr/share/nginx/html/scarletx-icon.webp; \
-    rm -f /tmp/scarletx-banner.b64.*
+    test "$(head -c 4 /usr/share/nginx/html/scarletx-wordmark.webp)" = "RIFF"; \
+    test "$(dd if=/usr/share/nginx/html/scarletx-wordmark.webp bs=1 skip=8 count=4 2>/dev/null)" = "WEBP"; \
+    test "$(head -c 4 /usr/share/nginx/html/scarletx-icon.webp)" = "RIFF"; \
+    test "$(dd if=/usr/share/nginx/html/scarletx-icon.webp bs=1 skip=8 count=4 2>/dev/null)" = "WEBP"; \
+    rm -f /tmp/scarletx-banner.b64.* /tmp/scarletx-wordmark.svg /tmp/scarletx-icon.svg
 
 RUN set -eux; \
-    sed -i 's#/scarletx-wordmark.svg?v=approved-20260915-2#/scarletx-wordmark.webp?v=approved-20260915-3#g' /usr/share/nginx/html/index.html; \
-    sed -i 's#/scarletx-icon.svg?v=approved-20260915-2#/scarletx-icon.webp?v=approved-20260915-3#g' /usr/share/nginx/html/index.html; \
-    sed -i 's#type="image/svg+xml"#type="image/webp"#' /usr/share/nginx/html/index.html; \
     sed -i 's#</head>#<link rel="stylesheet" href="/auth.css"></head>#' /usr/share/nginx/html/index.html; \
     sed -i 's#<body\([^>]*\)>#<body\1><script src="/auth.js"></script>#' /usr/share/nginx/html/index.html; \
     sed -i 's/^[[:space:]]*boot();[[:space:]]*$/authGateBoot(boot);/' /usr/share/nginx/html/app.js; \
@@ -69,8 +70,8 @@ RUN set -eux; \
     grep -q '/studio_art_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/dashboard_settings_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/dashboard_regression_hotfix.js' /usr/share/nginx/html/index.html; \
-    grep -q '/scarletx-wordmark.webp' /usr/share/nginx/html/index.html; \
-    grep -q '/scarletx-icon.webp' /usr/share/nginx/html/index.html; \
+    grep -q '/scarletx-wordmark.webp?v=approved-20260915-5' /usr/share/nginx/html/index.html; \
+    grep -q '/scarletx-icon.webp?v=approved-20260915-5' /usr/share/nginx/html/index.html; \
     grep -q 'authGateBoot(boot);' /usr/share/nginx/html/app.js
 
 EXPOSE 8690
