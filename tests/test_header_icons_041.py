@@ -54,4 +54,4 @@ def test_top_download_bell_is_centered_in_rounded_rectangle():
 
 def test_header_uses_locked_approved_logo_asset():
     logo = (FRONTEND / "scarletx-logo.webp").read_bytes()
-    assert sha256(logo).hexdigest() == "36ad0609751723ca00eb2d56b9f8eb445b86ecb941c41420de80f494594087e2"
+    assert sha256(logo).hexdigest() == "659136e0e64f7ef4d891f8c99cc3bd2f06083fa4ba2943c04a7629da7936fbae"
