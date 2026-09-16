@@ -5,6 +5,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
 BANNER_SHA256 = "236fc1fdadd8c34fa5909dcf7d5dae6e346b410e04bf89c0409fc341fee02cad"
+WORDMARK_SHA256 = "a90efeaa68b2f8a96e20d62167582f79ed58ef92aa776e46e8c4d9bad0e3c3ca"
+ICON_SHA256 = "30f7d52a474ed83d7f6f83d8da8ec9ca3488b6936bced0072dccdf762c10e768"
 EXPECTED_CHUNK_BLOBS = {
     1: "c0a9c496504b1761110a3b62b6e3ed46d6a0b6e5",
     2: "9b15ff7f2f5b1a4ec8558340aa04fd36277dd2df",
@@ -26,17 +28,10 @@ def test_approved_dashboard_is_native_in_core_runtime():
 
     assert 'data-layout="approved-dashboard-v1"' in index
     assert 'data-dashboard-render="native-v2"' in index
-    assert '/scarletx-wordmark.webp?v=approved-20260915-5' in index
-    assert '/scarletx-icon.webp?v=approved-20260915-5' in index
-    assert '<span>Dashboard</span>' in index
-    assert '<span>Performers</span>' in index
-    assert '<span>Scenes</span>' in index
-    assert '<span>Studios</span>' in index
-    assert '<span>Calendar</span>' in index
-    assert '<span>Discover</span>' in index
-    assert '<span>Downloads</span>' in index
-    assert '<span>Indexers</span>' in index
-    assert '<span>Settings</span>' in index
+    assert '/scarletx-wordmark.webp?v=approved-20260915-6' in index
+    assert '/scarletx-icon.webp?v=approved-20260915-6' in index
+    for label in ("Dashboard", "Performers", "Scenes", "Studios", "Calendar", "Discover", "Downloads", "Indexers", "Settings"):
+        assert f'<span>{label}</span>' in index
     assert '<script src="/dashboard_v2.js"></script>' not in index
     assert '<script src="/locked_dashboard_layout.js"></script>' not in index
     assert '<link rel="stylesheet" href="/approved_assets.css">' in index
@@ -73,23 +68,20 @@ def test_approved_banner_source_reconstructs_to_locked_bytes():
     assert b"WEBP" in banner[:16]
 
 
-def test_frontend_image_build_has_no_dashboard_override_or_mutation_script():
+def test_frontend_image_build_uses_checksum_locked_brand_assets():
     dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
-    for asset in (
-        "locked_dashboard.css",
-        "locked_dashboard_footer.css",
-        "approved_assets.css",
-        "ui_icons.css",
-    ):
+    for asset in ("locked_dashboard.css", "locked_dashboard_footer.css", "approved_assets.css", "ui_icons.css"):
         assert f"COPY frontend/{asset} /usr/share/nginx/html/{asset}" in dockerfile
-    assert "COPY frontend/scarletx-wordmark.svg /tmp/scarletx-wordmark.svg" in dockerfile
-    assert "COPY frontend/scarletx-icon.svg /tmp/scarletx-icon.svg" in dockerfile
-    assert "/usr/share/nginx/html/scarletx-wordmark.webp" in dockerfile
-    assert "/usr/share/nginx/html/scarletx-icon.webp" in dockerfile
+    for part in range(4):
+        assert f"COPY frontend/scarletx-wordmark.webp.b64.{part:02d} /tmp/scarletx-wordmark.webp.b64.{part:02d}" in dockerfile
+    assert "COPY frontend/scarletx-icon.webp /usr/share/nginx/html/scarletx-icon.webp" in dockerfile
+    assert WORDMARK_SHA256 in dockerfile
+    assert ICON_SHA256 in dockerfile
     for part in range(1, 5):
         assert f"COPY frontend/scarletx-banner.b64.{part} /tmp/scarletx-banner.b64.{part}" in dockerfile
     assert BANNER_SHA256 in dockerfile
-    assert "base64 -d > /usr/share/nginx/html/scarletx-banner.webp" in dockerfile
+    assert "COPY frontend/scarletx-wordmark.svg" not in dockerfile
+    assert "COPY frontend/scarletx-icon.svg" not in dockerfile
     assert "COPY frontend/scarletx-hero.svg" not in dockerfile
     assert "COPY frontend/dashboard_v2.js" not in dockerfile
     assert "COPY frontend/locked_dashboard_layout.js" not in dockerfile
