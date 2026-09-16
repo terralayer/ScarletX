@@ -33,19 +33,7 @@ jobs:
             exit 0
           fi
           test "$current" = "0.4.6"
-          notes='ScarletX 0.4.7 packages the latest approved dashboard and reliability updates into a stable release.
-
-## Dashboard
-
-- Makes the five top summary cards scale smoothly across desktop widths, including card height, padding, icon sizing, spacing, and typography.
-- Restores equal-height alignment for the second dashboard row so the primary panels remain level.
-- Preserves the approved compact sidebar, branding, footer, tablet layout, and mobile layout.
-
-## Release
-
-- Includes all fixes already merged to main through this release branch.
-- Publishes matching backend and web images for 0.4.7.
-- Advances the TrueNAS catalog package to 1.0.13.'
+          notes=$'ScarletX 0.4.7 packages the latest approved dashboard and reliability updates into a stable release.\n\n## Dashboard\n\n- Makes the five top summary cards scale smoothly across desktop widths, including card height, padding, icon sizing, spacing, and typography.\n- Restores equal-height alignment for the second dashboard row so the primary panels remain level.\n- Preserves the approved compact sidebar, branding, footer, tablet layout, and mobile layout.\n\n## Release\n\n- Includes all fixes already merged to main through this release branch.\n- Publishes matching backend and web images for 0.4.7.\n- Advances the TrueNAS catalog package to 1.0.13.'
           generated="$(python tools/release_version.py apply --notes "$notes")"
           test "$generated" = "0.4.7"
 
