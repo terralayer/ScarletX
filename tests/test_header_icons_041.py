@@ -1,7 +1,8 @@
 from pathlib import Path
 
 
-FRONTEND = Path(__file__).resolve().parents[1] / "frontend"
+ROOT = Path(__file__).resolve().parents[1]
+FRONTEND = ROOT / "frontend"
 
 
 def test_top_right_user_status_is_hidden_and_downloads_uses_svg_icon():
@@ -48,3 +49,12 @@ def test_top_download_bell_is_centered_in_rounded_rectangle():
     assert '.queue-glyph{width:22px;height:22px;display:grid;place-items:center;line-height:1;}' in compact_assets
     assert '.queue-glyphsvg{display:block;width:22px;height:22px;}' in compact_assets
     assert 'body[data-layout="approved-dashboard-v1"].queue-pill:hover,body[data-layout="approved-dashboard-v1"].queue-pill:focus-visible{border-radius:9px!important;}' in compact_assets
+
+
+def test_header_uses_locked_approved_logo_asset():
+    dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
+
+    assert "COPY frontend/scarletx-approved-logo.b64 /tmp/scarletx-approved-logo.b64" in dockerfile
+    assert "base64 -d > /usr/share/nginx/html/scarletx-logo.webp" in dockerfile
+    assert "a81e85a5899b7432b6a3fd557d5eb9f9a5b7ec451476dfa6897425d7830f8a4c  /usr/share/nginx/html/scarletx-logo.webp" in dockerfile
+    assert "COPY frontend/scarletx-logo.webp /usr/share/nginx/html/scarletx-logo.webp" not in dockerfile
