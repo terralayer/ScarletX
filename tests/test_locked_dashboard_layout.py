@@ -26,8 +26,8 @@ def test_approved_dashboard_is_native_in_core_runtime():
 
     assert 'data-layout="approved-dashboard-v1"' in index
     assert 'data-dashboard-render="native-v2"' in index
-    assert '/scarletx-wordmark.svg' in index
-    assert '/scarletx-icon.svg' in index
+    assert '/scarletx-wordmark.webp?v=approved-20260915-5' in index
+    assert '/scarletx-icon.webp?v=approved-20260915-5' in index
     assert '<span>Dashboard</span>' in index
     assert '<span>Performers</span>' in index
     assert '<span>Scenes</span>' in index
@@ -76,14 +76,16 @@ def test_approved_banner_source_reconstructs_to_locked_bytes():
 def test_frontend_image_build_has_no_dashboard_override_or_mutation_script():
     dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
     for asset in (
-        "scarletx-wordmark.svg",
-        "scarletx-icon.svg",
         "locked_dashboard.css",
         "locked_dashboard_footer.css",
         "approved_assets.css",
         "ui_icons.css",
     ):
         assert f"COPY frontend/{asset} /usr/share/nginx/html/{asset}" in dockerfile
+    assert "COPY frontend/scarletx-wordmark.svg /tmp/scarletx-wordmark.svg" in dockerfile
+    assert "COPY frontend/scarletx-icon.svg /tmp/scarletx-icon.svg" in dockerfile
+    assert "/usr/share/nginx/html/scarletx-wordmark.webp" in dockerfile
+    assert "/usr/share/nginx/html/scarletx-icon.webp" in dockerfile
     for part in range(1, 5):
         assert f"COPY frontend/scarletx-banner.b64.{part} /tmp/scarletx-banner.b64.{part}" in dockerfile
     assert BANNER_SHA256 in dockerfile
