@@ -1,25 +1,59 @@
-/* Approved ScarletX visual assets. Keep these rules last so the dashboard
-   renders the exact locked mock assets without DOM mutation or recreated art. */
-.brand img{
-  display:block;
-  width:180px;
-  max-width:100%;
-  height:auto;
-  object-fit:contain;
-}
+/* Approved ScarletX visual assets. Keep these rules last so branding cannot
+   distort the shell even if a browser fails to decode one of the image assets. */
+.brand,
 .header-brand{
-  display:flex;
-  align-items:center;
+  display:flex!important;
+  align-items:center!important;
   flex:0 0 auto;
+  min-width:0!important;
+  min-height:0!important;
+  padding:0!important;
+  border:0!important;
+  border-radius:0!important;
+  background:none!important;
+  box-shadow:none!important;
+  overflow:visible!important;
 }
+.brand img,
 .header-brand img{
-  display:block;
-  width:150px;
-  max-width:100%;
-  max-height:48px;
-  height:auto;
-  object-fit:contain;
+  display:none!important;
+  width:0!important;
+  height:0!important;
+  min-width:0!important;
+  min-height:0!important;
+  max-width:0!important;
+  max-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
 }
+.brand::before,
+.header-brand::before{
+  content:"Scarlet";
+  display:inline-block;
+  color:#f4f6f8;
+  font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:26px;
+  font-weight:760;
+  line-height:1;
+  letter-spacing:-.045em;
+  white-space:nowrap;
+}
+.brand::after,
+.header-brand::after{
+  content:"X";
+  display:inline-block;
+  margin-left:1px;
+  color:#ef3340;
+  font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:27px;
+  font-weight:850;
+  line-height:1;
+  letter-spacing:-.05em;
+  white-space:nowrap;
+}
+.header-brand::before{font-size:23px}
+.header-brand::after{font-size:24px}
 .dashboard-hero{
   aspect-ratio:1321 / 163;
   min-height:0!important;
