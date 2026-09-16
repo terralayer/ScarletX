@@ -9,9 +9,8 @@ ICON_SHA256 = "30f7d52a474ed83d7f6f83d8da8ec9ca3488b6936bced0072dccdf762c10e768"
 def test_shell_keeps_approved_wordmark_source_and_emblem_favicon_available():
     index = (FRONTEND / "index.html").read_text(encoding="utf-8")
     assert '<div class="header-brand"><img src="/scarletx-wordmark.webp?v=approved-20260915-6" alt="ScarletX"></div>' in index
-    assert '<link rel="icon" href="/scarletx-icon.webp?v=approved-20260915-6" type="image/webp">' in index
+    assert '<link rel="icon" href="/scarletx-icon.svg?v=approved-20260916-1" type="image/svg+xml" sizes="any">' in index
     assert "scarletx-wordmark.svg" not in index
-    assert "scarletx-icon.svg" not in index
 
 
 def test_sidebar_and_topbar_use_svg_icons_not_unicode_glyphs():
@@ -39,11 +38,11 @@ def test_web_image_reconstructs_and_verifies_approved_brand_assets():
     dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
     for part in range(4):
         assert f"COPY frontend/scarletx-wordmark.webp.b64.{part:02d} /tmp/scarletx-wordmark.webp.b64.{part:02d}" in dockerfile
+    assert "COPY frontend/scarletx-icon.svg /usr/share/nginx/html/scarletx-icon.svg" in dockerfile
     assert "COPY frontend/scarletx-icon.webp /usr/share/nginx/html/scarletx-icon.webp" in dockerfile
     assert WORDMARK_SHA256 in dockerfile
     assert ICON_SHA256 in dockerfile
     assert "COPY frontend/scarletx-wordmark.svg" not in dockerfile
-    assert "COPY frontend/scarletx-icon.svg" not in dockerfile
     assert 'head -c 4 /usr/share/nginx/html/scarletx-wordmark.webp' in dockerfile
     assert 'head -c 4 /usr/share/nginx/html/scarletx-icon.webp' in dockerfile
 
