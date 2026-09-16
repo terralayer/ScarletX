@@ -1,0 +1,96 @@
+name: Prepare ScarletX 0.4.6 Metadata
+
+on:
+  push:
+    branches: [release/0.4.6]
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: release/0.4.6
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Synchronize 0.4.6 release metadata
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          old = "0.4.5"
+          new = "0.4.6"
+          versioned = [
+              "pyproject.toml",
+              "scarletx/__init__.py",
+              "scarletx/routes/application.py",
+              "README.md",
+              "BUILD-INFO.txt",
+              "start-scarletx.sh",
+              "Start-ScarletX.ps1",
+              "docker-compose.truenas.yml",
+              "scarletx/tpdb.py",
+              "scarletx/remote_art.py",
+              "scarletx/newznab.py",
+              "scarletx/usenet/worker.py",
+              "packaging/truenas/scarletx/app.yaml",
+              "packaging/truenas/scarletx/ix_values.yaml",
+              "packaging/truenas/scarletx/questions.yaml",
+          ]
+
+          for relative in versioned:
+              path = Path(relative)
+              text = path.read_text(encoding="utf-8")
+              updated = text.replace(old, new)
+              if relative == "packaging/truenas/scarletx/app.yaml":
+                  updated = updated.replace("version: 1.0.11", "version: 1.0.12")
+              if updated != text:
+                  path.write_text(updated, encoding="utf-8")
+
+          helper = Path("tools/release_version.py")
+          helper_text = helper.read_text(encoding="utf-8")
+          helper_text = helper_text.replace('LOCKED_RELEASE_VERSION = "0.4.5"', 'LOCKED_RELEASE_VERSION = "0.4.6"')
+          helper.write_text(helper_text, encoding="utf-8")
+
+          workflow = Path(".github/workflows/release.yml")
+          workflow_text = workflow.read_text(encoding="utf-8").replace("0.4.5", "0.4.6")
+          workflow_text = workflow_text.replace("0.4.4|0.4.6", "0.4.5|0.4.6")
+          workflow.write_text(workflow_text, encoding="utf-8")
+
+          notes = Path("RELEASE-NOTES-0.4.6.md")
+          notes.write_text(
+              "# ScarletX 0.4.6\n\n"
+              "ScarletX 0.4.6 packages the latest approved UI and deployment reliability changes into a stable release.\n\n"
+              "## UI\n\n"
+              "- Ships the approved compact desktop sidebar at 242px with 44px navigation rows, 15px labels, 19px icons, and tighter spacing.\n"
+              "- Preserves the existing 980px tablet rail and mobile layout.\n"
+              "- Preserves the approved wordmark, favicon, dashboard banner, and real application footer.\n\n"
+              "## Runtime and deployment\n\n"
+              "- Preserves the extracted shared frontend runtime (`runtime_core.js`) and its load order.\n"
+              "- Aligns standard Docker Compose backend health checks with the lightweight health contract used by TrueNAS.\n"
+              "- Keeps backend and web container versions synchronized at 0.4.6.\n\n"
+              "## TrueNAS\n\n"
+              "- Advances the TrueNAS application package to 1.0.12.\n"
+              "- Pins backend and web images to 0.4.6.\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Commit generated metadata
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml scarletx README.md BUILD-INFO.txt start-scarletx.sh Start-ScarletX.ps1 docker-compose.truenas.yml packaging/truenas/scarletx tools/release_version.py .github/workflows/release.yml RELEASE-NOTES-0.4.6.md
+          git diff --cached --quiet && exit 0
+          git commit -m "release: synchronize ScarletX 0.4.6 metadata"
+          git push origin HEAD:release/0.4.6
