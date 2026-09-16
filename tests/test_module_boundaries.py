@@ -36,6 +36,7 @@ def test_route_and_method_contract_is_stable():
         {"path": "/api/dashboard/performers", "methods": ["GET"]},
         {"path": "/api/dashboard/scenes", "methods": ["GET"]},
         {"path": "/api/dashboard/studios", "methods": ["GET"]},
+        {"path": "/api/history/page", "methods": ["GET"]},
         {"path": "/api/library/performers/{item_id}/scenes", "methods": ["GET"]},
         {"path": "/api/library/studios/{item_id}/scenes", "methods": ["GET"]},
         {"path": "/api/media-library/health", "methods": ["GET"]},
