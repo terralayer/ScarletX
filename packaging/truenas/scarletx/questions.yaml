@@ -429,10 +429,10 @@ questions:
                         type: string
                         required: true
                         enum:
-                          - value: scarletx-0.4.6-backend
-                            description: scarletx-0.4.6-backend
-                          - value: scarletx-0.4.6-web
-                            description: scarletx-0.4.6-web
+                          - value: scarletx-0.4.7-backend
+                            description: scarletx-0.4.7-backend
+                          - value: scarletx-0.4.7-web
+                            description: scarletx-0.4.7-web
 
   - variable: resources
     label: ""

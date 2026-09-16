@@ -8,7 +8,7 @@ from pathlib import Path
 EXPECTED_MAJOR = 0
 EXPECTED_MINOR = 4
 EXPECTED_SERIES = "0.4"
-LOCKED_RELEASE_VERSION = "0.4.6"
+LOCKED_RELEASE_VERSION = "0.4.7"
 CATALOG_METADATA_PATH = "packaging/truenas/scarletx/app.yaml"
 
 VERSIONED_FILES = (
