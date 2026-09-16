@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .activity_history import activity_history_page
 from .auth_routes import router as auth_router
 from .compact_studio_art import install_compact_studio_art_route
 from .db import SessionLocal, engine
@@ -57,6 +58,13 @@ def _add_dashboard_routes() -> None:
         app.add_api_route(path, endpoint, methods=["GET"], name=name)
 
 
+def _add_activity_history_route() -> None:
+    path = "/api/history/page"
+    if any(getattr(route, "path", None) == path for route in app.router.routes):
+        return
+    app.add_api_route(path, activity_history_page, methods=["GET"], name="activity_history_page")
+
+
 def _add_library_health_route() -> None:
     path = "/api/media-library/health"
     if any(getattr(route, "path", None) == path for route in app.router.routes):
@@ -82,6 +90,7 @@ install_downloader_state_hotfixes(app)
 install_compact_studio_art_route(app)
 remove_legacy_api_key_middleware(app)
 app.include_router(auth_router)
+_add_activity_history_route()
 _add_library_health_route()
 _add_observability_route()
 install_authentication(
