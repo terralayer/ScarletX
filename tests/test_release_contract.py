@@ -6,7 +6,7 @@ import tomllib
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-LOCKED_VERSION = "0.4.6"
+LOCKED_VERSION = "0.4.7"
 
 
 def text(path: str) -> str:
@@ -30,7 +30,7 @@ def load_release_version_module():
     return module
 
 
-def test_release_is_locked_to_046_everywhere():
+def test_release_is_locked_to_047_everywhere():
     assert VERSION == LOCKED_VERSION
     assert f'version = "{LOCKED_VERSION}"' in text("pyproject.toml")
     assert f'__version__ = "{LOCKED_VERSION}"' in text("scarletx/__init__.py")
@@ -41,7 +41,7 @@ def test_release_is_locked_to_046_everywhere():
     assert (ROOT / f"RELEASE-NOTES-{LOCKED_VERSION}.md").exists()
 
 
-def test_truenas_metadata_and_compose_are_locked_to_046():
+def test_truenas_metadata_and_compose_are_locked_to_047():
     app = text("packaging/truenas/scarletx/app.yaml")
     values = text("packaging/truenas/scarletx/ix_values.yaml")
     compose = text("docker-compose.truenas.yml")
@@ -63,19 +63,19 @@ def test_truenas_metadata_and_compose_are_locked_to_046():
 
 def test_main_container_publishing_never_overwrites_stable_release_tags():
     workflow = text(".github/workflows/container.yml")
-    assert "type=raw,value=0.4.6" not in workflow
+    assert "type=raw,value=0.4.7" not in workflow
     assert "type=raw,value=main" in workflow
     assert "type=sha,prefix=sha-" in workflow
     assert "type=semver" not in workflow
     assert 'tags: ["v*"]' not in workflow
 
 
-def test_release_workflow_selects_only_locked_046_and_tags_tested_head():
+def test_release_workflow_selects_only_locked_047_and_tags_tested_head():
     workflow = text(".github/workflows/release.yml")
     assert "workflow_dispatch:" in workflow
-    assert "NEXT_VERSION=\"0.4.6\"" in workflow
+    assert "NEXT_VERSION=\"0.4.7\"" in workflow
     assert "Select locked release version" in workflow
-    assert "Apply locked 0.4.6 release metadata" in workflow
+    assert "Apply locked 0.4.7 release metadata" in workflow
     assert "version is locked and will not advance" in workflow
     assert "ghcr.io/terralayer/scarletx:${NEXT_VERSION}" in workflow
     assert "ghcr.io/terralayer/scarletx-web:${NEXT_VERSION}" in workflow
@@ -83,18 +83,18 @@ def test_release_workflow_selects_only_locked_046_and_tags_tested_head():
     assert 'git tag -a "v${NEXT_VERSION}" -m "ScarletX ${NEXT_VERSION}" HEAD' in workflow
 
 
-def test_release_helper_rejects_versions_after_046():
+def test_release_helper_rejects_versions_after_047():
     module = load_release_version_module()
     assert module.LOCKED_RELEASE_VERSION == LOCKED_VERSION
-    assert module.next_patch_version("0.4.5") == LOCKED_VERSION
-    assert module.next_release_version("0.4.6-beta.1") == LOCKED_VERSION
+    assert module.next_patch_version("0.4.6") == LOCKED_VERSION
+    assert module.next_release_version("0.4.7-beta.1") == LOCKED_VERSION
 
-    for current in ("0.4.6", "0.4.7", "0.4.9", "0.4.99"):
-        with pytest.raises(ValueError, match="locked at 0.4.6"):
+    for current in ("0.4.7", "0.4.8", "0.4.9", "0.4.99"):
+        with pytest.raises(ValueError, match="locked at 0.4.7"):
             module.next_patch_version(current)
 
-    for current in ("0.4.7-beta.1", "0.4.9-beta.2"):
-        with pytest.raises(ValueError, match="locked at 0.4.6"):
+    for current in ("0.4.8-beta.1", "0.4.9-beta.2"):
+        with pytest.raises(ValueError, match="locked at 0.4.7"):
             module.next_release_version(current)
 
 
@@ -169,7 +169,7 @@ def test_actions_use_current_generations():
 def test_release_notes_stay_out_of_runtime_backend_image():
     dockerfile = text("Dockerfile")
     assert "RELEASE-NOTES-*.md" not in dockerfile
-    assert (ROOT / "RELEASE-NOTES-0.4.6.md").exists()
+    assert (ROOT / "RELEASE-NOTES-0.4.7.md").exists()
 
 
 def test_readme_documents_two_container_nginx_deployment():
