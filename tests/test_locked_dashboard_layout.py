@@ -29,7 +29,7 @@ def test_approved_dashboard_is_native_in_core_runtime():
     assert 'data-layout="approved-dashboard-v1"' in index
     assert 'data-dashboard-render="native-v2"' in index
     assert '/scarletx-wordmark.webp?v=approved-20260915-6' in index
-    assert '/scarletx-icon.webp?v=approved-20260915-6' in index
+    assert '/scarletx-icon.svg?v=approved-20260916-1' in index
     for label in ("Dashboard", "Performers", "Scenes", "Studios", "Calendar", "Discover", "Downloads", "Indexers", "Settings"):
         assert f'<span>{label}</span>' in index
     assert '<script src="/dashboard_v2.js"></script>' not in index
@@ -85,6 +85,7 @@ def test_frontend_image_build_uses_checksum_locked_brand_assets():
         assert f"COPY frontend/{asset} /usr/share/nginx/html/{asset}" in dockerfile
     for part in range(4):
         assert f"COPY frontend/scarletx-wordmark.webp.b64.{part:02d} /tmp/scarletx-wordmark.webp.b64.{part:02d}" in dockerfile
+    assert "COPY frontend/scarletx-icon.svg /usr/share/nginx/html/scarletx-icon.svg" in dockerfile
     assert "COPY frontend/scarletx-icon.webp /usr/share/nginx/html/scarletx-icon.webp" in dockerfile
     assert WORDMARK_SHA256 in dockerfile
     assert ICON_SHA256 in dockerfile
@@ -92,7 +93,6 @@ def test_frontend_image_build_uses_checksum_locked_brand_assets():
         assert f"COPY frontend/scarletx-banner.b64.{part} /tmp/scarletx-banner.b64.{part}" in dockerfile
     assert BANNER_SHA256 in dockerfile
     assert "COPY frontend/scarletx-wordmark.svg" not in dockerfile
-    assert "COPY frontend/scarletx-icon.svg" not in dockerfile
     assert "COPY frontend/scarletx-hero.svg" not in dockerfile
     assert "COPY frontend/dashboard_v2.js" not in dockerfile
     assert "COPY frontend/locked_dashboard_layout.js" not in dockerfile
