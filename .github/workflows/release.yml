@@ -1,10 +1,6 @@
 name: Release ScarletX
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "RELEASE-NOTES-0.4.6.md"
   workflow_dispatch:
     inputs:
       release_notes:
