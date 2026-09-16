@@ -48,7 +48,7 @@ def test_title_plus_studio_and_date_is_high_confidence():
     assert "release_date" in result.reasons
 
 
-def test_title_only_match_is_medium_and_not_automatic():
+def test_title_only_match_is_medium_but_legacy_unique_match_is_preserved():
     from scarletx.library_match import build_scene_match_index, match_local_scene, rank_local_scene
 
     scene = _scene(3, "Unique Long Scene Title")
@@ -59,7 +59,7 @@ def test_title_only_match_is_medium_and_not_automatic():
     assert result.scene is scene
     assert result.confidence == "medium"
     assert result.auto_match is False
-    assert match_local_scene(path, index) is None
+    assert match_local_scene(path, index) is scene
 
 
 def test_performer_overlap_can_promote_title_match_to_high_confidence():
