@@ -6,7 +6,7 @@ WORDMARK_SHA256 = "a90efeaa68b2f8a96e20d62167582f79ed58ef92aa776e46e8c4d9bad0e3c
 ICON_SHA256 = "30f7d52a474ed83d7f6f83d8da8ec9ca3488b6936bced0072dccdf762c10e768"
 
 
-def test_shell_uses_approved_wordmark_and_emblem_favicon_directly():
+def test_shell_keeps_approved_wordmark_source_and_emblem_favicon_available():
     index = (FRONTEND / "index.html").read_text(encoding="utf-8")
     assert '<div class="header-brand"><img src="/scarletx-wordmark.webp?v=approved-20260915-6" alt="ScarletX"></div>' in index
     assert '<div class="brand"><img src="/scarletx-wordmark.webp?v=approved-20260915-6" alt="ScarletX"></div>' in index
@@ -49,8 +49,11 @@ def test_web_image_reconstructs_and_verifies_approved_brand_assets():
     assert 'head -c 4 /usr/share/nginx/html/scarletx-icon.webp' in dockerfile
 
 
-def test_approved_brand_assets_have_explicit_visible_dimensions():
+def test_branding_cannot_reserve_a_broken_image_box():
     css = (FRONTEND / "approved_assets.css").read_text(encoding="utf-8")
     compact = "".join(css.split())
-    assert ".brandimg{display:block;width:180px;max-width:100%;height:auto;object-fit:contain;}" in compact
-    assert ".header-brandimg{display:block;width:150px;max-width:100%;max-height:48px;height:auto;object-fit:contain;}" in compact
+    assert ".brandimg,.header-brandimg{display:none!important;width:0!important;height:0!important;" in compact
+    assert '.brand::before,.header-brand::before{content:"Scarlet";' in compact
+    assert '.brand::after,.header-brand::after{content:"X";' in compact
+    assert "background:none!important" in compact
+    assert "box-shadow:none!important" in compact
