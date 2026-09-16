@@ -4,6 +4,7 @@ import base64
 import json
 import re
 from datetime import date
+from functools import lru_cache
 
 from fastapi import HTTPException
 from sqlalchemy import and_, func, or_, select, text
@@ -37,13 +38,13 @@ def _fts_query(value: str | None) -> str | None:
     ) or None
 
 
-def _fts_available(db: Session, table: str) -> bool:
-    bind = db.get_bind()
+@lru_cache(maxsize=16)
+def _fts_available_for_bind(bind: object, table: str) -> bool:
     if bind.dialect.name != "sqlite":
         return False
-    try:
+    with bind.connect() as connection:
         return bool(
-            db.scalar(
+            connection.scalar(
                 text(
                     "SELECT 1 FROM sqlite_master "
                     "WHERE type='table' AND name=:name"
@@ -51,6 +52,12 @@ def _fts_available(db: Session, table: str) -> bool:
                 {"name": table},
             )
         )
+
+
+def _fts_available(db: Session, table: str) -> bool:
+    bind = db.get_bind()
+    try:
+        return _fts_available_for_bind(bind, table)
     except Exception:
         return False
 
