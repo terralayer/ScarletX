@@ -1,3 +1,4 @@
+import base64
 from hashlib import sha256
 from pathlib import Path
 
@@ -53,5 +54,14 @@ def test_top_download_bell_is_centered_in_rounded_rectangle():
 
 
 def test_header_uses_locked_approved_logo_asset():
-    logo = (FRONTEND / "scarletx-logo.webp").read_bytes()
+    encoded = "".join(
+        (FRONTEND / f"scarletx-logo.b64.{part}").read_text(encoding="utf-8")
+        for part in range(1, 5)
+    )
+    logo = base64.b64decode(encoded, validate=True)
     assert sha256(logo).hexdigest() == "659136e0e64f7ef4d891f8c99cc3bd2f06083fa4ba2943c04a7629da7936fbae"
+
+    dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
+    assert "COPY frontend/scarletx-logo.b64.1 /tmp/scarletx-logo.b64.1" in dockerfile
+    assert "659136e0e64f7ef4d891f8c99cc3bd2f06083fa4ba2943c04a7629da7936fbae  /usr/share/nginx/html/scarletx-logo.webp" in dockerfile
+    assert "COPY frontend/scarletx-logo.webp /usr/share/nginx/html/scarletx-logo.webp" not in dockerfile
