@@ -49,11 +49,12 @@ def test_web_image_reconstructs_and_verifies_approved_brand_assets():
     assert 'head -c 4 /usr/share/nginx/html/scarletx-icon.webp' in dockerfile
 
 
-def test_branding_cannot_reserve_a_broken_image_box():
+def test_branding_shows_approved_logo_without_a_broken_image_box():
     css = (FRONTEND / "approved_assets.css").read_text(encoding="utf-8")
     compact = "".join(css.split())
     assert ".brandimg,.header-brandimg{display:none!important;width:0!important;height:0!important;" in compact
-    assert '.brand::before,.header-brand::before{content:"Scarlet";' in compact
-    assert '.brand::after,.header-brand::after{content:"X";' in compact
-    assert "background:none!important" in compact
+    assert "background-image:url('/scarletx-wordmark.webp?v=approved-20260915-7')!important" in compact
+    assert "background-size:contain!important" in compact
+    assert ".brand{width:180px!important;height:60px!important" in compact
+    assert ".header-brand{width:150px!important;height:48px!important" in compact
     assert "box-shadow:none!important" in compact
