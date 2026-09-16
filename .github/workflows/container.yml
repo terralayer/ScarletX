@@ -48,6 +48,6 @@ jobs:
           file: Dockerfile.web
           push: true
           platforms: linux/amd64
-          tags: ghcr.io/terralayer/scarletx-web:0.4.1-icons
+          tags: ghcr.io/terralayer/scarletx-web:0.4.1-icons-header
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
