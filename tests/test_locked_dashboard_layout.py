@@ -108,6 +108,13 @@ def test_dashboard_cleanup_hides_profile_and_banner_copy_and_levels_panels():
     assert 'align-self:start!important' not in compact
 
 
+def test_dashboard_recent_and_upcoming_rows_share_vertical_rhythm():
+    cleanup = "".join((FRONTEND / "dashboard_cleanup.css").read_text(encoding="utf-8").split())
+
+    assert '.approved-recent-list,.approved-upcoming.rows{padding:4px20px14px!important;' in cleanup
+    assert '.approved-recent-row,.approved-upcoming.row{min-height:64px!important;padding:8px0!important;box-sizing:border-box!important;' in cleanup
+
+
 def test_approved_banner_source_reconstructs_to_locked_bytes():
     chunks = []
     for part, expected_blob in EXPECTED_CHUNK_BLOBS.items():
