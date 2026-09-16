@@ -39,10 +39,7 @@ body[data-layout="approved-dashboard-v1"] .nav button.active{background:linear-g
 body[data-layout="approved-dashboard-v1"] .nav .ico{width:22px;height:22px;font-size:19px;color:#b9c5d4}
 body[data-layout="approved-dashboard-v1"] .nav button.active .ico{color:#ff5272}
 body[data-layout="approved-dashboard-v1"] .side-spacer{min-height:18px}
-body[data-layout="approved-dashboard-v1"] .side-footer{border-top:1px solid var(--approved-line);background:#0b1016;padding:16px 22px;color:#7f8b9c}
-body[data-layout="approved-dashboard-v1"] .side-footer .avatar{display:none}
-body[data-layout="approved-dashboard-v1"] .side-footer b{display:none}
-body[data-layout="approved-dashboard-v1"] .side-footer small{font-size:12px;color:#7f8b9c}
+body[data-layout="approved-dashboard-v1"] .side-footer{display:none!important}
 
 body[data-layout="approved-dashboard-v1"] .content{grid-column:2;grid-row:2;width:100%;max-width:none;margin:0;padding:20px 22px 60px;background:var(--approved-bg);min-width:0}
 body[data-layout="approved-dashboard-v1"] .pagehead{margin:0 0 14px;color:var(--approved-text)}
