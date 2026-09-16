@@ -65,3 +65,11 @@ def test_header_uses_locked_approved_logo_asset():
     assert "COPY frontend/scarletx-logo.b64.1 /tmp/scarletx-logo.b64.1" in dockerfile
     assert "a81e85a5899b7432b6a3fd557d5eb9f9a5b7ec451476dfa6897425d7830f8a4c  /usr/share/nginx/html/scarletx-logo.webp" in dockerfile
     assert "COPY frontend/scarletx-logo.webp /usr/share/nginx/html/scarletx-logo.webp" not in dockerfile
+
+
+def test_favicon_uses_locked_approved_ribbon_icon():
+    index = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    favicon = (FRONTEND / "scarletx-icon.webp").read_bytes()
+
+    assert '<link rel="icon" href="/scarletx-icon.webp" type="image/webp">' in index
+    assert sha256(favicon).hexdigest() == "d60a24488e48dcb825f816c9709a78fd865b46e4de799402a6fd5978ad73bbc4"
