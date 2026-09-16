@@ -1,0 +1,27 @@
+name: Dispatch ScarletX 0.4.7 Release
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "RELEASE-NOTES-0.4.7.md"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch protected manual release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NOTES: >-
+            ScarletX 0.4.7 includes the responsive dashboard summary-card scaling and restored equal-height second-row panels from PR #145, together with the current verified main release tree and TrueNAS package 1.0.13.
+        shell: bash
+        run: |
+          gh workflow run release.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f release_notes="$RELEASE_NOTES"
