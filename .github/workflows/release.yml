@@ -230,9 +230,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          git fetch origin main
-          git checkout --detach origin/main
           test "$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')" = "${NEXT_VERSION}"
-          git tag -a "v${NEXT_VERSION}" -m "ScarletX ${NEXT_VERSION}"
+          git tag -a "v${NEXT_VERSION}" -m "ScarletX ${NEXT_VERSION}" HEAD
           git push origin "v${NEXT_VERSION}"
           gh release create "v${NEXT_VERSION}" --title "ScarletX ${NEXT_VERSION}" --notes-file "RELEASE-NOTES-${NEXT_VERSION}.md" --verify-tag
