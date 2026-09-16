@@ -14,6 +14,8 @@ ScarletX roadmap work is intentionally separated from release-version work.
 
 Roadmap work progresses in small mergeable slices: foundation, reliability, concurrency, imports, library/features, hardening, and validation. Beta or stable releases are cut only from an explicit release change after the intended slice is complete; feature PRs do not silently advance versions.
 
+The release workflow is intentionally manual-only so ordinary merges to `main` cannot start a release implicitly.
+
 ## Version-helper contract
 
 The release helper may exercise beta-to-stable transitions only inside the currently supported and locked release range. Synthetic test fixtures must not request a version newer than the active release lock, because such a request is correctly rejected by the production helper.
