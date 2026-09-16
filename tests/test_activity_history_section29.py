@@ -93,16 +93,23 @@ def test_activity_history_limit_is_capped_at_one_hundred(tmp_path):
     assert response.status_code == 422
 
 
-def test_composed_application_registers_activity_history_page_once():
+def test_composed_application_registers_paged_and_legacy_history_routes_once():
     from scarletx.app import app
 
-    matches = [
+    paged = [
         route
         for route in app.router.routes
         if getattr(route, "path", None) == "/api/history/page"
         and "GET" in (getattr(route, "methods", set()) or set())
     ]
-    assert len(matches) == 1
+    legacy = [
+        route
+        for route in app.router.routes
+        if getattr(route, "path", None) == "/api/history"
+        and "GET" in (getattr(route, "methods", set()) or set())
+    ]
+    assert len(paged) == 1
+    assert len(legacy) == 1
 
 
 def test_activity_history_ui_override_is_bounded_filtered_and_packaged():
