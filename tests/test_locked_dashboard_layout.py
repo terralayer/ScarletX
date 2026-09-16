@@ -66,6 +66,19 @@ def test_approved_layout_hides_legacy_side_footer_entirely():
     assert 'body[data-layout="approved-dashboard-v1"] .main::after{content:none!important;display:none!important}' in footer_css
 
 
+def test_approved_desktop_sidebar_is_compact_but_keeps_mobile_breakpoints():
+    css = "".join((FRONTEND / "locked_dashboard.css").read_text(encoding="utf-8").split())
+
+    assert "grid-template-columns:242pxminmax(0,1fr)" in css
+    assert ".nav{padding:18px10px14px;display:grid;gap:6px}" in css
+    assert ".navbutton{height:44px" in css
+    assert "padding:016px" in css
+    assert "gap:12px" in css
+    assert "font-size:15px" in css
+    assert ".nav.ico{width:19px;height:19px;font-size:17px" in css
+    assert "@media(max-width:980px){body[data-layout=\"approved-dashboard-v1\"].shell{grid-template-columns:82px1fr" in css
+
+
 def test_dashboard_cleanup_hides_profile_and_banner_copy_and_aligns_panels():
     cleanup = FRONTEND / "dashboard_cleanup.css"
     assert cleanup.exists()
