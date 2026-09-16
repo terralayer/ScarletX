@@ -14,11 +14,11 @@ jobs:
   trigger:
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch locked ScarletX 0.4.4 release
+      - name: Dispatch locked ScarletX 0.4.5 release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh workflow run release.yml \
             --repo terralayer/ScarletX \
             --ref main \
-            -f release_notes='Corrects ScarletX branding by shipping the exact approved horizontal logo artwork and exact approved ribbon-only favicon/app icon instead of reconstructed SVG approximations. Adds cache-busted UI references so browsers load the corrected assets immediately, preserves the approved dashboard banner and navigation icons, and locks the release version at 0.4.4.'
+            -f release_notes='Synchronizes all ScarletX changes merged since 0.4.4 into the stable 0.4.5 release, including approved branding and favicon corrections, vector navigation icons, processing and activity improvements, Wanted state tracking, quality profiles and safe upgrades, safer matching and import flows, incremental scanning, duplicate detection, library health and resource protections, plus the locked footer correction that removes the generated Built with heart for the scene pseudo-footer.'
