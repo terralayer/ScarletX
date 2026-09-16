@@ -1,0 +1,64 @@
+name: Prepare ScarletX 0.4.7 Metadata
+
+on:
+  push:
+    branches:
+      - release/0.4.7
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release branch
+        uses: actions/checkout@v5
+        with:
+          ref: release/0.4.7
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Generate synchronized 0.4.7 metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          if [ "$current" = "0.4.7" ]; then
+            echo "0.4.7 metadata already generated"
+            exit 0
+          fi
+          test "$current" = "0.4.6"
+          notes='ScarletX 0.4.7 packages the latest approved dashboard and reliability updates into a stable release.
+
+## Dashboard
+
+- Makes the five top summary cards scale smoothly across desktop widths, including card height, padding, icon sizing, spacing, and typography.
+- Restores equal-height alignment for the second dashboard row so the primary panels remain level.
+- Preserves the approved compact sidebar, branding, footer, tablet layout, and mobile layout.
+
+## Release
+
+- Includes all fixes already merged to main through this release branch.
+- Publishes matching backend and web images for 0.4.7.
+- Advances the TrueNAS catalog package to 1.0.13.'
+          generated="$(python tools/release_version.py apply --notes "$notes")"
+          test "$generated" = "0.4.7"
+
+      - name: Commit generated release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "No generated changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml scarletx README.md BUILD-INFO.txt start-scarletx.sh Start-ScarletX.ps1 docker-compose.truenas.yml packaging/truenas/scarletx RELEASE-NOTES-0.4.7.md
+          git commit -m "release: generate ScarletX 0.4.7 metadata"
+          git push origin HEAD:release/0.4.7
