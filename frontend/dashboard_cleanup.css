@@ -1,0 +1,25 @@
+/* Final dashboard chrome cleanup. Loaded after the locked dashboard styles. */
+body[data-layout="approved-dashboard-v1"] .status-pill{
+  display:none!important;
+}
+
+body[data-layout="approved-dashboard-v1"] .dashboard-hero-copy{
+  display:none!important;
+}
+
+body[data-layout="approved-dashboard-v1"] .approved-dashboard-grid{
+  align-items:start!important;
+}
+
+body[data-layout="approved-dashboard-v1"] .approved-dashboard-grid .panel{
+  align-self:start!important;
+  width:100%!important;
+}
+
+body[data-layout="approved-dashboard-v1"] .approved-dashboard-grid .panel-head{
+  min-height:58px!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:space-between!important;
+  box-sizing:border-box!important;
+}
