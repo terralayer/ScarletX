@@ -32,3 +32,19 @@ def test_header_search_icon_is_vertically_centered_in_search_field():
     assert 'top:50%!important;' in compact_assets
     assert 'transform:translateY(-50%);' in compact_assets
     assert 'pointer-events:none;' in compact_assets
+
+
+def test_top_download_bell_is_centered_in_rounded_rectangle():
+    assets = (FRONTEND / "approved_assets.css").read_text(encoding="utf-8")
+    compact_assets = "".join(assets.split())
+
+    assert 'body[data-layout="approved-dashboard-v1"].queue-pill{' in compact_assets
+    assert 'width:44px!important;' in compact_assets
+    assert 'height:40px!important;' in compact_assets
+    assert 'border-radius:9px!important;' in compact_assets
+    assert 'display:inline-flex!important;' in compact_assets
+    assert 'align-items:center!important;' in compact_assets
+    assert 'justify-content:center!important;' in compact_assets
+    assert '.queue-glyph{width:22px;height:22px;display:grid;place-items:center;line-height:1;}' in compact_assets
+    assert '.queue-glyphsvg{display:block;width:22px;height:22px;}' in compact_assets
+    assert 'body[data-layout="approved-dashboard-v1"].queue-pill:hover,body[data-layout="approved-dashboard-v1"].queue-pill:focus-visible{border-radius:9px!important;}' in compact_assets
