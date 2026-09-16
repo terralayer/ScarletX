@@ -29,6 +29,7 @@ COPY frontend/scarletx-wordmark.webp.b64.00 /tmp/scarletx-wordmark.webp.b64.00
 COPY frontend/scarletx-wordmark.webp.b64.01 /tmp/scarletx-wordmark.webp.b64.01
 COPY frontend/scarletx-wordmark.webp.b64.02 /tmp/scarletx-wordmark.webp.b64.02
 COPY frontend/scarletx-wordmark.webp.b64.03 /tmp/scarletx-wordmark.webp.b64.03
+COPY frontend/scarletx-icon.svg /usr/share/nginx/html/scarletx-icon.svg
 COPY frontend/scarletx-icon.webp /usr/share/nginx/html/scarletx-icon.webp
 COPY frontend/scarletx-banner.b64.1 /tmp/scarletx-banner.b64.1
 COPY frontend/scarletx-banner.b64.2 /tmp/scarletx-banner.b64.2
@@ -48,6 +49,7 @@ RUN set -eux; \
     echo '236fc1fdadd8c34fa5909dcf7d5dae6e346b410e04bf89c0409fc341fee02cad  /usr/share/nginx/html/scarletx-banner.webp' | sha256sum -c -; \
     echo 'a90efeaa68b2f8a96e20d62167582f79ed58ef92aa776e46e8c4d9bad0e3c3ca  /usr/share/nginx/html/scarletx-wordmark.webp' | sha256sum -c -; \
     echo '30f7d52a474ed83d7f6f83d8da8ec9ca3488b6936bced0072dccdf762c10e768  /usr/share/nginx/html/scarletx-icon.webp' | sha256sum -c -; \
+    test -s /usr/share/nginx/html/scarletx-icon.svg; \
     test "$(head -c 4 /usr/share/nginx/html/scarletx-wordmark.webp)" = "RIFF"; \
     test "$(dd if=/usr/share/nginx/html/scarletx-wordmark.webp bs=1 skip=8 count=4 2>/dev/null)" = "WEBP"; \
     test "$(head -c 4 /usr/share/nginx/html/scarletx-icon.webp)" = "RIFF"; \
@@ -76,7 +78,7 @@ RUN set -eux; \
     grep -q '/dashboard_settings_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/dashboard_regression_hotfix.js' /usr/share/nginx/html/index.html; \
     grep -q '/scarletx-wordmark.webp?v=approved-20260915-6' /usr/share/nginx/html/index.html; \
-    grep -q '/scarletx-icon.webp?v=approved-20260915-6' /usr/share/nginx/html/index.html; \
+    grep -q '/scarletx-icon.svg?v=approved-20260916-1' /usr/share/nginx/html/index.html; \
     grep -q 'authGateBoot(boot);' /usr/share/nginx/html/app.js
 
 EXPOSE 8690
