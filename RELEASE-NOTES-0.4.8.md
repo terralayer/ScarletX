@@ -1,10 +1,11 @@
 # ScarletX 0.4.8
 
-ScarletX 0.4.8 packages the dashboard row-alignment fix and current verified mainline into a stable release.
+ScarletX 0.4.8 packages the dashboard alignment fixes and current verified mainline into a stable release.
 
 ## Dashboard
 
 - Aligns Recent Scenes and Upcoming Releases with identical list padding, row minimum height, vertical padding, and border-box sizing so the two panels read level.
+- Removes the inherited Recent Scenes top offset so Recent Scenes and Upcoming Releases share the same top baseline.
 - Preserves the scalable top summary cards, compact sidebar, approved branding, footer, and existing tablet/mobile behavior.
 
 ## Release
