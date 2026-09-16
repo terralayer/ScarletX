@@ -60,5 +60,5 @@ def test_web_image_extracts_and_validates_approved_brand_assets_without_runtime_
 def test_approved_brand_assets_have_explicit_visible_dimensions():
     css = (FRONTEND / "approved_assets.css").read_text(encoding="utf-8")
     compact = "".join(css.split())
-    assert ".brandimg{display:block;width:180px;max-width:100%;height:auto;object-fit:contain}" in compact
-    assert ".header-brandimg{display:block;width:150px;max-width:100%;max-height:48px;height:auto;object-fit:contain}" in compact
+    assert ".brandimg{display:block;width:180px;max-width:100%;height:auto;object-fit:contain;}" in compact
+    assert ".header-brandimg{display:block;width:150px;max-width:100%;max-height:48px;height:auto;object-fit:contain;}" in compact
