@@ -105,8 +105,10 @@ def test_composed_application_registers_activity_history_page_once():
     assert len(matches) == 1
 
 
-def test_activity_history_ui_uses_bounded_paging_and_event_filtering():
-    source = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+def test_activity_history_ui_override_is_bounded_filtered_and_packaged():
+    source = (ROOT / "frontend" / "activity_history_overrides.js").read_text(encoding="utf-8")
+    index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+    dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
 
     assert "ACTIVITY_HISTORY_PAGE_SIZE=50" in source
     assert "activityHistoryPage=1" in source
@@ -115,4 +117,7 @@ def test_activity_history_ui_uses_bounded_paging_and_event_filtering():
     assert "activityPager('history'" in source
     assert "activityHistoryFilter" in source
     assert "event_counts" in source
-    assert "api('/api/history?limit=200')" not in source
+    assert "'/api/history?limit=200'" in source
+    assert "/activity_history_overrides.js" in index
+    assert "COPY frontend/activity_history_overrides.js /usr/share/nginx/html/activity_history_overrides.js" in dockerfile
+    assert "grep -q '/activity_history_overrides.js'" in dockerfile
