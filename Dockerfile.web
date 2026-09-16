@@ -37,6 +37,7 @@ COPY frontend/locked_dashboard.css /usr/share/nginx/html/locked_dashboard.css
 COPY frontend/locked_dashboard_footer.css /usr/share/nginx/html/locked_dashboard_footer.css
 COPY frontend/approved_assets.css /usr/share/nginx/html/approved_assets.css
 COPY frontend/ui_icons.css /usr/share/nginx/html/ui_icons.css
+COPY frontend/dashboard_cleanup.css /usr/share/nginx/html/dashboard_cleanup.css
 
 RUN set -eux; \
     cat /tmp/scarletx-banner.b64.1 /tmp/scarletx-banner.b64.2 /tmp/scarletx-banner.b64.3 /tmp/scarletx-banner.b64.4 \
@@ -64,6 +65,7 @@ RUN set -eux; \
     grep -q '/locked_dashboard_footer.css' /usr/share/nginx/html/index.html; \
     grep -q '/approved_assets.css' /usr/share/nginx/html/index.html; \
     grep -q '/ui_icons.css' /usr/share/nginx/html/index.html; \
+    grep -q '/dashboard_cleanup.css' /usr/share/nginx/html/index.html; \
     grep -q '/app.js' /usr/share/nginx/html/index.html; \
     grep -q '/navigation_error_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/ui_overrides.js' /usr/share/nginx/html/index.html; \
