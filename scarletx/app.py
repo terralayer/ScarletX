@@ -5,7 +5,7 @@ from .compact_studio_art import install_compact_studio_art_route
 from .db import SessionLocal, engine
 from .downloader_state_hotfix import install_downloader_state_hotfixes
 from .http_security import install_authentication, install_security_headers, remove_legacy_api_key_middleware
-from .library_health import router as library_health_router
+from .library_health import library_health
 from .main import app
 from .media_dedup import install_runtime_dedup
 from .observability import install_observability
@@ -57,6 +57,13 @@ def _add_dashboard_routes() -> None:
         app.add_api_route(path, endpoint, methods=["GET"], name=name)
 
 
+def _add_library_health_route() -> None:
+    path = "/api/media-library/health"
+    if any(getattr(route, "path", None) == path for route in app.router.routes):
+        return
+    app.add_api_route(path, library_health, methods=["GET"], name="library_health")
+
+
 def _add_observability_route() -> None:
     path = "/api/system/metrics"
     if any(getattr(route, "path", None) == path for route in app.router.routes):
@@ -75,7 +82,7 @@ install_downloader_state_hotfixes(app)
 install_compact_studio_art_route(app)
 remove_legacy_api_key_middleware(app)
 app.include_router(auth_router)
-app.include_router(library_health_router)
+_add_library_health_route()
 _add_observability_route()
 install_authentication(
     app,
