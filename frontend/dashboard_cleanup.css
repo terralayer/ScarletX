@@ -17,6 +17,10 @@ body[data-layout="approved-dashboard-v1"] .approved-dashboard-grid .panel{
   width:100%!important;
 }
 
+body[data-layout="approved-dashboard-v1"] .approved-dashboard-grid .panel.recent{
+  margin-top:0!important;
+}
+
 body[data-layout="approved-dashboard-v1"] .approved-dashboard-grid .panel-head{
   min-height:58px!important;
   display:flex!important;
