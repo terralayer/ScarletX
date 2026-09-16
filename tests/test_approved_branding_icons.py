@@ -47,13 +47,15 @@ def test_vector_icons_have_consistent_css_contract():
     assert '.profile-glyphsvg' in compact
 
 
-def test_web_image_reconstructs_and_verifies_approved_brand_assets():
+def test_web_image_reconstructs_and_verifies_exact_approved_pngs():
     dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
-    assert "COPY frontend/scarletx-wordmark.png.b64 /tmp/scarletx-wordmark.png.b64" in dockerfile
-    assert "COPY frontend/scarletx-icon.png.b64 /tmp/scarletx-icon.png.b64" in dockerfile
-    assert "base64 -d /tmp/scarletx-wordmark.png.b64 > /usr/share/nginx/html/scarletx-wordmark.png" in dockerfile
-    assert "base64 -d /tmp/scarletx-icon.png.b64 > /usr/share/nginx/html/scarletx-icon.png" in dockerfile
+    for part in range(1, 7):
+        assert f"COPY frontend/scarletx-wordmark.png.b64.{part} /tmp/scarletx-wordmark.png.b64.{part}" in dockerfile
+    for part in range(1, 8):
+        assert f"COPY frontend/scarletx-icon.png.b64.{part} /tmp/scarletx-icon.png.b64.{part}" in dockerfile
+    assert "cat /tmp/scarletx-wordmark.png.b64.* | base64 -d > /usr/share/nginx/html/scarletx-wordmark.png" in dockerfile
+    assert "cat /tmp/scarletx-icon.png.b64.* | base64 -d > /usr/share/nginx/html/scarletx-icon.png" in dockerfile
     assert WORDMARK_SHA256 in dockerfile
     assert ICON_SHA256 in dockerfile
-    assert "href=\"data:image/webp;base64" not in dockerfile
+    assert "data:image/webp;base64" not in dockerfile
     assert "COPY frontend/ui_icons.css /usr/share/nginx/html/ui_icons.css" in dockerfile
