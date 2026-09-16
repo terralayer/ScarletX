@@ -6,7 +6,7 @@ ScarletX roadmap work is intentionally separated from release-version work.
 
 - Each numbered roadmap section is delivered in its own pull request.
 - Roadmap pull requests must not change the shipped ScarletX version, release notes, TrueNAS app version, container release tags, or other release metadata unless the pull request is itself the dedicated release-discipline/release change.
-- The current shipped release lock remains `0.4.6` until an explicit release decision changes it.
+- The current shipped release lock remains `0.4.7` until an explicit release decision changes it.
 - Feature, reliability, performance, and refactor pull requests must preserve backward compatibility unless their roadmap section explicitly changes behavior.
 - A section is mergeable only after its section-specific regression tests pass and applicable repository gates have been checked. Known failures already present on the base branch must be documented rather than hidden.
 
@@ -14,7 +14,7 @@ ScarletX roadmap work is intentionally separated from release-version work.
 
 Roadmap work progresses in small mergeable slices: foundation, reliability, concurrency, imports, library/features, hardening, and validation. Beta or stable releases are cut only from an explicit release change after the intended slice is complete; feature PRs do not silently advance versions.
 
-The release workflow is intentionally manual-only so ordinary merges to `main` cannot start a release implicitly.
+Ordinary `main` pushes publish only moving development tags (`main` and SHA tags) and never overwrite a stable release tag. A dedicated release change may arm a one-shot `main` push trigger scoped to that release's notes file so the already-tested, already-staged release is published immediately after its release PR merges. The locked release workflow still refuses to advance beyond its explicitly selected version and tags the exact release commit it verifies and builds.
 
 ## Version-helper contract
 
