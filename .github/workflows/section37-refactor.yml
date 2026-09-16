@@ -1,0 +1,54 @@
+name: Section 37 Refactor
+
+on:
+  push:
+    branches:
+      - perf/37-startup-performance
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: perf/37-startup-performance
+      - name: Defer startup status snapshot
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('scarletx/routes/application.py')
+          source = path.read_text(encoding='utf-8')
+
+          old_import = 'from ..status_console import collect_startup_status, emit_status, render_dashboard\n'
+          new_import = 'from ..status_console import emit_status\nfrom ..startup_status import emit_startup_status_snapshot\n'
+          if source.count(old_import) != 1:
+              raise SystemExit('expected exactly one legacy status-console import')
+          source = source.replace(old_import, new_import, 1)
+
+          old_block = '''        try:\n            print(render_dashboard(collect_startup_status(db, runtime), version="0.4.5"), flush=True)\n        except Exception as exc:\n            emit_status("Status Console", "FAILED", exc.__class__.__name__, severity="error")\n'''
+          if source.count(old_block) != 1:
+              raise SystemExit('expected exactly one blocking startup status block')
+          source = source.replace(old_block, '', 1)
+
+          old_watchers = '''    watchers = recovered_watchers + [\n        asyncio.create_task(completed_download_import_loop()),\n'''
+          new_watchers = '''    watchers = recovered_watchers + [\n        asyncio.create_task(emit_startup_status_snapshot(runtime)),\n        asyncio.create_task(completed_download_import_loop()),\n'''
+          if source.count(old_watchers) != 1:
+              raise SystemExit('expected exactly one watcher-list anchor')
+          source = source.replace(old_watchers, new_watchers, 1)
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/section37-refactor.yml
+          git add scarletx/routes/application.py scarletx/startup_status.py
+          git commit -m "perf: defer startup status snapshot"
+          git push origin HEAD:perf/37-startup-performance
