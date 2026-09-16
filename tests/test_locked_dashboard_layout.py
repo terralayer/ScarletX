@@ -103,6 +103,7 @@ def test_dashboard_cleanup_hides_profile_and_banner_copy_and_levels_panels():
     assert '.dashboard-hero-copy{display:none!important;}' in compact
     assert '.approved-dashboard-grid{align-items:stretch!important;}' in compact
     assert '.approved-dashboard-grid.panel{align-self:stretch!important;height:100%!important;' in compact
+    assert '.approved-dashboard-grid.panel.recent{margin-top:0!important;' in compact
     assert '.approved-dashboard-grid.panel-head{min-height:58px!important;' in compact
     assert 'align-items:start!important' not in compact
     assert 'align-self:start!important' not in compact
