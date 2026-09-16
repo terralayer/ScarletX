@@ -92,7 +92,8 @@ from ..media_library import (
 )
 from ..media_watch import media_watch_loop
 from ..remote_art import RemoteArtworkError, cached_remote_image, cached_remote_thumbnail, close_remote_art_client
-from ..status_console import collect_startup_status, emit_status, render_dashboard
+from ..status_console import emit_status
+from ..startup_status import emit_startup_status_snapshot
 from ..migrations import (
     ensure_file_scan_state_table,
     ensure_performance_indexes,
@@ -355,13 +356,10 @@ async def lifespan(_: FastAPI):
         repair_legacy_auto_monitored_adult_entities(db)
         runtime = load_database_settings(db)
         app.title = f"{runtime.app_name} API"
-        try:
-            print(render_dashboard(collect_startup_status(db, runtime), version="0.4.5"), flush=True)
-        except Exception as exc:
-            emit_status("Status Console", "FAILED", exc.__class__.__name__, severity="error")
     await downloader_supervisor.start()
     recovered_watchers = await resume_background_jobs(runtime)
     watchers = recovered_watchers + [
+        asyncio.create_task(emit_startup_status_snapshot(runtime)),
         asyncio.create_task(completed_download_import_loop()),
         asyncio.create_task(automatic_search_loop()),
         asyncio.create_task(monitored_entity_discovery_loop()),
