@@ -38,6 +38,7 @@ def test_route_and_method_contract_is_stable():
         {"path": "/api/dashboard/studios", "methods": ["GET"]},
         {"path": "/api/library/performers/{item_id}/scenes", "methods": ["GET"]},
         {"path": "/api/library/studios/{item_id}/scenes", "methods": ["GET"]},
+        {"path": "/api/media-library/health", "methods": ["GET"]},
         {"path": "/api/system/metrics", "methods": ["GET"]},
     ]
     missing_extensions = [route for route in runtime_extensions if route not in current]
