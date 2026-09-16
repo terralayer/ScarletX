@@ -55,7 +55,7 @@ def test_top_download_bell_is_centered_in_rounded_rectangle():
 
 def test_header_uses_locked_approved_logo_asset():
     encoded = "".join(
-        (FRONTEND / f"scarletx-logo.b64.{part}").read_text(encoding="utf-8")
+        (FRONTEND / f"scarletx-logo.b64.{part}").read_text(encoding="utf-8").strip()
         for part in range(1, 5)
     )
     logo = base64.b64decode(encoded, validate=True)
