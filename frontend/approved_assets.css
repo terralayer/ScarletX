@@ -29,6 +29,19 @@
   line-height:1;
   pointer-events:none;
 }
+body[data-layout="approved-dashboard-v1"] .queue-pill{
+  width:44px!important;
+  height:40px!important;
+  border-radius:9px!important;
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  padding:0!important;
+}
+.queue-glyph{width:22px;height:22px;display:grid;place-items:center;line-height:1;}
+.queue-glyph svg{display:block;width:22px;height:22px;}
+body[data-layout="approved-dashboard-v1"] .queue-pill:hover,
+body[data-layout="approved-dashboard-v1"] .queue-pill:focus-visible{border-radius:9px!important;}
 .approved-dashboard-grid{align-items:start!important;}
 .approved-dashboard-grid .panel{
   align-self:start!important;
