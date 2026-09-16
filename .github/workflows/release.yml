@@ -1,10 +1,14 @@
 name: Release ScarletX
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "RELEASE-NOTES-0.4.6.md"
   workflow_dispatch:
     inputs:
       release_notes:
-        description: Markdown release notes for the locked 0.4.5 release
+        description: Markdown release notes for the locked 0.4.6 release
         required: true
         type: string
 
@@ -37,10 +41,10 @@ jobs:
         shell: bash
         run: |
           CURRENT_VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          NEXT_VERSION="0.4.5"
+          NEXT_VERSION="0.4.6"
           case "$CURRENT_VERSION" in
-            0.4.4|0.4.5) ;;
-            *) echo "Expected ScarletX 0.4.4 or 0.4.5 before locked release; got $CURRENT_VERSION" >&2; exit 1 ;;
+            0.4.5|0.4.6) ;;
+            *) echo "Expected ScarletX 0.4.5 or 0.4.6 before locked release; got $CURRENT_VERSION" >&2; exit 1 ;;
           esac
           if git rev-parse --verify --quiet "refs/tags/v${NEXT_VERSION}" >/dev/null; then
             echo "v${NEXT_VERSION} already exists; version is locked and will not advance" >&2
@@ -50,21 +54,21 @@ jobs:
           echo "next=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
           echo "NEXT_VERSION=${NEXT_VERSION}" >> "$GITHUB_ENV"
 
-      - name: Apply locked 0.4.5 release metadata
-        if: steps.version.outputs.current != '0.4.5'
+      - name: Apply locked 0.4.6 release metadata
+        if: steps.version.outputs.current != '0.4.6'
         env:
           RELEASE_NOTES: ${{ inputs.release_notes }}
         shell: bash
         run: |
           APPLIED_VERSION="$(python tools/release_version.py apply --notes "$RELEASE_NOTES")"
-          test "$APPLIED_VERSION" = "0.4.5"
+          test "$APPLIED_VERSION" = "0.4.6"
 
       - name: Verify locked metadata when already staged
-        if: steps.version.outputs.current == '0.4.5'
+        if: steps.version.outputs.current == '0.4.6'
         shell: bash
         run: |
-          test -f RELEASE-NOTES-0.4.5.md
-          test "$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')" = "0.4.5"
+          test -f RELEASE-NOTES-0.4.6.md
+          test "$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')" = "0.4.6"
 
       - name: Install project and validation dependencies
         run: |
@@ -207,7 +211,7 @@ jobs:
           rc=$?
           set -e
           if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
-            echo "TrueNAS CI deployment timed out after images were published; continuing to finalize locked 0.4.5." >&2
+            echo "TrueNAS CI deployment timed out after images were published; continuing to finalize locked 0.4.6." >&2
           elif [ "$rc" -ne 0 ]; then
             exit "$rc"
           fi
@@ -219,7 +223,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add pyproject.toml scarletx README.md BUILD-INFO.txt start-scarletx.sh Start-ScarletX.ps1 docker-compose.truenas.yml packaging/truenas/scarletx "RELEASE-NOTES-${NEXT_VERSION}.md"
           if git diff --cached --quiet; then
-            echo "Locked 0.4.5 metadata already committed"
+            echo "Locked 0.4.6 metadata already committed"
           else
             git commit -m "Release ScarletX ${NEXT_VERSION}"
             git push origin HEAD:main
