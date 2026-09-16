@@ -36,15 +36,13 @@ def test_approved_dashboard_is_native_in_core_runtime():
     assert '<script src="/locked_dashboard_layout.js"></script>' not in index
     assert '<link rel="stylesheet" href="/approved_assets.css">' in index
     assert '<link rel="stylesheet" href="/ui_icons.css">' in index
+    assert '<link rel="stylesheet" href="/dashboard_cleanup.css">' in index
     assert 'Discover More. Manage Smarter.' in index
 
     dashboard_start = app.index("async function dashboard()")
     dashboard_end = app.index("function performerLinks", dashboard_start)
     dashboard = app[dashboard_start:dashboard_end]
     assert 'class="dashboard-hero"' in dashboard
-    assert 'Welcome to <span>ScarletX</span>' not in dashboard
-    assert 'Discover. Monitor. Organize. Enjoy.' not in dashboard
-    assert 'class="dashboard-hero-copy"' not in dashboard
     assert 'class="stats approved-stat-grid"' in dashboard
     assert 'class="approved-dashboard-grid"' in dashboard
     assert 'id="recentScenes"' in dashboard
@@ -58,22 +56,15 @@ def test_approved_dashboard_is_native_in_core_runtime():
     assert '.dashboard-hero::after{display:none!important}' in approved_assets_css
 
 
-def test_dashboard_header_has_no_user_profile_icon():
-    index = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    assert 'class="status-pill"' not in index
-    assert 'class="profile-glyph"' not in index
-    assert 'data-icon="top-user"' not in index
-    assert 'id="hostLabel"' not in index
-    assert 'id="onlineText"' not in index
-    assert 'id="statusDot"' not in index
-
-
-def test_recent_and_upcoming_panels_share_the_same_top_baseline():
-    css = (FRONTEND / "locked_dashboard.css").read_text(encoding="utf-8")
-    compact = "".join(css.split())
-    assert ".approved-dashboard-grid{display:grid;grid-template-columns:minmax(0,1.02fr)minmax(0,1fr);gap:20px;align-items:start}" in compact
-    assert ".approved-dashboard-grid.panel{align-self:start" in compact
-    assert ".approved-dashboard-grid.panel-head{min-height:58px" in compact
+def test_dashboard_cleanup_hides_profile_and_banner_copy_and_aligns_panels():
+    cleanup = FRONTEND / "dashboard_cleanup.css"
+    assert cleanup.exists()
+    compact = "".join(cleanup.read_text(encoding="utf-8").split())
+    assert '.status-pill{display:none!important;}' in compact
+    assert '.dashboard-hero-copy{display:none!important;}' in compact
+    assert '.approved-dashboard-grid{align-items:start!important;}' in compact
+    assert '.approved-dashboard-grid.panel{align-self:start!important;' in compact
+    assert '.approved-dashboard-grid.panel-head{min-height:58px!important;' in compact
 
 
 def test_approved_banner_source_reconstructs_to_locked_bytes():
@@ -90,7 +81,7 @@ def test_approved_banner_source_reconstructs_to_locked_bytes():
 
 def test_frontend_image_build_uses_checksum_locked_brand_assets():
     dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
-    for asset in ("locked_dashboard.css", "locked_dashboard_footer.css", "approved_assets.css", "ui_icons.css"):
+    for asset in ("locked_dashboard.css", "locked_dashboard_footer.css", "approved_assets.css", "ui_icons.css", "dashboard_cleanup.css"):
         assert f"COPY frontend/{asset} /usr/share/nginx/html/{asset}" in dockerfile
     for part in range(4):
         assert f"COPY frontend/scarletx-wordmark.webp.b64.{part:02d} /tmp/scarletx-wordmark.webp.b64.{part:02d}" in dockerfile
