@@ -2,27 +2,10 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from .activity_history import activity_history_page
-from .auth_routes import router as auth_router
 from .background_tasks import AsyncioTaskProxy, BackgroundTaskRegistry
-from .bulk_operations import bulk_wanted
-from .compact_studio_art import install_compact_studio_art_route
-from .db import SessionLocal, engine
-from .downloader_state_hotfix import install_downloader_state_hotfixes
-from .http_security import install_authentication, install_security_headers, remove_legacy_api_key_middleware
-from .library_health import library_health
 from .main import app
-from .media_dedup import install_runtime_dedup
-from .observability import install_observability
-from .observability_routes import system_metrics
 from .routes import application as legacy_application
-from .routes.runtime_overrides import (
-    dashboard_performers_runtime,
-    dashboard_scenes_runtime,
-    dashboard_studios_runtime,
-    update_general_settings_runtime,
-)
-from .settings_store import load_database_settings
+from .runtime_composition import install_runtime_composition
 
 
 background_task_registry = BackgroundTaskRegistry(max_tasks=128)
@@ -42,91 +25,5 @@ async def _managed_lifespan(application):
         await background_task_registry.shutdown()
 
 
-def _remove_legacy_web_route() -> None:
-    """Keep the composed ASGI app backend-only while main.py is decomposed incrementally."""
-    app.router.routes = [route for route in app.router.routes if getattr(route, "path", None) != "/"]
-
-
-def _fixed_runtime_settings(db, *args, **kwargs):
-    return load_database_settings(db, *args, **kwargs)
-
-
-def _patch_route_call(path: str, method: str, replacement) -> None:
-    method = method.upper()
-    for route in app.router.routes:
-        if (
-            getattr(route, "path", None) == path
-            and method in (getattr(route, "methods", set()) or set())
-        ):
-            # Preserve the APIRoute object so the focused route-boundary modules
-            # continue to own the exact registered object. Only change its call.
-            route.endpoint = replacement
-            route.dependant.call = replacement
-            return
-    raise RuntimeError(f"ScarletX route not found: {method} {path}")
-
-
-def _add_dashboard_routes() -> None:
-    definitions = (
-        ("/api/dashboard/scenes", dashboard_scenes_runtime, "dashboard_downloaded_scenes"),
-        ("/api/dashboard/studios", dashboard_studios_runtime, "dashboard_recent_studios"),
-        ("/api/dashboard/performers", dashboard_performers_runtime, "dashboard_recent_performers"),
-    )
-    existing = {getattr(route, "path", None) for route in app.router.routes}
-    for path, endpoint, name in definitions:
-        if path in existing:
-            continue
-        app.add_api_route(path, endpoint, methods=["GET"], name=name)
-
-
-def _add_bulk_wanted_route() -> None:
-    path = "/api/wanted/bulk"
-    if any(getattr(route, "path", None) == path for route in app.router.routes):
-        return
-    app.add_api_route(path, bulk_wanted, methods=["POST"], name="bulk_wanted")
-
-
-def _add_activity_history_route() -> None:
-    path = "/api/history/page"
-    if any(getattr(route, "path", None) == path for route in app.router.routes):
-        return
-    app.add_api_route(path, activity_history_page, methods=["GET"], name="activity_history_page")
-
-
-def _add_library_health_route() -> None:
-    path = "/api/media-library/health"
-    if any(getattr(route, "path", None) == path for route in app.router.routes):
-        return
-    app.add_api_route(path, library_health, methods=["GET"], name="library_health")
-
-
-def _add_observability_route() -> None:
-    path = "/api/system/metrics"
-    if any(getattr(route, "path", None) == path for route in app.router.routes):
-        return
-    app.add_api_route(path, system_metrics, methods=["GET"], name="system_metrics")
-
-
-# The legacy module still owns most domain API route objects. Patch behavior in
-# place where possible so route ownership, middleware, and compatibility remain stable.
-_remove_legacy_web_route()
-legacy_application.load_database_settings = _fixed_runtime_settings
-_patch_route_call("/api/settings/general", "PATCH", update_general_settings_runtime)
-_add_dashboard_routes()
-install_runtime_dedup(legacy_application)
-install_downloader_state_hotfixes(app)
-install_compact_studio_art_route(app)
-remove_legacy_api_key_middleware(app)
-app.include_router(auth_router)
-_add_bulk_wanted_route()
-_add_activity_history_route()
-_add_library_health_route()
-_add_observability_route()
-install_authentication(
-    app,
-    session_factory=SessionLocal,
-    settings_loader=_fixed_runtime_settings,
-)
-install_security_headers(app)
-install_observability(app, engine)
+install_runtime_composition(app, legacy_application)
 app.router.lifespan_context = _managed_lifespan
