@@ -3,7 +3,6 @@ name: Container
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   workflow_dispatch:
 
 concurrency:
@@ -37,9 +36,8 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=main,enable={{is_default_branch}}
-            type=raw,value=0.4.4,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
+            type=raw,value=main
+            type=raw,value=0.4.4
             type=sha,prefix=sha-
 
       - name: Generate web image metadata
@@ -48,9 +46,8 @@ jobs:
         with:
           images: ghcr.io/terralayer/scarletx-web
           tags: |
-            type=raw,value=main,enable={{is_default_branch}}
-            type=raw,value=0.4.4,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
+            type=raw,value=main
+            type=raw,value=0.4.4
             type=sha,prefix=sha-
 
       - name: Build and push backend image
