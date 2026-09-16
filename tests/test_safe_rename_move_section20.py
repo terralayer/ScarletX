@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-"""Section 20 contracts for collision-safe, atomic media renames."""
-
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
