@@ -2,19 +2,21 @@ from __future__ import annotations
 
 import asyncio
 import re
-import shutil
 from datetime import UTC, timedelta
 from pathlib import Path
+
 from sqlalchemy import select
 
 from .asset_cache import cache_scene_asset_bundle
+from .cleanup_policy import cleanup_native_staging
 from .config import Settings
 from .download_metrics import download_phase_metrics
 from .library_management import FileImportError, ensure_library_config, import_media_file
-from .metadata import metadata_client
 from .media_library import index_media_file_by_id
+from .metadata import metadata_client
 from .models import (
     History,
+    MediaFile,
     NativeUsenetJob,
     ReleaseBlocklist,
     Scene,
@@ -26,6 +28,7 @@ from .notifications import emit_webhooks
 from .recent_imports import FileIdentity, recent_imports
 from .services import upsert_scene
 from .status_console import emit_status
+from .upgrade_transaction import finalize_verified_upgrade, rollback_upgrade_candidate
 
 PENDING = {"queued", "downloading", "paused", "postprocessing", "import_pending"}
 ACTIVE_DOWNLOAD_POLL_SECONDS = 60
@@ -83,7 +86,9 @@ def _import_retry_ready(tracked: TrackedDownload, *, now=None) -> bool:
     if tracked.last_checked_at is None:
         return True
     delay_index = min(attempt - 1, len(IMPORT_RETRY_DELAYS_SECONDS) - 1)
-    retry_after = _aware(tracked.last_checked_at) + timedelta(seconds=IMPORT_RETRY_DELAYS_SECONDS[delay_index])
+    retry_after = _aware(tracked.last_checked_at) + timedelta(
+        seconds=IMPORT_RETRY_DELAYS_SECONDS[delay_index]
+    )
     return _aware(now or utcnow()) >= retry_after
 
 
@@ -119,7 +124,9 @@ def _pending_state_maps(db, pending):
     metadata_by_tracked = {
         row.tracked_download_id: row
         for row in db.scalars(
-            select(TrackedDownloadMeta).where(TrackedDownloadMeta.tracked_download_id.in_(tracked_ids))
+            select(TrackedDownloadMeta).where(
+                TrackedDownloadMeta.tracked_download_id.in_(tracked_ids)
+            )
         ).all()
     } if tracked_ids else {}
     native_by_id = {
@@ -131,7 +138,13 @@ def _pending_state_maps(db, pending):
     jobs = []
     states = {}
     for tracked in pending:
-        jobs.append({"tracked_id": tracked.id, "external_id": tracked.nzo_id, "client": "scarletx"})
+        jobs.append(
+            {
+                "tracked_id": tracked.id,
+                "external_id": tracked.nzo_id,
+                "client": "scarletx",
+            }
+        )
         native = native_by_id.get(tracked.nzo_id)
         if native is None:
             continue
@@ -142,7 +155,8 @@ def _pending_state_maps(db, pending):
             "completed": status == "completed",
             "failed": status in {"failed", "cancelled"},
             "path": native.output_path,
-            "error": native.error or ("Download was cancelled" if status == "cancelled" else ""),
+            "error": native.error
+            or ("Download was cancelled" if status == "cancelled" else ""),
         }
     return jobs, states, metadata_by_tracked, native_by_id
 
@@ -154,14 +168,28 @@ async def process_completed_downloads(
     metadata_factory=metadata_client,
 ):
     if not settings.completed_download_import_enabled:
-        return {"enabled": False, "checked": 0, "imported": 0, "failed": 0, "poll_seconds": IDLE_DOWNLOAD_POLL_SECONDS}
+        return {
+            "enabled": False,
+            "checked": 0,
+            "imported": 0,
+            "failed": 0,
+            "poll_seconds": IDLE_DOWNLOAD_POLL_SECONDS,
+        }
 
     with session_factory() as db:
-        pending = db.scalars(select(TrackedDownload).where(TrackedDownload.status.in_(PENDING))).all()
+        pending = db.scalars(
+            select(TrackedDownload).where(TrackedDownload.status.in_(PENDING))
+        ).all()
         jobs, states, metadata_by_tracked, native_by_id = _pending_state_maps(db, pending)
 
     if not jobs:
-        return {"enabled": True, "checked": 0, "imported": 0, "failed": 0, "poll_seconds": IDLE_DOWNLOAD_POLL_SECONDS}
+        return {
+            "enabled": True,
+            "checked": 0,
+            "imported": 0,
+            "failed": 0,
+            "poll_seconds": IDLE_DOWNLOAD_POLL_SECONDS,
+        }
 
     imported = failed = 0
     notifications = []
@@ -169,7 +197,8 @@ async def process_completed_downloads(
     tracked_ids = [job["tracked_id"] for job in jobs]
     with session_factory() as db:
         tracked_by_id = {
-            row.id: row for row in db.scalars(
+            row.id: row
+            for row in db.scalars(
                 select(TrackedDownload).where(TrackedDownload.id.in_(tracked_ids))
             ).all()
         } if tracked_ids else {}
@@ -183,14 +212,38 @@ async def process_completed_downloads(
                 tracked.last_checked_at = utcnow()
                 tracked.status = "failed"
                 tracked.error = state["error"] or f"Download status: {state['status']}"
-                _block_failed(db, tracked, metadata_by_tracked.get(tracked.id), tracked.error)
-                db.add(History(event_type="download_failed", scene_id=tracked.scene_id, message=f"Download failed: {tracked.release_title}"))
+                _block_failed(
+                    db,
+                    tracked,
+                    metadata_by_tracked.get(tracked.id),
+                    tracked.error,
+                )
+                db.add(
+                    History(
+                        event_type="download_failed",
+                        scene_id=tracked.scene_id,
+                        message=f"Download failed: {tracked.release_title}",
+                    )
+                )
                 failed += 1
-                notifications.append(("failed", {"scene_id": tracked.scene_id, "release_title": tracked.release_title, "error": tracked.error}))
+                notifications.append(
+                    (
+                        "failed",
+                        {
+                            "scene_id": tracked.scene_id,
+                            "release_title": tracked.release_title,
+                            "error": tracked.error,
+                        },
+                    )
+                )
                 continue
             if not state["completed"]:
                 tracked.last_checked_at = utcnow()
-                tracked.status = "downloading" if state["status"] not in {"queued", "paused"} else state["status"]
+                tracked.status = (
+                    "downloading"
+                    if state["status"] not in {"queued", "paused"}
+                    else state["status"]
+                )
                 continue
             if tracked.status == "import_pending" and not _import_retry_ready(tracked):
                 continue
@@ -216,7 +269,11 @@ async def process_completed_downloads(
         emit_status("Download", "COMPLETED", release_title, severity="ok")
         emit_status("Import", "PROCESSING", release_title, severity="active")
         try:
-            local_scene_id = local_scene.id if local_scene and local_scene.content_type == "scene" else None
+            local_scene_id = (
+                local_scene.id
+                if local_scene and local_scene.content_type == "scene"
+                else None
+            )
             if local_scene_id is None:
                 if not metadata_id:
                     raise FileImportError("Completed download is not linked to a scene")
@@ -224,6 +281,10 @@ async def process_completed_downloads(
                 with session_factory() as db:
                     local_scene = upsert_scene(db, remote, True, "scene")
                     local_scene_id = local_scene.id
+
+            moved = None
+            media_id = None
+            previous_media_ids: list[int] = []
             with session_factory() as db:
                 tracked = db.get(TrackedDownload, job["tracked_id"])
                 scene = db.get(Scene, local_scene_id)
@@ -231,16 +292,20 @@ async def process_completed_downloads(
                     continue
                 tracked.scene_id = scene.id
                 ensure_library_config(db, scene)
-                moved = None
-                media_id = None
-                # ScarletX's built-in downloader owns its completed payload and should
-                # always finish the job by placing the primary scene in the configured
-                # library. The legacy File Management toggle remains meaningful for
-                # external clients, but must not leave native downloads as hash/PAR/RAR
-                # payload directories in Completed.
+                previous_media_ids = list(
+                    db.scalars(
+                        select(MediaFile.id).where(MediaFile.scene_id == scene.id)
+                    ).all()
+                )
+                # ScarletX-owned downloads are copied into the library first so the
+                # staging payload remains available until ffprobe verification passes.
+                # Successful cleanup then gives the same effective move semantics.
                 if settings.file_management_enabled or download_client == "scarletx":
                     if not storage_path:
-                        raise FileImportError("Download client did not report a completed storage path")
+                        raise FileImportError(
+                            "Download client did not report a completed storage path"
+                        )
+                    import_mode = "copy" if download_client == "scarletx" else None
                     with download_phase_metrics.start(str(tracked.nzo_id), "import"):
                         media = import_media_file(
                             db,
@@ -248,9 +313,42 @@ async def process_completed_downloads(
                             release_title=release_title,
                             storage_path=storage_path,
                             settings=settings,
+                            import_mode=import_mode,
                         )
                     moved = media.path
                     media_id = media.id
+                db.commit()
+
+            verified = True
+            if media_id is not None:
+                verified = await asyncio.to_thread(
+                    index_media_file_by_id,
+                    session_factory,
+                    media_id,
+                    generate_art=True,
+                )
+                if not verified:
+                    with session_factory() as db:
+                        rollback_upgrade_candidate(
+                            db,
+                            new_media_id=media_id,
+                            reason="media verification failed",
+                        )
+                        db.commit()
+                    raise FileImportError("Imported media failed verification")
+
+            with session_factory() as db:
+                tracked = db.get(TrackedDownload, job["tracked_id"])
+                scene = db.get(Scene, local_scene_id)
+                if not tracked or not scene:
+                    continue
+                if media_id is not None:
+                    finalize_verified_upgrade(
+                        db,
+                        new_media_id=media_id,
+                        previous_media_ids=previous_media_ids,
+                        verified=verified,
+                    )
                 tracked.status = "imported"
                 tracked.imported_at = utcnow()
                 tracked.error = None
@@ -259,32 +357,57 @@ async def process_completed_downloads(
                     if native is not None:
                         native.output_path = moved
                         note = native.postprocess_note or "Download complete"
-                        native.postprocess_note = (note + f"; Imported scene: {Path(moved).name}")[:2000]
+                        native.postprocess_note = (
+                            note + f"; Imported scene: {Path(moved).name}"
+                        )[:2000]
                 label = "ScarletX Built-In"
-                msg = f"Imported {scene.title} after {label} completed {release_title}" + (f" -> {moved}" if moved else "")
-                db.add(History(event_type="download_imported", scene_id=scene.id, message=msg))
+                msg = (
+                    f"Imported {scene.title} after {label} completed {release_title}"
+                    + (f" -> {moved}" if moved else "")
+                )
+                db.add(
+                    History(
+                        event_type="download_imported",
+                        scene_id=scene.id,
+                        message=msg,
+                    )
+                )
                 db.commit()
-                if moved:
-                    try:
-                        recent_imports.register(FileIdentity.from_path(moved))
-                    except OSError:
-                        # The durable import is already complete. A disappearing
-                        # destination should be reconciled normally by the scanner.
-                        pass
-                # Native Usenet has no seeding requirement. Once the selected video
-                # has been moved into the library, discard PAR2/RAR/hash support files.
-                if moved and storage_path and download_client == "scarletx":
-                    source_root = Path(storage_path).expanduser()
-                    try:
-                        if source_root.is_dir() and not Path(moved).resolve().is_relative_to(source_root.resolve()):
-                            shutil.rmtree(source_root, ignore_errors=True)
-                    except OSError:
-                        pass
-                imported += 1
-                notifications.append(("import", {"scene_id": scene.id, "title": scene.title, "release_title": release_title, "path": moved}))
-                emit_status("Import", "COMPLETED", moved or release_title, severity="ok")
+
+            if moved:
+                try:
+                    recent_imports.register(FileIdentity.from_path(moved))
+                except OSError:
+                    # The durable import is already complete. A disappearing
+                    # destination should be reconciled normally by the scanner.
+                    pass
+
+            if moved and storage_path and download_client == "scarletx":
+                try:
+                    cleanup_native_staging(
+                        Path(storage_path),
+                        library_path=Path(moved),
+                        import_succeeded=True,
+                    )
+                except OSError:
+                    # Cleanup is best effort after the verified library copy is durable.
+                    pass
+
+            imported += 1
+            notifications.append(
+                (
+                    "import",
+                    {
+                        "scene_id": local_scene_id,
+                        "title": local_scene.title if local_scene else release_title,
+                        "release_title": release_title,
+                        "path": moved,
+                    },
+                )
+            )
+            emit_status("Import", "COMPLETED", moved or release_title, severity="ok")
+
             if media_id is not None:
-                await asyncio.to_thread(index_media_file_by_id, session_factory, media_id, generate_art=True)
                 try:
                     with session_factory() as db:
                         await cache_scene_asset_bundle(db, local_scene_id)
@@ -294,7 +417,10 @@ async def process_completed_downloads(
                             History(
                                 event_type="artwork_cache_failed",
                                 scene_id=local_scene_id,
-                                message=f"Imported scene but could not finish artwork cache: {cache_exc}"[:1000],
+                                message=(
+                                    "Imported scene but could not finish artwork cache: "
+                                    f"{cache_exc}"
+                                )[:1000],
                             )
                         )
                         db.commit()
@@ -303,20 +429,38 @@ async def process_completed_downloads(
             with session_factory() as db:
                 tracked = db.get(TrackedDownload, job["tracked_id"])
                 if tracked:
-                    attempt = min(_retry_attempt_for(tracked) + 1, IMPORT_MAX_ATTEMPTS)
+                    attempt = min(
+                        _retry_attempt_for(tracked) + 1,
+                        IMPORT_MAX_ATTEMPTS,
+                    )
                     if attempt >= IMPORT_MAX_ATTEMPTS:
                         tracked.status = "import_failed"
                     else:
                         tracked.status = "import_pending"
-                    tracked.error = f"[import-attempt {attempt}/{IMPORT_MAX_ATTEMPTS}] {detail}"[:2000]
+                    tracked.error = (
+                        f"[import-attempt {attempt}/{IMPORT_MAX_ATTEMPTS}] {detail}"
+                    )[:2000]
                     tracked.last_checked_at = utcnow()
-                    db.add(History(
-                        event_type="download_import_failed",
-                        scene_id=tracked.scene_id,
-                        message=f"Import failed ({attempt}/{IMPORT_MAX_ATTEMPTS}): {release_title} | {detail}"[:1000],
-                    ))
+                    db.add(
+                        History(
+                            event_type="download_import_failed",
+                            scene_id=tracked.scene_id,
+                            message=(
+                                f"Import failed ({attempt}/{IMPORT_MAX_ATTEMPTS}): "
+                                f"{release_title} | {detail}"
+                            )[:1000],
+                        )
+                    )
                     db.commit()
-                    emit_status("Import", "FAILED", f"{release_title} | attempt {attempt}/{IMPORT_MAX_ATTEMPTS} | {detail}", severity="error")
+                    emit_status(
+                        "Import",
+                        "FAILED",
+                        (
+                            f"{release_title} | attempt {attempt}/{IMPORT_MAX_ATTEMPTS} "
+                            f"| {detail}"
+                        ),
+                        severity="error",
+                    )
             failed += 1
 
     for event, payload in notifications:
@@ -326,4 +470,10 @@ async def process_completed_downloads(
             # Notification transport is best effort and must not change durable
             # download/import outcomes or turn Process Completed into HTTP 500.
             continue
-    return {"enabled": True, "checked": len(states), "imported": imported, "failed": failed, "poll_seconds": ACTIVE_DOWNLOAD_POLL_SECONDS}
+    return {
+        "enabled": True,
+        "checked": len(states),
+        "imported": imported,
+        "failed": failed,
+        "poll_seconds": ACTIVE_DOWNLOAD_POLL_SECONDS,
+    }
