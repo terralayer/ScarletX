@@ -61,16 +61,16 @@ def test_truenas_metadata_and_compose_are_locked_to_045():
         assert f"_container_name: {expected}" in values
 
 
-def test_container_publishing_is_locked_to_045_and_has_no_semver_autobump():
+def test_main_container_publishing_never_overwrites_stable_release_tags():
     workflow = text(".github/workflows/container.yml")
-    assert "type=raw,value=0.4.5" in workflow
+    assert "type=raw,value=0.4.5" not in workflow
     assert "type=raw,value=main" in workflow
     assert "type=sha,prefix=sha-" in workflow
     assert "type=semver" not in workflow
     assert 'tags: ["v*"]' not in workflow
 
 
-def test_release_workflow_selects_only_locked_045():
+def test_release_workflow_selects_only_locked_045_and_tags_tested_head():
     workflow = text(".github/workflows/release.yml")
     assert "workflow_dispatch:" in workflow
     assert "NEXT_VERSION=\"0.4.5\"" in workflow
@@ -79,6 +79,8 @@ def test_release_workflow_selects_only_locked_045():
     assert "version is locked and will not advance" in workflow
     assert "ghcr.io/terralayer/scarletx:${NEXT_VERSION}" in workflow
     assert "ghcr.io/terralayer/scarletx-web:${NEXT_VERSION}" in workflow
+    assert "git checkout --detach origin/main" not in workflow
+    assert 'git tag -a "v${NEXT_VERSION}" -m "ScarletX ${NEXT_VERSION}" HEAD' in workflow
 
 
 def test_release_helper_rejects_versions_after_045():
