@@ -35,6 +35,17 @@ def test_conflicting_tpdb_identity_is_distinct_even_when_size_and_duration_match
     assert result.automatic is False
 
 
+def test_quick_fingerprint_match_alone_requires_review():
+    from scarletx.duplicate_policy import DuplicateEvidence, classify_duplicate
+
+    first = DuplicateEvidence(tpdb_id="scene-1", quick_fingerprint="fast-hash")
+    second = DuplicateEvidence(tpdb_id="scene-1", quick_fingerprint="fast-hash")
+    result = classify_duplicate(first, second)
+    assert result.classification == "review"
+    assert result.automatic is False
+    assert "quick_fingerprint" in result.reasons
+
+
 def test_same_scene_similar_size_and_duration_is_review_not_auto_delete():
     from scarletx.duplicate_policy import DuplicateEvidence, classify_duplicate
 
