@@ -23,6 +23,12 @@
   border:0!important;
 }
 .status-pill{display:none!important;}
+.global-search .searchmark{
+  top:50%!important;
+  transform:translateY(-50%);
+  line-height:1;
+  pointer-events:none;
+}
 .approved-dashboard-grid{align-items:start!important;}
 .approved-dashboard-grid .panel{
   align-self:start!important;
