@@ -16,10 +16,11 @@ ScarletX 0.4.5 synchronizes all changes merged since 0.4.4 into one stable relea
 - Adds incremental scanning, duplicate detection, and library-health reporting.
 - Adds safer quality-profile evaluation and rollback-safe automatic upgrades.
 
-## Wanted and monitoring
+## Wanted, monitoring, and scale
 
 - Expands Wanted state tracking and missing-scene handling.
 - Adds bounded bulk operations for selected Wanted scenes while preserving global search actions.
+- Bounds performer and studio list query work, including replacing correlated studio count subqueries with a page-scoped aggregate.
 
 ## Packaging and release consistency
 
