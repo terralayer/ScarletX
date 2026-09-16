@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from .atomic_publish import publish_file_atomic
 from .config import Settings
 from .models import LibraryItemConfig, MediaFile, QualityProfile, RootFolder, Scene, utcnow
+from .safe_rename import build_rename_plan, execute_rename_plan
 
 VIDEO_EXTENSIONS = {
     ".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".ts", ".m2ts", ".webm", ".mpg", ".mpeg"
@@ -326,11 +327,8 @@ def preview_media_rename(db: Session, media: MediaFile, settings: Settings) -> s
 def rename_media_file(db: Session, media: MediaFile, settings: Settings) -> tuple[str, str]:
     old = Path(media.path)
     target = Path(preview_media_rename(db, media, settings))
-    if old.resolve() == target.resolve(strict=False):
-        return str(old), str(old)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    final = unique_destination(target)
-    shutil.move(str(old), str(final))
+    plan = build_rename_plan(old, target)
+    final = execute_rename_plan(plan)
     media.path = str(final)
     media.size_bytes = final.stat().st_size
     db.flush()
