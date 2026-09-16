@@ -10,6 +10,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .atomic_publish import publish_file_atomic
 from .config import Settings
 from .models import LibraryItemConfig, MediaFile, QualityProfile, RootFolder, Scene, utcnow
 
@@ -242,8 +243,11 @@ def _require_writable_directory(path: Path) -> None:
 def _place_file(source: Path, destination: Path, mode: str) -> None:
     if source.resolve() == destination.resolve(strict=False):
         return
-    if mode == "copy":
-        shutil.copy2(source, destination)
+    if mode in {"copy", "move"}:
+        try:
+            publish_file_atomic(source, destination, mode=mode)
+        except (OSError, ValueError) as exc:
+            raise FileImportError(f"Could not {mode} media file atomically: {exc}") from exc
         return
     if mode == "hardlink":
         try:
@@ -251,9 +255,7 @@ def _place_file(source: Path, destination: Path, mode: str) -> None:
         except OSError as exc:
             raise FileImportError(f"Could not hardlink media file: {exc}") from exc
         return
-    if mode != "move":
-        raise FileImportError(f"Unsupported import mode: {mode}")
-    shutil.move(str(source), str(destination))
+    raise FileImportError(f"Unsupported import mode: {mode}")
 
 
 def _root_for_scene(db: Session, scene: Scene) -> tuple[RootFolder, Path]:
