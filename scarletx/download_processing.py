@@ -452,15 +452,10 @@ async def process_completed_downloads(
                         )
                     )
                     db.commit()
-                    emit_status(
-                        "Import",
-                        "FAILED",
-                        (
-                            f"{release_title} | attempt {attempt}/{IMPORT_MAX_ATTEMPTS} "
-                            f"| {detail}"
-                        ),
-                        severity="error",
-                    )
+                    emit_status("Import", "FAILED", (
+                        f"{release_title} | attempt {attempt}/{IMPORT_MAX_ATTEMPTS} "
+                        f"| {detail}"
+                    ), severity="error")
             failed += 1
 
     for event, payload in notifications:
