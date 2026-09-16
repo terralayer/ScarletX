@@ -80,17 +80,19 @@ def test_desktop_sidebar_is_tight_but_usable():
 
 
 def test_dashboard_stat_cards_scale_across_desktop_widths():
-    compact = "".join((FRONTEND / "locked_dashboard.css").read_text(encoding="utf-8").split())
+    compact = "".join((FRONTEND / "dashboard_cleanup.css").read_text(encoding="utf-8").split())
 
-    assert '.stats.approved-stat-grid{display:grid!important;grid-template-columns:repeat(5,minmax(150px,1fr));gap:clamp(10px,1.2vw,18px);' in compact
-    assert '.approved-stat-grid.stat{min-height:clamp(128px,10vw,162px);' in compact
-    assert 'padding:clamp(14px,1.4vw,20px)clamp(14px,1.5vw,22px);' in compact
-    assert 'grid-template-columns:clamp(34px,3.5vw,46px)minmax(0,1fr);' in compact
-    assert '.approved-stat-grid.stat-icon{width:clamp(34px,3.3vw,42px);height:clamp(34px,3.3vw,42px);' in compact
-    assert '.approved-stat-grid.stat-iconsvg{width:clamp(27px,2.7vw,34px);height:clamp(27px,2.7vw,34px);' in compact
-    assert '.approved-stat-grid.statsmall{font-size:clamp(12px,1.05vw,15px);' in compact
-    assert '.approved-stat-grid.statstrong{font-size:clamp(24px,2.15vw,32px);' in compact
-    assert '.approved-stat-grid.statem{font-size:clamp(11px,.95vw,14px);' in compact
+    assert '@media(min-width:981px){' in compact
+    assert '.stats.approved-stat-grid{grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:clamp(10px,1.2vw,18px)!important;' in compact
+    assert '.approved-stat-grid.stat{min-height:clamp(128px,10vw,162px)!important;' in compact
+    assert 'padding:clamp(14px,1.4vw,20px)clamp(14px,1.5vw,22px)!important;' in compact
+    assert 'grid-template-columns:clamp(34px,3.5vw,46px)minmax(0,1fr)!important;' in compact
+    assert 'gap:clamp(8px,1vw,16px)!important;' in compact
+    assert '.approved-stat-grid.stat-icon{width:clamp(34px,3.3vw,42px)!important;height:clamp(34px,3.3vw,42px)!important;' in compact
+    assert '.approved-stat-grid.stat-iconsvg{width:clamp(27px,2.7vw,34px)!important;height:clamp(27px,2.7vw,34px)!important;' in compact
+    assert '.approved-stat-grid.statsmall{font-size:clamp(12px,1.05vw,15px)!important;' in compact
+    assert '.approved-stat-grid.statstrong{font-size:clamp(24px,2.15vw,32px)!important;' in compact
+    assert '.approved-stat-grid.statem{font-size:clamp(11px,.95vw,14px)!important;' in compact
 
 
 def test_dashboard_cleanup_hides_profile_and_banner_copy_and_levels_panels():
