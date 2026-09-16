@@ -23,3 +23,15 @@
   border:0!important;
 }
 .status-pill{display:none!important;}
+.approved-dashboard-grid{align-items:start!important;}
+.approved-dashboard-grid .panel{
+  align-self:start!important;
+  width:100%!important;
+}
+.approved-dashboard-grid .panel-head{
+  min-height:58px!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:space-between!important;
+  box-sizing:border-box!important;
+}
