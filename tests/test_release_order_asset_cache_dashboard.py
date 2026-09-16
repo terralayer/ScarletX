@@ -161,7 +161,7 @@ def test_recent_performers_follow_latest_downloaded_release(tmp_path):
 def test_dashboard_uses_approved_native_recent_and_upcoming_panels():
     source = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
     compatibility = (ROOT / "frontend" / "dashboard_settings_overrides.js").read_text(encoding="utf-8")
-    app_source = (ROOT / "scarletx" / "app.py").read_text(encoding="utf-8")
+    composition_source = (ROOT / "scarletx" / "runtime_composition.py").read_text(encoding="utf-8")
     dashboard = source[source.index("async function dashboard()"):source.index("function performerLinks")]
 
     assert "Activity Queue" not in source
@@ -179,7 +179,7 @@ def test_dashboard_uses_approved_native_recent_and_upcoming_panels():
     assert "dashboardStat(dashboardIcons.downloads" in dashboard
     assert "Recently Released Scenes" not in compatibility
     assert "dashboard=async function" not in compatibility
-    assert '"/api/dashboard/performers"' in app_source
+    assert '"/api/dashboard/performers"' in composition_source
 
 
 def test_successful_import_boundary_precaches_complete_scene_asset_bundle():
