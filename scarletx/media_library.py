@@ -62,6 +62,8 @@ def _run(args: list[str], *, timeout: int = 120) -> subprocess.CompletedProcess[
 def probe_path(path: Path) -> dict[str, Any]:
     if not path.exists() or not path.is_file():
         raise MediaLibraryError(f"Media file does not exist: {path}")
+    if path.stat().st_size <= 0:
+        raise MediaLibraryError(f"Media file is empty or zero-byte: {path}")
     result = _run([
         "ffprobe", "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)
     ], timeout=60)
@@ -70,7 +72,9 @@ def probe_path(path: Path) -> dict[str, Any]:
     except json.JSONDecodeError as exc:
         raise MediaLibraryError("ffprobe returned invalid JSON") from exc
     streams = payload.get("streams") or []
-    video = next((x for x in streams if x.get("codec_type") == "video"), {})
+    video = next((x for x in streams if x.get("codec_type") == "video"), None)
+    if video is None:
+        raise MediaLibraryError(f"Media file has no playable video stream: {path}")
     audio = next((x for x in streams if x.get("codec_type") == "audio"), {})
     fmt = payload.get("format") or {}
     duration = fmt.get("duration") or video.get("duration")
@@ -79,6 +83,8 @@ def probe_path(path: Path) -> dict[str, Any]:
         duration_value = float(duration) if duration is not None else None
     except (TypeError, ValueError):
         duration_value = None
+    if duration_value is None or duration_value <= 0:
+        raise MediaLibraryError(f"Media file has invalid duration: {path}")
     try:
         bitrate_value = int(float(bitrate)) if bitrate is not None else None
     except (TypeError, ValueError):
@@ -295,9 +301,6 @@ def scan_library(
                             if item is None:
                                 item = UnmatchedMediaFile(path=key, display_name=path.stem)
                                 db.add(item); db.flush(); unmatched_known[key] = item
-                            # Reaching this branch means persistent size/mtime_ns
-                            # identity changed (or no state exists), so refresh the
-                            # fingerprint even when the byte count is unchanged.
                             item.fingerprint = quick_fingerprint(path)
                             item.size_bytes = stat.st_size
                             item.missing = False
@@ -315,7 +318,6 @@ def scan_library(
                         record_success(db, path, stat)
                     if stats["files"] % 20 == 0:
                         db.commit()
-            # Mark DB media that disappeared from configured roots as missing.
             for key, media in known.items():
                 if key in seen or not in_scope(key):
                     continue
@@ -336,8 +338,6 @@ def scan_library(
             stats["failed_directories"] = [str(path) for path in sorted(failed_directories)]
             db.commit()
 
-            # Probe changed/new files with separate DB sessions so ffprobe and
-            # thumbnail generation can run concurrently without sharing a Session.
             if to_index:
                 workers = min(2, max(1, (os.cpu_count() or 2) // 2), len(to_index))
                 with concurrent.futures.ThreadPoolExecutor(max_workers=workers, thread_name_prefix="scarletx-media") as pool:
@@ -550,10 +550,6 @@ def ensure_browser_playback(
         try:
             metadata = probe_path(source)
         except MediaLibraryError:
-            # Preserve direct streaming for existing MP4/M4V media when probing is
-            # unavailable (for example in lightweight test/dev environments).
-            # Production containers include FFprobe, so incompatible MP4 codecs
-            # are still detected and converted there.
             if source.suffix.casefold() in {".mp4", ".m4v"}:
                 return source
             raise
