@@ -22,3 +22,13 @@ def test_recent_scenes_and_upcoming_releases_share_top_alignment():
     assert '.approved-dashboard-grid.panel{align-self:start!important;' in compact_assets
     assert '.approved-dashboard-grid.panel-head{min-height:58px!important;' in compact_assets
     assert '.approved-dashboard-grid.recent{margin-top:0!important;}' in compact_assets
+
+
+def test_header_search_icon_is_vertically_centered_in_search_field():
+    assets = (FRONTEND / "approved_assets.css").read_text(encoding="utf-8")
+    compact_assets = "".join(assets.split())
+
+    assert '.global-search.searchmark{' in compact_assets
+    assert 'top:50%!important;' in compact_assets
+    assert 'transform:translateY(-50%);' in compact_assets
+    assert 'pointer-events:none;' in compact_assets
