@@ -1,0 +1,3 @@
+# ScarletX 0.4.5
+
+Synchronizes all ScarletX changes merged since 0.4.4 into a single stable release. Includes the approved ScarletX branding and favicon corrections, consistent vector navigation icons, processing queue and activity-history improvements, Wanted state tracking, quality profiles and safe automatic upgrades, safer matching/rename/import/cleanup flows, incremental scanning, duplicate detection, library health reporting, resource/backpressure protections, and the locked dashboard/footer correction that removes the CSS-generated “Built with ♥ for the scene.” pseudo-footer so the sidebar terminates at the real application footer.
