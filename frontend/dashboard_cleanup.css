@@ -11,17 +11,23 @@ body[data-layout="approved-dashboard-v1"] .approved-dashboard-grid{
   align-items:stretch!important;
 }
 
-body[data-layout="approved-dashboard-v1"] .approved-dashboard-grid .panel{
+/*
+ * Treat both primary dashboard panels as the exact same grid box.
+ * The legacy .recent utility has its own margin and the old height:100%
+ * rule made alignment depend on auto-sized grid-track resolution.
+ */
+body[data-layout="approved-dashboard-v1"] .approved-dashboard-grid > .panel{
+  margin:0!important;
   align-self:stretch!important;
-  height:100%!important;
+  height:auto!important;
   width:100%!important;
-}
-
-body[data-layout="approved-dashboard-v1"] .approved-dashboard-grid .panel.recent{
-  margin-top:0!important;
+  box-sizing:border-box!important;
+  display:grid!important;
+  grid-template-rows:58px minmax(0,1fr)!important;
 }
 
 body[data-layout="approved-dashboard-v1"] .approved-dashboard-grid .panel-head{
+  height:58px!important;
   min-height:58px!important;
   display:flex!important;
   align-items:center!important;
@@ -29,9 +35,16 @@ body[data-layout="approved-dashboard-v1"] .approved-dashboard-grid .panel-head{
   box-sizing:border-box!important;
 }
 
+/* Both bodies begin on the same grid line regardless of their inner markup. */
+body[data-layout="approved-dashboard-v1"] .approved-dashboard-grid #recentScenes,
+body[data-layout="approved-dashboard-v1"] .approved-dashboard-grid .approved-upcoming > .rows{
+  min-height:0!important;
+}
+
 body[data-layout="approved-dashboard-v1"] .approved-recent-list,
 body[data-layout="approved-dashboard-v1"] .approved-upcoming .rows{
   padding:4px 20px 14px!important;
+  box-sizing:border-box!important;
 }
 
 body[data-layout="approved-dashboard-v1"] .approved-recent-row,
