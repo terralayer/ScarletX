@@ -61,11 +61,6 @@ jobs:
           helper_text = helper_text.replace('LOCKED_RELEASE_VERSION = "0.4.5"', 'LOCKED_RELEASE_VERSION = "0.4.6"')
           helper.write_text(helper_text, encoding="utf-8")
 
-          workflow = Path(".github/workflows/release.yml")
-          workflow_text = workflow.read_text(encoding="utf-8").replace("0.4.5", "0.4.6")
-          workflow_text = workflow_text.replace("0.4.4|0.4.6", "0.4.5|0.4.6")
-          workflow.write_text(workflow_text, encoding="utf-8")
-
           notes = Path("RELEASE-NOTES-0.4.6.md")
           notes.write_text(
               "# ScarletX 0.4.6\n\n"
@@ -90,7 +85,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add pyproject.toml scarletx README.md BUILD-INFO.txt start-scarletx.sh Start-ScarletX.ps1 docker-compose.truenas.yml packaging/truenas/scarletx tools/release_version.py .github/workflows/release.yml RELEASE-NOTES-0.4.6.md
+          git add pyproject.toml scarletx README.md BUILD-INFO.txt start-scarletx.sh Start-ScarletX.ps1 docker-compose.truenas.yml packaging/truenas/scarletx tools/release_version.py RELEASE-NOTES-0.4.6.md
           git diff --cached --quiet && exit 0
           git commit -m "release: synchronize ScarletX 0.4.6 metadata"
           git push origin HEAD:release/0.4.6
