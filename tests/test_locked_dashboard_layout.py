@@ -79,15 +79,33 @@ def test_desktop_sidebar_is_tight_but_usable():
     assert '@media(max-width:980px){body[data-layout="approved-dashboard-v1"] .shell{grid-template-columns:82px 1fr;' in locked
 
 
-def test_dashboard_cleanup_hides_profile_and_banner_copy_and_aligns_panels():
+def test_dashboard_stat_cards_scale_across_desktop_widths():
+    compact = "".join((FRONTEND / "dashboard_cleanup.css").read_text(encoding="utf-8").split())
+
+    assert '@media(min-width:981px){' in compact
+    assert '.stats.approved-stat-grid{grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:clamp(10px,1.2vw,18px)!important;' in compact
+    assert '.approved-stat-grid.stat{min-height:clamp(128px,10vw,162px)!important;' in compact
+    assert 'padding:clamp(14px,1.4vw,20px)clamp(14px,1.5vw,22px)!important;' in compact
+    assert 'grid-template-columns:clamp(34px,3.5vw,46px)minmax(0,1fr)!important;' in compact
+    assert 'gap:clamp(8px,1vw,16px)!important;' in compact
+    assert '.approved-stat-grid.stat-icon{width:clamp(34px,3.3vw,42px)!important;height:clamp(34px,3.3vw,42px)!important;' in compact
+    assert '.approved-stat-grid.stat-iconsvg{width:clamp(27px,2.7vw,34px)!important;height:clamp(27px,2.7vw,34px)!important;' in compact
+    assert '.approved-stat-grid.statsmall{font-size:clamp(12px,1.05vw,15px)!important;' in compact
+    assert '.approved-stat-grid.statstrong{font-size:clamp(24px,2.15vw,32px)!important;' in compact
+    assert '.approved-stat-grid.statem{font-size:clamp(11px,.95vw,14px)!important;' in compact
+
+
+def test_dashboard_cleanup_hides_profile_and_banner_copy_and_levels_panels():
     cleanup = FRONTEND / "dashboard_cleanup.css"
     assert cleanup.exists()
     compact = "".join(cleanup.read_text(encoding="utf-8").split())
     assert '.status-pill{display:none!important;}' in compact
     assert '.dashboard-hero-copy{display:none!important;}' in compact
-    assert '.approved-dashboard-grid{align-items:start!important;}' in compact
-    assert '.approved-dashboard-grid.panel{align-self:start!important;' in compact
+    assert '.approved-dashboard-grid{align-items:stretch!important;}' in compact
+    assert '.approved-dashboard-grid.panel{align-self:stretch!important;height:100%!important;' in compact
     assert '.approved-dashboard-grid.panel-head{min-height:58px!important;' in compact
+    assert 'align-items:start!important' not in compact
+    assert 'align-self:start!important' not in compact
 
 
 def test_approved_banner_source_reconstructs_to_locked_bytes():

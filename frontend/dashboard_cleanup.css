@@ -8,11 +8,12 @@ body[data-layout="approved-dashboard-v1"] .dashboard-hero-copy{
 }
 
 body[data-layout="approved-dashboard-v1"] .approved-dashboard-grid{
-  align-items:start!important;
+  align-items:stretch!important;
 }
 
 body[data-layout="approved-dashboard-v1"] .approved-dashboard-grid .panel{
-  align-self:start!important;
+  align-self:stretch!important;
+  height:100%!important;
   width:100%!important;
 }
 
@@ -22,4 +23,41 @@ body[data-layout="approved-dashboard-v1"] .approved-dashboard-grid .panel-head{
   align-items:center!important;
   justify-content:space-between!important;
   box-sizing:border-box!important;
+}
+
+/* Keep the five desktop summary cards fluid until the existing tablet breakpoint. */
+@media(min-width:981px){
+  body[data-layout="approved-dashboard-v1"] .stats.approved-stat-grid{
+    grid-template-columns:repeat(5,minmax(0,1fr))!important;
+    gap:clamp(10px,1.2vw,18px)!important;
+  }
+
+  body[data-layout="approved-dashboard-v1"] .approved-stat-grid .stat{
+    min-height:clamp(128px,10vw,162px)!important;
+    padding:clamp(14px,1.4vw,20px) clamp(14px,1.5vw,22px)!important;
+    grid-template-columns:clamp(34px,3.5vw,46px) minmax(0,1fr)!important;
+    gap:clamp(8px,1vw,16px)!important;
+  }
+
+  body[data-layout="approved-dashboard-v1"] .approved-stat-grid .stat-icon{
+    width:clamp(34px,3.3vw,42px)!important;
+    height:clamp(34px,3.3vw,42px)!important;
+  }
+
+  body[data-layout="approved-dashboard-v1"] .approved-stat-grid .stat-icon svg{
+    width:clamp(27px,2.7vw,34px)!important;
+    height:clamp(27px,2.7vw,34px)!important;
+  }
+
+  body[data-layout="approved-dashboard-v1"] .approved-stat-grid .stat small{
+    font-size:clamp(12px,1.05vw,15px)!important;
+  }
+
+  body[data-layout="approved-dashboard-v1"] .approved-stat-grid .stat strong{
+    font-size:clamp(24px,2.15vw,32px)!important;
+  }
+
+  body[data-layout="approved-dashboard-v1"] .approved-stat-grid .stat em{
+    font-size:clamp(11px,.95vw,14px)!important;
+  }
 }
