@@ -27,8 +27,8 @@ def test_header_uses_approved_exact_logo_and_matching_icon():
     assert 'class="brandmark"' not in page
     assert '<span class="xslash xslash-a"></span>' not in page
     assert '<span class="xslash xslash-b"></span>' not in page
-    assert '<div class="header-brand"><img src="/scarletx-wordmark.webp?v=approved-20260915-5" alt="ScarletX"></div>' in page
-    assert '<link rel="icon" href="/scarletx-icon.webp?v=approved-20260915-5" type="image/webp">' in page
+    assert '<div class="header-brand"><img src="/scarletx-wordmark.webp?v=approved-20260915-6" alt="ScarletX"></div>' in page
+    assert '<link rel="icon" href="/scarletx-icon.webp?v=approved-20260915-6" type="image/webp">' in page
     assert "scarletx-wordmark.svg" not in page
     assert "scarletx-icon.svg" not in page
 
