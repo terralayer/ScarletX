@@ -41,7 +41,7 @@ jobs:
               'function modal(',
           )
           selected = [line for line in lines if line.startswith(drop_prefixes)]
-          expected = 10
+          expected = 11
           if len(selected) != expected:
               raise SystemExit(f'expected {expected} extractable helper lines, found {len(selected)}')
 
