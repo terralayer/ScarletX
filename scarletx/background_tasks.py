@@ -7,6 +7,8 @@ from collections.abc import Coroutine
 from contextvars import Context
 from typing import Any
 
+from .runtime_logging import emit_structured_log
+
 
 class BackgroundTaskRegistry:
     """Bound and drain application-owned asyncio tasks."""
@@ -57,11 +59,16 @@ class BackgroundTaskRegistry:
         except asyncio.CancelledError:
             return
         if error is not None:
-            self._failures.append(
-                {
-                    "name": task.get_name(),
-                    "error_type": error.__class__.__name__,
-                }
+            failure = {
+                "name": task.get_name(),
+                "error_type": error.__class__.__name__,
+            }
+            self._failures.append(failure)
+            emit_structured_log(
+                "background_task_failed",
+                level="ERROR",
+                task_name=failure["name"],
+                error_type=failure["error_type"],
             )
 
     async def shutdown(self) -> None:
