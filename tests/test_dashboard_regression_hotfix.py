@@ -49,5 +49,5 @@ def test_small_studio_icons_use_transparent_compact_artwork():
     backend = (ROOT / "scarletx" / "compact_studio_art.py").read_text(encoding="utf-8")
     assert "prepare_compact_studio_artwork" in backend
     assert 'Image.new("RGBA", target_size, (0, 0, 0, 0))' in backend
-    app = (ROOT / "scarletx" / "app.py").read_text(encoding="utf-8")
-    assert "install_compact_studio_art_route(app)" in app
+    composition = (ROOT / "scarletx" / "runtime_composition.py").read_text(encoding="utf-8")
+    assert "install_compact_studio_art_route(app)" in composition
