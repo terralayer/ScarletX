@@ -102,9 +102,8 @@ def test_dashboard_cleanup_hides_profile_and_banner_copy_and_levels_panels():
     assert '.status-pill{display:none!important;}' in compact
     assert '.dashboard-hero-copy{display:none!important;}' in compact
     assert '.approved-dashboard-grid{align-items:stretch!important;}' in compact
-    assert '.approved-dashboard-grid.panel{align-self:stretch!important;height:100%!important;' in compact
-    assert '.approved-dashboard-grid.panel.recent{margin-top:0!important;' in compact
-    assert '.approved-dashboard-grid.panel-head{min-height:58px!important;' in compact
+    assert '.approved-dashboard-grid>.panel{margin:0!important;align-self:stretch!important;height:auto!important;width:100%!important;box-sizing:border-box!important;display:grid!important;grid-template-rows:58pxminmax(0,1fr)!important;' in compact
+    assert '.approved-dashboard-grid.panel-head{height:58px!important;min-height:58px!important;' in compact
     assert 'align-items:start!important' not in compact
     assert 'align-self:start!important' not in compact
 
