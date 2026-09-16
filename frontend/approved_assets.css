@@ -28,6 +28,7 @@
   align-self:start!important;
   width:100%!important;
 }
+.approved-dashboard-grid .recent{margin-top:0!important;}
 .approved-dashboard-grid .panel-head{
   min-height:58px!important;
   display:flex!important;
