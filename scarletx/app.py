@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from .activity_history import activity_history_page
 from .auth_routes import router as auth_router
+from .background_tasks import AsyncioTaskProxy, BackgroundTaskRegistry
 from .bulk_operations import bulk_wanted
 from .compact_studio_art import install_compact_studio_art_route
 from .db import SessionLocal, engine
@@ -20,6 +23,23 @@ from .routes.runtime_overrides import (
     update_general_settings_runtime,
 )
 from .settings_store import load_database_settings
+
+
+background_task_registry = BackgroundTaskRegistry(max_tasks=128)
+_legacy_lifespan = app.router.lifespan_context
+
+
+@asynccontextmanager
+async def _managed_lifespan(application):
+    """Bound and drain application-owned tasks while preserving legacy startup behavior."""
+    original_asyncio = legacy_application.asyncio
+    legacy_application.asyncio = AsyncioTaskProxy(original_asyncio, background_task_registry)
+    try:
+        async with _legacy_lifespan(application):
+            yield
+    finally:
+        legacy_application.asyncio = original_asyncio
+        await background_task_registry.shutdown()
 
 
 def _remove_legacy_web_route() -> None:
@@ -109,3 +129,4 @@ install_authentication(
 )
 install_security_headers(app)
 install_observability(app, engine)
+app.router.lifespan_context = _managed_lifespan
