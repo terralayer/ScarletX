@@ -69,7 +69,16 @@ def test_header_uses_locked_approved_logo_asset():
 
 def test_favicon_uses_locked_approved_ribbon_icon():
     index = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    favicon = (FRONTEND / "scarletx-icon.webp").read_bytes()
+    encoded = "".join(
+        (FRONTEND / f"scarletx-icon.b64.{part}").read_text(encoding="utf-8").strip()
+        for part in range(1, 5)
+    )
+    favicon = base64.b64decode(encoded, validate=True)
 
     assert '<link rel="icon" href="/scarletx-icon.webp" type="image/webp">' in index
     assert sha256(favicon).hexdigest() == "d60a24488e48dcb825f816c9709a78fd865b46e4de799402a6fd5978ad73bbc4"
+
+    dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
+    assert "COPY frontend/scarletx-icon.b64.1 /tmp/scarletx-icon.b64.1" in dockerfile
+    assert "d60a24488e48dcb825f816c9709a78fd865b46e4de799402a6fd5978ad73bbc4  /usr/share/nginx/html/scarletx-icon.webp" in dockerfile
+    assert "COPY frontend/scarletx-icon.webp /usr/share/nginx/html/scarletx-icon.webp" not in dockerfile
