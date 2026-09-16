@@ -24,7 +24,10 @@ COPY frontend/activity_studio_overrides.js /usr/share/nginx/html/activity_studio
 COPY frontend/studio_art_overrides.js /usr/share/nginx/html/studio_art_overrides.js
 COPY frontend/dashboard_settings_overrides.js /usr/share/nginx/html/dashboard_settings_overrides.js
 COPY frontend/dashboard_regression_hotfix.js /usr/share/nginx/html/dashboard_regression_hotfix.js
-COPY frontend/scarletx-logo.webp /usr/share/nginx/html/scarletx-logo.webp
+COPY frontend/scarletx-logo.b64.1 /tmp/scarletx-logo.b64.1
+COPY frontend/scarletx-logo.b64.2 /tmp/scarletx-logo.b64.2
+COPY frontend/scarletx-logo.b64.3 /tmp/scarletx-logo.b64.3
+COPY frontend/scarletx-logo.b64.4 /tmp/scarletx-logo.b64.4
 COPY frontend/scarletx-icon.webp /usr/share/nginx/html/scarletx-icon.webp
 COPY frontend/scarletx-banner.b64.1 /tmp/scarletx-banner.b64.1
 COPY frontend/scarletx-banner.b64.2 /tmp/scarletx-banner.b64.2
@@ -33,6 +36,12 @@ COPY frontend/scarletx-banner.b64.4 /tmp/scarletx-banner.b64.4
 COPY frontend/locked_dashboard.css /usr/share/nginx/html/locked_dashboard.css
 COPY frontend/locked_dashboard_footer.css /usr/share/nginx/html/locked_dashboard_footer.css
 COPY frontend/approved_assets.css /usr/share/nginx/html/approved_assets.css
+
+RUN set -eux; \
+    cat /tmp/scarletx-logo.b64.1 /tmp/scarletx-logo.b64.2 /tmp/scarletx-logo.b64.3 /tmp/scarletx-logo.b64.4 \
+      | base64 -d > /usr/share/nginx/html/scarletx-logo.webp; \
+    echo '659136e0e64f7ef4d891f8c99cc3bd2f06083fa4ba2943c04a7629da7936fbae  /usr/share/nginx/html/scarletx-logo.webp' | sha256sum -c -; \
+    rm -f /tmp/scarletx-logo.b64.*
 
 RUN set -eux; \
     cat /tmp/scarletx-banner.b64.1 /tmp/scarletx-banner.b64.2 /tmp/scarletx-banner.b64.3 /tmp/scarletx-banner.b64.4 \
