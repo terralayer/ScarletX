@@ -42,7 +42,9 @@ def test_approved_dashboard_is_native_in_core_runtime():
     dashboard_end = app.index("function performerLinks", dashboard_start)
     dashboard = app[dashboard_start:dashboard_end]
     assert 'class="dashboard-hero"' in dashboard
-    assert 'Discover. Monitor. Organize. Enjoy.' in dashboard
+    assert 'Welcome to <span>ScarletX</span>' not in dashboard
+    assert 'Discover. Monitor. Organize. Enjoy.' not in dashboard
+    assert 'class="dashboard-hero-copy"' not in dashboard
     assert 'class="stats approved-stat-grid"' in dashboard
     assert 'class="approved-dashboard-grid"' in dashboard
     assert 'id="recentScenes"' in dashboard
@@ -54,6 +56,24 @@ def test_approved_dashboard_is_native_in_core_runtime():
     assert "url('/scarletx-banner.webp')" in approved_assets_css
     assert 'aspect-ratio:1321 / 163' in approved_assets_css
     assert '.dashboard-hero::after{display:none!important}' in approved_assets_css
+
+
+def test_dashboard_header_has_no_user_profile_icon():
+    index = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    assert 'class="status-pill"' not in index
+    assert 'class="profile-glyph"' not in index
+    assert 'data-icon="top-user"' not in index
+    assert 'id="hostLabel"' not in index
+    assert 'id="onlineText"' not in index
+    assert 'id="statusDot"' not in index
+
+
+def test_recent_and_upcoming_panels_share_the_same_top_baseline():
+    css = (FRONTEND / "locked_dashboard.css").read_text(encoding="utf-8")
+    compact = "".join(css.split())
+    assert ".approved-dashboard-grid{display:grid;grid-template-columns:minmax(0,1.02fr)minmax(0,1fr);gap:20px;align-items:start}" in compact
+    assert ".approved-dashboard-grid.panel{align-self:start" in compact
+    assert ".approved-dashboard-grid.panel-head{min-height:58px" in compact
 
 
 def test_approved_banner_source_reconstructs_to_locked_bytes():
