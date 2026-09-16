@@ -10,6 +10,7 @@ def test_read_only_status_snapshot_is_deferred_out_of_blocking_startup():
     blocking = startup[:startup.index("await downloader_supervisor.start()")]
 
     assert "collect_startup_status" not in blocking
+    assert "from ..startup_status import emit_startup_status_snapshot" in application
     assert "asyncio.create_task(emit_startup_status_snapshot(runtime))" in startup
 
     helper_path = ROOT / "scarletx" / "startup_status.py"
