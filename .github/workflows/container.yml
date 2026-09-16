@@ -37,7 +37,7 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=main
-            type=raw,value=0.4.4
+            type=raw,value=0.4.5
             type=sha,prefix=sha-
 
       - name: Generate web image metadata
@@ -47,7 +47,7 @@ jobs:
           images: ghcr.io/terralayer/scarletx-web
           tags: |
             type=raw,value=main
-            type=raw,value=0.4.4
+            type=raw,value=0.4.5
             type=sha,prefix=sha-
 
       - name: Build and push backend image
