@@ -40,7 +40,7 @@ COPY frontend/approved_assets.css /usr/share/nginx/html/approved_assets.css
 RUN set -eux; \
     cat /tmp/scarletx-logo.b64.1 /tmp/scarletx-logo.b64.2 /tmp/scarletx-logo.b64.3 /tmp/scarletx-logo.b64.4 \
       | base64 -d > /usr/share/nginx/html/scarletx-logo.webp; \
-    echo '659136e0e64f7ef4d891f8c99cc3bd2f06083fa4ba2943c04a7629da7936fbae  /usr/share/nginx/html/scarletx-logo.webp' | sha256sum -c -; \
+    echo 'a81e85a5899b7432b6a3fd557d5eb9f9a5b7ec451476dfa6897425d7830f8a4c  /usr/share/nginx/html/scarletx-logo.webp' | sha256sum -c -; \
     rm -f /tmp/scarletx-logo.b64.*
 
 RUN set -eux; \
