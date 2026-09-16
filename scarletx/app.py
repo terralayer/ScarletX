@@ -5,6 +5,7 @@ from .compact_studio_art import install_compact_studio_art_route
 from .db import SessionLocal, engine
 from .downloader_state_hotfix import install_downloader_state_hotfixes
 from .http_security import install_authentication, install_security_headers, remove_legacy_api_key_middleware
+from .library_health import router as library_health_router
 from .main import app
 from .media_dedup import install_runtime_dedup
 from .observability import install_observability
@@ -74,6 +75,7 @@ install_downloader_state_hotfixes(app)
 install_compact_studio_art_route(app)
 remove_legacy_api_key_middleware(app)
 app.include_router(auth_router)
+app.include_router(library_health_router)
 _add_observability_route()
 install_authentication(
     app,
