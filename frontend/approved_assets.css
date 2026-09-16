@@ -1,33 +1,36 @@
-/* Approved ScarletX visual assets. The wordmark is rendered as a CSS
-   background so a failed image decode can never create a broken-image box. */
-.brand,
+/* Approved ScarletX visual assets. Keep one approved wordmark in the top
+   header and remove the larger duplicate sidebar mark from layout entirely. */
+.brand{
+  display:none!important;
+  width:0!important;
+  height:0!important;
+  min-width:0!important;
+  min-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+  background:none!important;
+  box-shadow:none!important;
+}
 .header-brand{
   display:block!important;
   flex:0 0 auto;
+  width:150px!important;
+  height:48px!important;
+  min-width:150px!important;
+  min-height:48px!important;
   padding:0!important;
   border:0!important;
   border-radius:0!important;
   box-shadow:none!important;
   background-color:transparent!important;
-  background-image:url('/scarletx-wordmark.webp?v=approved-20260915-7')!important;
+  background-image:url('/scarletx-wordmark.webp?v=approved-20260915-8')!important;
   background-repeat:no-repeat!important;
   background-position:left center!important;
   background-size:contain!important;
   overflow:hidden!important;
   font-size:0!important;
   line-height:0!important;
-}
-.brand{
-  width:180px!important;
-  height:60px!important;
-  min-width:180px!important;
-  min-height:60px!important;
-}
-.header-brand{
-  width:150px!important;
-  height:48px!important;
-  min-width:150px!important;
-  min-height:48px!important;
 }
 .brand img,
 .header-brand img{
