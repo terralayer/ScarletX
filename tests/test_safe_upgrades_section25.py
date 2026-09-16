@@ -125,8 +125,10 @@ def test_failed_candidate_rolls_back_without_touching_previous_media(tmp_path):
 
 def test_download_processing_requires_probe_success_before_upgrade_retirement():
     source = Path("scarletx/download_processing.py").read_text()
-    assert "finalize_verified_upgrade" in source
-    assert "rollback_upgrade_candidate" in source
-    verification = source.index("index_media_file_by_id")
-    finalize = source.index("finalize_verified_upgrade", verification)
+    verification = source.index(
+        "verified = await asyncio.to_thread(index_media_file_by_id"
+    )
+    finalize = source.index("finalize_verified_upgrade(", verification)
+    rollback = source.index("rollback_upgrade_candidate(", verification)
     assert verification < finalize
+    assert verification < rollback
