@@ -58,3 +58,6 @@ def test_incremental_scan_keeps_explicit_dirty_scope(monkeypatch, tmp_path):
 
     assert scan_directories(factory, dirty, full=False) == {"processed": 0}
     assert calls == [(factory, dirty)]
+
+
+# Keep this commit test-only so CI captures the Section 27 RED state before implementation.
