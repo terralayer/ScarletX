@@ -6,7 +6,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Callable, Iterable, Iterator
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 
 from .models import FileScanState, utcnow
 from .recent_imports import FileIdentity, recent_imports
@@ -101,10 +101,10 @@ def load_states(db, directories: Iterable[str | Path]) -> dict[str, FileScanStat
     prefixes = tuple(normalized_path(item).rstrip(os.sep) + os.sep for item in directories)
     if not prefixes:
         return {}
+    scope = or_(*(FileScanState.path.startswith(prefix, autoescape=True) for prefix in prefixes))
     return {
         row.path: row
-        for row in db.scalars(select(FileScanState)).all()
-        if row.path.startswith(prefixes)
+        for row in db.scalars(select(FileScanState).where(scope)).all()
     }
 
 
