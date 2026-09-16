@@ -315,22 +315,6 @@ def studio_summary_page(
             )
         )
 
-    scene_count = (
-        select(func.count(Scene.id))
-        .where(Scene.studio_id == Studio.id, Scene.content_type == "scene")
-        .correlate(Studio)
-        .scalar_subquery()
-        .label("scene_count")
-    )
-    downloaded_scene_count = (
-        select(func.count(func.distinct(Scene.id)))
-        .select_from(Scene)
-        .join(MediaFile, MediaFile.scene_id == Scene.id)
-        .where(Scene.studio_id == Studio.id, Scene.content_type == "scene")
-        .correlate(Studio)
-        .scalar_subquery()
-        .label("downloaded_scene_count")
-    )
     stmt = (
         select(
             Studio.id.label("id"),
@@ -338,8 +322,6 @@ def studio_summary_page(
             Studio.name.label("name"),
             func.coalesce(func.nullif(Studio.poster_url, ""), Studio.logo_url).label("image_url"),
             Studio.monitored.label("monitored"),
-            downloaded_scene_count,
-            scene_count,
         )
         .where(*filters)
         .order_by(Studio.name.asc(), Studio.id.asc())
@@ -349,18 +331,42 @@ def studio_summary_page(
     fetched = db.execute(stmt.limit(limit + 1).params(**params)).mappings().all()
     has_more = len(fetched) > limit
     page_rows = fetched[:limit]
-    items = [
-        {
-            "id": int(row["id"]),
-            "tpdb_id": row["tpdb_id"],
-            "name": row["name"],
-            "image_url": row["image_url"],
-            "monitored": bool(row["monitored"]),
-            "downloaded_scene_count": int(row["downloaded_scene_count"] or 0),
-            "scene_count": int(row["scene_count"] or 0),
+    studio_ids = [int(row["id"]) for row in page_rows]
+    counts_by_studio: dict[int, tuple[int, int]] = {}
+    if studio_ids:
+        count_rows = db.execute(
+            select(
+                Scene.studio_id,
+                func.count(func.distinct(Scene.id)),
+                func.count(func.distinct(MediaFile.scene_id)),
+            )
+            .outerjoin(MediaFile, MediaFile.scene_id == Scene.id)
+            .where(
+                Scene.studio_id.in_(studio_ids),
+                Scene.content_type == "scene",
+            )
+            .group_by(Scene.studio_id)
+        ).all()
+        counts_by_studio = {
+            int(studio_id): (int(scene_count or 0), int(downloaded_count or 0))
+            for studio_id, scene_count, downloaded_count in count_rows
+            if studio_id is not None
         }
-        for row in page_rows
-    ]
+
+    items = []
+    for row in page_rows:
+        scene_count, downloaded_scene_count = counts_by_studio.get(int(row["id"]), (0, 0))
+        items.append(
+            {
+                "id": int(row["id"]),
+                "tpdb_id": row["tpdb_id"],
+                "name": row["name"],
+                "image_url": row["image_url"],
+                "monitored": bool(row["monitored"]),
+                "downloaded_scene_count": downloaded_scene_count,
+                "scene_count": scene_count,
+            }
+        )
     next_cursor = None
     if has_more and page_rows:
         last = page_rows[-1]
