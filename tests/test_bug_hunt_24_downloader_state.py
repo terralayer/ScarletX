@@ -4,8 +4,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_runtime_hotfix_is_installed_from_composed_app():
-    source = (ROOT / "scarletx" / "app.py").read_text(encoding="utf-8")
-    assert "install_downloader_state_hotfixes" in source
+    entrypoint = (ROOT / "scarletx" / "app.py").read_text(encoding="utf-8")
+    composition = (ROOT / "scarletx" / "runtime_composition.py").read_text(encoding="utf-8")
+    assert "install_runtime_composition" in entrypoint
+    assert "install_downloader_state_hotfixes(app)" in composition
 
 
 def test_hotfix_repairs_retry_and_reprocess_state():
