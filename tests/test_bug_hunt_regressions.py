@@ -35,8 +35,8 @@ def test_entity_cards_keep_current_add_actions_and_no_library_delete():
 
 
 def test_frontend_formats_date_only_values_without_utc_day_shift():
-    app = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    fmt = app[app.index("const fmtDate="):app.index("const bytes=")]
+    runtime = (FRONTEND / "runtime_core.js").read_text(encoding="utf-8")
+    fmt = runtime[runtime.index("const fmtDate="):runtime.index("const bytes=")]
 
     assert "split('-').map(Number)" in fmt
     compact=fmt.replace(" ", "")
