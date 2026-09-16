@@ -37,3 +37,4 @@ def test_shared_frontend_runtime_is_extracted_and_loaded_before_app():
     assert runtime_tag in index
     assert index.index(runtime_tag) < index.index(app_tag)
     assert "COPY frontend/runtime_core.js /usr/share/nginx/html/runtime_core.js" in dockerfile
+    assert "grep -q '/runtime_core.js' /usr/share/nginx/html/index.html" in dockerfile
