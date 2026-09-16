@@ -182,5 +182,6 @@ def rank_local_scene(path: Path, index: SceneMatchIndex) -> SceneMatch:
 
 
 def match_local_scene(path: Path, index: SceneMatchIndex):
+    """Preserve the legacy unique-title matcher while exposing confidence separately."""
     result = rank_local_scene(path, index)
-    return result.scene if result.auto_match else None
+    return result.scene if result.scene is not None and result.confidence != "ambiguous" else None
