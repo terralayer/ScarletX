@@ -47,14 +47,14 @@ def test_approved_exact_logo_assets_are_used_in_shell():
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     assert '<div class="header-brand"><img src="/scarletx-wordmark.webp?v=approved-20260915-6"' in index
     assert '<div class="brand"><img src="/scarletx-wordmark.webp?v=approved-20260915-6"' in index
-    assert 'href="/scarletx-icon.webp?v=approved-20260915-6"' in index
+    assert 'href="/scarletx-icon.svg?v=approved-20260916-1"' in index
     assert "scarletx-wordmark.svg" not in index
-    assert "scarletx-icon.svg" not in index
 
 
 def test_exact_logo_assets_are_bundled_into_web_image():
     dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
     assert "COPY frontend/scarletx-wordmark.webp.b64.00 /tmp/scarletx-wordmark.webp.b64.00" in dockerfile
+    assert "COPY frontend/scarletx-icon.svg /usr/share/nginx/html/scarletx-icon.svg" in dockerfile
     assert "COPY frontend/scarletx-icon.webp /usr/share/nginx/html/scarletx-icon.webp" in dockerfile
     assert "a90efeaa68b2f8a96e20d62167582f79ed58ef92aa776e46e8c4d9bad0e3c3ca" in dockerfile
     assert "30f7d52a474ed83d7f6f83d8da8ec9ca3488b6936bced0072dccdf762c10e768" in dockerfile
