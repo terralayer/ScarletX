@@ -37,6 +37,7 @@ def test_approved_dashboard_is_native_in_core_runtime():
     assert '<link rel="stylesheet" href="/approved_assets.css">' in index
     assert '<link rel="stylesheet" href="/ui_icons.css">' in index
     assert '<link rel="stylesheet" href="/dashboard_cleanup.css">' in index
+    assert '<link rel="stylesheet" href="/sidebar_compact.css">' in index
     assert 'Discover More. Manage Smarter.' in index
 
     dashboard_start = app.index("async function dashboard()")
@@ -66,17 +67,16 @@ def test_approved_layout_hides_legacy_side_footer_entirely():
     assert 'body[data-layout="approved-dashboard-v1"] .main::after{content:none!important;display:none!important}' in footer_css
 
 
-def test_approved_desktop_sidebar_is_compact_but_keeps_mobile_breakpoints():
-    css = "".join((FRONTEND / "locked_dashboard.css").read_text(encoding="utf-8").split())
+def test_desktop_sidebar_is_tight_but_usable():
+    compact = "".join((FRONTEND / "sidebar_compact.css").read_text(encoding="utf-8").split())
+    locked = (FRONTEND / "locked_dashboard.css").read_text(encoding="utf-8")
 
-    assert "grid-template-columns:242pxminmax(0,1fr)" in css
-    assert ".nav{padding:18px10px14px;display:grid;gap:6px}" in css
-    assert ".navbutton{height:44px" in css
-    assert "padding:016px" in css
-    assert "gap:12px" in css
-    assert "font-size:15px" in css
-    assert ".nav.ico{width:19px;height:19px;font-size:17px" in css
-    assert "@media(max-width:980px){body[data-layout=\"approved-dashboard-v1\"].shell{grid-template-columns:82px1fr" in css
+    assert '@media(min-width:981px){' in compact
+    assert '.shell{grid-template-columns:242pxminmax(0,1fr)}' in compact
+    assert '.nav{padding:18px10px14px;display:grid;gap:5px}' in compact
+    assert '.navbutton{height:44px;padding:016px;gap:12px;font-size:15px}' in compact
+    assert '.nav.ico{width:19px;height:19px;font-size:17px}' in compact
+    assert '@media(max-width:980px){body[data-layout="approved-dashboard-v1"] .shell{grid-template-columns:82px 1fr;' in locked
 
 
 def test_dashboard_cleanup_hides_profile_and_banner_copy_and_aligns_panels():
@@ -104,7 +104,7 @@ def test_approved_banner_source_reconstructs_to_locked_bytes():
 
 def test_frontend_image_build_uses_checksum_locked_brand_assets():
     dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
-    for asset in ("locked_dashboard.css", "locked_dashboard_footer.css", "approved_assets.css", "ui_icons.css", "dashboard_cleanup.css"):
+    for asset in ("locked_dashboard.css", "locked_dashboard_footer.css", "approved_assets.css", "ui_icons.css", "dashboard_cleanup.css", "sidebar_compact.css"):
         assert f"COPY frontend/{asset} /usr/share/nginx/html/{asset}" in dockerfile
     for part in range(4):
         assert f"COPY frontend/scarletx-wordmark.webp.b64.{part:02d} /tmp/scarletx-wordmark.webp.b64.{part:02d}" in dockerfile

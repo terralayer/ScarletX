@@ -1,0 +1,7 @@
+@media (min-width:981px){
+  body[data-layout="approved-dashboard-v1"] .shell{grid-template-columns:242px minmax(0,1fr)}
+  body[data-layout="approved-dashboard-v1"] .nav{padding:18px 10px 14px;display:grid;gap:5px}
+  body[data-layout="approved-dashboard-v1"] .nav button{height:44px;padding:0 16px;gap:12px;font-size:15px}
+  body[data-layout="approved-dashboard-v1"] .nav .ico{width:19px;height:19px;font-size:17px}
+  body[data-layout="approved-dashboard-v1"] .side-spacer{min-height:12px}
+}
