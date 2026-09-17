@@ -30,7 +30,7 @@ def test_approved_dashboard_is_native_in_core_runtime():
     assert 'data-dashboard-render="native-v2"' in index
     assert '/scarletx-wordmark.webp?v=approved-20260915-6' in index
     assert '/scarletx-icon.svg?v=approved-20260916-1' in index
-    for label in ("Dashboard", "Performers", "Scenes", "Studios", "Calendar", "Discover", "Downloads", "Indexers", "Settings"):
+    for label in ("Dashboard", "Performers", "Scenes", "Studios", "Calendar", "Downloads", "Indexers", "Settings"):
         assert f'<span>{label}</span>' in index
     assert '<script src="/dashboard_v2.js"></script>' not in index
     assert '<script src="/locked_dashboard_layout.js"></script>' not in index

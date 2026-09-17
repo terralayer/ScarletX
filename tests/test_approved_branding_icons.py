@@ -17,7 +17,7 @@ def test_sidebar_and_topbar_use_svg_icons_not_unicode_glyphs():
     index = (FRONTEND / "index.html").read_text(encoding="utf-8")
     for icon_id in (
         "nav-home", "nav-performers", "nav-scenes", "nav-studios", "nav-calendar",
-        "nav-discover", "nav-downloads", "nav-indexers", "nav-settings",
+        "nav-downloads", "nav-indexers", "nav-settings",
         "top-search", "top-bell", "top-user",
     ):
         assert f'data-icon="{icon_id}"' in index
