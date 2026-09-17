@@ -64,7 +64,7 @@ const dashboardIcons = {
     if (!rows.length) return `<div class="row"><div class="rowicon">—</div><div><b>No upcoming releases</b><small>Monitored release dates will appear here.</small></div></div>`;
     return rows.slice(0, 5).map(item => {
       const day = String(item.date || '').slice(8, 10).replace(/^0/, '') || '—';
-      return `<div class="row"><div class="rowicon">${esc(day)}</div><div><b>${esc(item.title || 'Upcoming scene')}</b><small>${fmtDate(item.date)}</small></div><span class="badge soft">Scene</span></div>`;
+      return `<div class="row"><div class="rowicon">${esc(day)}</div><div><b title="${esc(item.title || 'Upcoming scene')}">${esc(item.title || 'Upcoming scene')}</b><small>${fmtDate(item.date)}</small></div><span class="badge soft">Scene</span></div>`;
     }).join('');
   }
 

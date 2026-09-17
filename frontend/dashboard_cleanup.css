@@ -49,9 +49,21 @@ body[data-layout="approved-dashboard-v1"] .approved-upcoming .rows{
 
 body[data-layout="approved-dashboard-v1"] .approved-recent-row,
 body[data-layout="approved-dashboard-v1"] .approved-upcoming .row{
-  min-height:64px!important;
+  min-height:65px!important;
+  height:65px!important;
   padding:8px 0!important;
   box-sizing:border-box!important;
+}
+
+/* Match Recent Scenes: long titles must not grow the Upcoming row track. */
+body[data-layout="approved-dashboard-v1"] .approved-upcoming .row > div:nth-child(2){
+  min-width:0;
+}
+
+body[data-layout="approved-dashboard-v1"] .approved-upcoming .row b{
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
 }
 
 /* Keep the five desktop summary cards fluid until the existing tablet breakpoint. */

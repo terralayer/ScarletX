@@ -15,3 +15,5 @@ docker-data/
 setup-token.json
 
 .worktrees/
+
+node_modules/

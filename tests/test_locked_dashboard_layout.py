@@ -113,7 +113,7 @@ def test_dashboard_recent_and_upcoming_rows_share_vertical_rhythm():
     scope = 'body[data-layout="approved-dashboard-v1"]'
 
     assert f'{scope}.approved-recent-list,{scope}.approved-upcoming.rows{{padding:4px20px14px!important;' in cleanup
-    assert f'{scope}.approved-recent-row,{scope}.approved-upcoming.row{{min-height:64px!important;padding:8px0!important;box-sizing:border-box!important;' in cleanup
+    assert f'{scope}.approved-recent-row,{scope}.approved-upcoming.row{{min-height:65px!important;height:65px!important;padding:8px0!important;box-sizing:border-box!important;' in cleanup
 
 
 def test_approved_banner_source_reconstructs_to_locked_bytes():
