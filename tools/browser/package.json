@@ -1,0 +1,11 @@
+{
+  "name": "scarletx-browser-checks",
+  "private": true,
+  "scripts": {
+    "test": "node dashboard.cjs",
+    "screenshots": "node dashboard.cjs --screenshots"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

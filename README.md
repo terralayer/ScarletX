@@ -15,7 +15,13 @@ It combines metadata management, automated acquisition, a built-in download work
 
 The current ScarletX interface uses a permanent dark charcoal theme with scarlet accents and a simplified Scarlet X identity.
 
+Screenshots of the current interface with fictional sample data and artwork omitted.
+
+**Dashboard — Recent Scenes and Upcoming Releases share aligned rows.**
+
 ![ScarletX dashboard](docs/images/scarletx-dashboard.png)
+
+**Scenes — library, monitoring status, and playback actions.**
 
 ![ScarletX scenes library](docs/images/scarletx-scenes.png)
 
@@ -145,11 +151,22 @@ python -m pytest -q
 
 GitHub Actions runs the test suite and source-compilation check on Python 3.11, 3.12, and 3.13.
 
-Stable releases are created with the manual `Release ScarletX` GitHub Actions workflow. The release helper enforces the `0.3.x` series and increments only the third component (the number after the second dot); it never changes the `0.3` portion. Adding or changing the workflow does not create a release; a release occurs only when the workflow is manually dispatched with release notes.
+Stable releases are created with the manual `Release ScarletX` GitHub Actions workflow. The release helper enforces the `0.4.x` series and currently locks releases at `0.4.8`. Advancing to a new version requires deliberately updating that lock; published stable tags are immutable. Adding or changing the workflow does not create a release; a release occurs only when the workflow is manually dispatched with release notes.
 
 Current application version: **0.4.8**.
 
-See `RELEASE-NOTES-0.4.8.md` for the current release summary.
+See [RELEASE-NOTES-0.4.8.md](RELEASE-NOTES-0.4.8.md) for the current release summary. Main-branch changes after that release are available in the matching `:main` container images.
+
+To run the browser layout checks or regenerate the screenshots with fictional fixtures:
+
+```bash
+npm ci --prefix tools/browser
+npx --prefix tools/browser playwright install chromium
+npm test --prefix tools/browser
+npm run screenshots --prefix tools/browser
+```
+
+The browser check loads the real frontend with isolated API fixtures and measures panel and row alignment at desktop, tablet, and mobile widths, including long titles, empty lists, and unequal item counts. No running server or personal library is required.
 
 ## Legal Disclaimer
 
