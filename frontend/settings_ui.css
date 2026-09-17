@@ -15,3 +15,4 @@
 @media(max-width:680px){body:has(.settings-layout) .sidebar{min-height:0!important;height:auto!important}body:has(.settings-layout) .side-spacer{display:none}}
 
 #tpdbKeyHelp a{color:#ff9aad;text-decoration:underline;text-underline-offset:3px}#tpdbKeyHelp a:hover{color:#ffd2dc}#tpdbKeyHelp a:focus-visible{outline:2px solid #ed7190;outline-offset:3px;border-radius:2px}
+.settings-fields #tpdbKeyHelp{display:block;max-width:68ch;white-space:normal;overflow-wrap:anywhere;font-size:12px;line-height:1.7}
