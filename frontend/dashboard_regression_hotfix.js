@@ -28,18 +28,6 @@
   }
 
   function wireApprovedSidebarShortcuts() {
-    const discover = document.querySelector('[data-approved-nav="discover"]');
-    if (discover && !discover.dataset.bound) {
-      discover.dataset.bound = '1';
-      discover.addEventListener('click', () => {
-        view = 'scenes';
-        entityMode.scenes = 'search';
-        nav();
-        setApprovedNavActive('discover');
-        renderEntities('scenes');
-      });
-    }
-
     const indexers = document.querySelector('[data-approved-nav="indexers"]');
     if (indexers && !indexers.dataset.bound) {
       indexers.dataset.bound = '1';

@@ -2,7 +2,7 @@
   "name": "scarletx-browser-checks",
   "private": true,
   "scripts": {
-    "test": "node dashboard.cjs",
+    "test": "node dashboard.cjs && node settings.cjs",
     "screenshots": "node dashboard.cjs --screenshots"
   },
   "devDependencies": {

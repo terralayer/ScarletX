@@ -27,13 +27,11 @@ def test_approved_sidebar_shortcuts_are_wired_without_legacy_layout_script():
     source = (ROOT / "frontend" / "dashboard_regression_hotfix.js").read_text(encoding="utf-8")
 
     assert '<script src="/locked_dashboard_layout.js"></script>' not in index
-    assert 'data-approved-nav="discover"' in index
+    assert 'data-approved-nav="discover"' not in index
     assert 'data-approved-nav="indexers"' in index
     assert "function wireApprovedSidebarShortcuts()" in source
-    assert "entityMode.scenes = 'search'" in source
-    assert "renderEntities('scenes')" in source
     assert "settingsTab = 'indexers'" in source
-    assert "setApprovedNavActive('discover')" in source
+    assert "setApprovedNavActive('discover')" not in source
     assert "setApprovedNavActive('indexers')" in source
 
 

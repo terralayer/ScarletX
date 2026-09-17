@@ -17,6 +17,8 @@ COPY frontend/auth.css /usr/share/nginx/html/auth.css
 COPY frontend/auth.js /usr/share/nginx/html/auth.js
 COPY frontend/styles.css /usr/share/nginx/html/styles.css
 COPY frontend/runtime_core.js /usr/share/nginx/html/runtime_core.js
+COPY frontend/settings_ui.js /usr/share/nginx/html/settings_ui.js
+COPY frontend/settings_ui.css /usr/share/nginx/html/settings_ui.css
 COPY frontend/app.js /usr/share/nginx/html/app.js
 COPY frontend/navigation_error_overrides.js /usr/share/nginx/html/navigation_error_overrides.js
 COPY frontend/ui_overrides.css /usr/share/nginx/html/ui_overrides.css
