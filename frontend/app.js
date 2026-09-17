@@ -41,7 +41,7 @@ const dashboardIcons = {
   };
 
   function dashboardStat(icon, label, value, detail, target) {
-    return `<button type="button" class="stat dashboard-stat" data-stat-go="${target}"><div class="stat-icon">${icon}</div><div><small>${label}</small><strong>${value}</strong><em>${detail}</em></div></button>`;
+    return `<button type="button" class="stat dashboard-stat" data-stat-go="${target}"><div class="stat-icon">${icon}</div><div><small>${label}</small><strong>${value}</strong></div><em>${detail}</em></button>`;
   }
 
   function dashboardStudioName(scene) {
