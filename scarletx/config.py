@@ -88,6 +88,7 @@ class Settings(BaseModel):
     native_usenet_concurrent_processing: int = int(os.getenv("SCARLETX_USENET_CONCURRENT_PROCESSING", "1"))
     native_usenet_max_retries: int = int(os.getenv("SCARLETX_USENET_MAX_RETRIES", "2"))
     native_usenet_speed_limit_mb_s: float = float(os.getenv("SCARLETX_USENET_SPEED_LIMIT_MB_S", "0"))
+    download_schedule_json: str = "{}"
     native_usenet_repair_enabled: bool = os.getenv("SCARLETX_USENET_REPAIR", "true").strip().lower() not in {"0","false","no","off"}
     native_usenet_unpack_enabled: bool = os.getenv("SCARLETX_USENET_UNPACK", "true").strip().lower() not in {"0","false","no","off"}
     completed_download_import_enabled: bool = True

@@ -21,6 +21,7 @@ async function route(request) {
   assert.equal(url.hostname, 'scarletx.test', 'No external requests in the screenshot fixture');
   const pathname = url.pathname;
   if (pathname.includes('/artwork/') || pathname.endsWith('/screengrab') || pathname.endsWith('/stream')) return request.fulfill({status:404,body:''});
+  if (pathname.startsWith('/api/operations/')) return request.fulfill({json:require('./management-fixtures.cjs')(pathname)});
   if (pathname.startsWith('/api/')) {
     if(request.request().method() !== 'GET'){ if(failWrites)return request.fulfill({status:500,json:{detail:'Sample save failure'}}); writes.push({path:pathname,body:request.request().postDataJSON()}); return request.fulfill({json:{}}); }
     let data;
@@ -85,7 +86,7 @@ function extraFixture(p) {
 
 const writes=[];
 let failWrites=false;
-(async()=>{
+if(require.main===module)(async()=>{
  const browser=await chromium.launch({headless:true});
  try {
  const page=await browser.newPage({viewport:{width:1440,height:1100}});
@@ -168,8 +169,10 @@ let failWrites=false;
  assert.equal(await page.locator('.settings-page-heading h2').textContent(),'General');
  await page.unroute('**/api/system/health');
  // Security validation still blocks mismatched passwords before any write.
- await page.evaluate(async()=>{settingsTab='security';await settings()});
- await page.locator('#uiAuthEnabledToggle').check();
+ await page.evaluate(async()=>{window.scarletxUsername='custom-admin';settingsTab='security';await settings()});
+ assert.equal(await page.locator('#securityUsername').inputValue(),'custom-admin');
+ assert.equal(await page.locator('#uiAuthEnabled').isDisabled(),true);
+ assert.equal(await page.locator('#uiAuthEnabled').inputValue(),'true');
  await page.locator('#securityPassword').fill('sample-password-123');
  await page.locator('#securityPasswordConfirm').fill('different-password-123');
  const securityBefore=writes.length;await page.locator('#saveSecurity').click();
@@ -182,3 +185,5 @@ let failWrites=false;
  console.log('Settings: nine tabs at three widths, all save flows, failure retention, save/reset race, delayed navigation, and Discover removal passed.');
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});
+
+module.exports={route,settingsFixture,writes};

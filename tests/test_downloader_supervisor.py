@@ -76,8 +76,9 @@ async def test_unexpected_worker_exit_is_replaced(tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("control, expected", [("downloading", "queued"), ("paused", "paused"), ("cancel", "cancelled"), ("completed", "completed")])
 async def test_process_job_propagates_supervisor_cancellation_after_preserving_state(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, control, expected
 ):
     from scarletx.usenet import worker as worker_module
 
@@ -118,6 +119,16 @@ async def test_process_job_propagates_supervisor_cancellation_after_preserving_s
 
     task = asyncio.create_task(worker_module.process_job(session, Settings(), "active"))
     await asyncio.wait_for(fetch_started.wait(), timeout=1)
+    with session() as db:
+        job = db.get(NativeUsenetJob, "active")
+        if control == "cancel":
+            job.cancel_requested = True
+        else:
+            job.status = control
+        if control == "completed":
+            job.output_path = str(tmp_path / "complete" / "finished")
+            job.postprocess_note = "Download complete"
+        db.commit()
     task.cancel()
 
     with pytest.raises(asyncio.CancelledError):
@@ -125,8 +136,14 @@ async def test_process_job_propagates_supervisor_cancellation_after_preserving_s
 
     with session() as db:
         job = db.get(NativeUsenetJob, "active")
-        assert job.status == "cancelled"
-        assert job.postprocess_note == "Cancelled; partial data preserved for retry"
+        assert job.status == expected
+        if expected == "completed":
+            assert job.output_path == str(tmp_path / "complete" / "finished")
+            assert job.postprocess_note == "Download complete"
+        elif expected == "cancelled":
+            assert job.postprocess_note == "Cancelled; partial data preserved for retry"
+        else:
+            assert job.postprocess_note == "Interrupted by application shutdown; partial data preserved for resume"
 
 
 def test_production_app_exposes_downloader_restart_route():

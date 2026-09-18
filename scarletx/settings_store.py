@@ -357,7 +357,7 @@ def load_database_settings(db, *, force=False):
       native_usenet_enabled=_bool(v,"native_usenet_enabled",True),native_usenet_providers_json=SecretStr(v.get("native_usenet_providers_json","[]")),
       native_usenet_incomplete_dir=v.get("native_usenet_incomplete_dir",d.native_usenet_incomplete_dir),native_usenet_complete_dir=v.get("native_usenet_complete_dir",d.native_usenet_complete_dir),
       native_usenet_max_connections=_int(v,"native_usenet_max_connections",200,1),native_usenet_max_retries=_int(v,"native_usenet_max_retries",2,0),native_usenet_speed_limit_mb_s=_float(v,"native_usenet_speed_limit_mb_s",0.0,0),
-      native_usenet_repair_enabled=_bool(v,"native_usenet_repair_enabled",True),native_usenet_unpack_enabled=_bool(v,"native_usenet_unpack_enabled",True),
+      download_schedule_json=v.get("download_schedule_json","{}"),native_usenet_repair_enabled=_bool(v,"native_usenet_repair_enabled",True),native_usenet_unpack_enabled=_bool(v,"native_usenet_unpack_enabled",True),
       completed_download_import_enabled=_bool(v,"completed_download_import_enabled",True),
       download_poll_seconds=_int(v,"download_poll_seconds",30,10),file_management_enabled=_bool(v,"file_management_enabled",False),scene_naming_template=v.get("scene_naming_template",d.scene_naming_template),
       automatic_search_enabled=_bool(v,"automatic_search_enabled",False),automatic_search_interval_minutes=_int(v,"automatic_search_interval_minutes",60,5),automatic_search_batch_size=_int(v,"automatic_search_batch_size",10,1),

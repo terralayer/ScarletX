@@ -75,7 +75,7 @@ def _wanted_state(
     return "never_searched", "Never searched", None, False
 
 
-def missing_items(db, content_type=None, limit=500):
+def missing_items(db, content_type=None, limit=500, offset=0):
     target_type = content_type or "scene"
 
     last_search_at = (
@@ -119,8 +119,9 @@ def missing_items(db, content_type=None, limit=500):
             Scene.content_type == target_type,
             ~exists(select(MediaFile.id).where(MediaFile.scene_id == Scene.id)),
         )
-        .order_by(Scene.release_date, Scene.title)
+        .order_by(Scene.release_date, Scene.title, Scene.id)
         .limit(limit)
+        .offset(offset)
     ).all()
 
     wanted = []
@@ -148,63 +149,51 @@ def missing_items(db, content_type=None, limit=500):
 
 
 def cutoff_unmet(db, content_type=None, limit=500):
-    scenes = db.scalars(
-        select(Scene).where(Scene.monitored.is_(True), Scene.content_type == "scene")
-    ).all()
-    if not scenes:
+    if limit <= 0:
         return []
-    configs = {
-        item.scene_id: item
-        for item in db.scalars(
-            select(LibraryItemConfig)
-            .join(Scene, Scene.id == LibraryItemConfig.scene_id)
-            .where(Scene.monitored.is_(True), Scene.content_type == "scene")
-        ).all()
-    }
-    profiles = {item.id: item for item in db.scalars(select(QualityProfile)).all()}
-    default = default_quality_profile(db, "scene")
-    files_by_scene = {}
-    for media in db.scalars(
-        select(MediaFile)
-        .join(Scene, Scene.id == MediaFile.scene_id)
-        .where(Scene.monitored.is_(True), Scene.content_type == "scene")
-    ).all():
-        files_by_scene.setdefault(media.scene_id, []).append(media)
+    target_type = content_type or "scene"
+    profiles = None
+    default = None
     rows = []
-    for scene in scenes:
-        config = configs.get(scene.id)
-        profile = (
-            profiles.get(config.quality_profile_id)
-            if config and config.quality_profile_id
-            else default
-        )
-        if not profile:
-            continue
-        files = files_by_scene.get(scene.id, [])
-        if not files:
-            continue
-        best = max(
-            files,
-            key=lambda x: QUALITY_ORDER.get(
-                detect_quality(x.quality or x.release_title or "").resolution,
-                0,
-            ),
-        )
-        current = detect_quality(best.quality or best.release_title or "").resolution
-        if QUALITY_ORDER.get(current, 0) < QUALITY_ORDER.get(
-            profile.cutoff_quality.casefold(), 0
-        ):
-            rows.append(
-                {
-                    "kind": "scene",
-                    "library_item_id": scene.id,
-                    "title": scene.title,
-                    "current_quality": current,
-                    "cutoff": profile.cutoff_quality,
-                }
-            )
-        if len(rows) >= limit:
+    after_id = 0
+    while len(rows) < limit:
+        scenes = db.execute(
+            select(Scene.id, Scene.title)
+            .where(Scene.monitored.is_(True), Scene.content_type == target_type, Scene.id > after_id)
+            .order_by(Scene.id).limit(200)
+        ).all()
+        if not scenes:
             break
+        if profiles is None:
+            profiles = {item.id: item for item in db.scalars(select(QualityProfile))}
+            default = default_quality_profile(db, "scene")
+        last_id = scenes[-1].id
+        scope = (Scene.monitored.is_(True), Scene.content_type == target_type, Scene.id > after_id, Scene.id <= last_id)
+        configs = {item.scene_id: item for item in db.scalars(
+            select(LibraryItemConfig).join(Scene, Scene.id == LibraryItemConfig.scene_id).where(*scope)
+        )}
+        files_by_scene = {}
+        for media in db.execute(
+            select(MediaFile.scene_id, MediaFile.quality, MediaFile.release_title)
+            .join(Scene, Scene.id == MediaFile.scene_id).where(*scope)
+        ):
+            files_by_scene.setdefault(media.scene_id, []).append(media)
+        for scene in scenes:
+            config = configs.get(scene.id)
+            profile = profiles.get(config.quality_profile_id) if config and config.quality_profile_id else default
+            files = files_by_scene.get(scene.id, [])
+            if not profile or not files:
+                continue
+            current = max(
+                (detect_quality(media.quality or media.release_title or "").resolution for media in files),
+                key=lambda quality: QUALITY_ORDER.get(quality, 0),
+            )
+            if QUALITY_ORDER.get(current, 0) < QUALITY_ORDER.get(profile.cutoff_quality.casefold(), 0):
+                rows.append({"kind": "scene", "library_item_id": scene.id, "title": scene.title,
+                             "current_quality": current, "cutoff": profile.cutoff_quality})
+            if len(rows) >= limit:
+                break
+        after_id = last_id
     return rows
 
 

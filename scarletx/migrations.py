@@ -7,6 +7,9 @@ from .watchdog import ensure_watchdog_model_columns
 
 
 PERFORMANCE_INDEXES = (
+    ("history", "ix_history_scene_event_created", "scene_id, event_type, created_at"),
+    ("tracked_downloads", "ix_tracked_downloads_scene_created_id", "scene_id, created_at, id"),
+    ("scenes", "ix_scenes_wanted_order", "content_type, monitored, release_date, title, id"),
     (
         "native_usenet_jobs",
         "ix_native_usenet_jobs_status_created_at",
@@ -101,17 +104,27 @@ def ensure_native_watchdog_columns(connection: Connection) -> None:
             existing.add(column_name)
 
 
+def _available_performance_indexes(connection: Connection):
+    inspector = inspect(connection)
+    tables = set(inspector.get_table_names())
+    columns_by_table = {}
+    for table, name, columns in PERFORMANCE_INDEXES:
+        if table not in tables:
+            continue
+        if table not in columns_by_table:
+            columns_by_table[table] = {column["name"] for column in inspector.get_columns(table)}
+        required_columns = {part.strip().split()[0] for part in columns.split(",")}
+        # Partial/older schemas may not yet have all columns. Recheck after they are added.
+        if required_columns <= columns_by_table[table]:
+            yield table, name, columns
+
+
 def performance_index_migration_required(connection: Connection) -> bool:
     """Return whether this SQLite database still needs a performance index."""
     if connection.dialect.name != "sqlite":
         return False
 
-    tables = set(inspect(connection).get_table_names())
-    required = {
-        index_name
-        for table, index_name, _columns in PERFORMANCE_INDEXES
-        if table in tables
-    }
+    required = {index_name for _table, index_name, _columns in _available_performance_indexes(connection)}
     existing = {
         str(row[0])
         for row in connection.execute(
@@ -128,10 +141,7 @@ def ensure_performance_indexes(connection: Connection) -> None:
         return
 
     ensure_native_watchdog_columns(connection)
-    tables = set(inspect(connection).get_table_names())
-    for table, index_name, columns in PERFORMANCE_INDEXES:
-        if table not in tables:
-            continue
+    for table, index_name, columns in _available_performance_indexes(connection):
         connection.exec_driver_sql(
             f"CREATE INDEX IF NOT EXISTS {index_name} ON {table} ({columns})"
         )

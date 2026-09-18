@@ -3,13 +3,15 @@ resources:
     cpus: 2.0
     memory: 4096
 
+TZ: Etc/UTC
+
 scarletx:
   additional_envs: []
 
 network:
   web_port:
     bind_mode: published
-    port_number: 30969
+    port_number: 8080
 
 run_as:
   user: 568
@@ -42,5 +44,6 @@ storage:
     ix_volume_config:
       dataset_name: backups
       create_host_path: true
+  additional_storage: []
 
 labels: []

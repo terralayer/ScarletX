@@ -96,11 +96,11 @@ ghcr.io/terralayer/scarletx:main
 ghcr.io/terralayer/scarletx-web:main
 ```
 
-Container releases always use matching versions for both images, for example ScarletX 0.4.8:
+Container releases always use matching versions for both images, for example ScarletX 0.4.9:
 
 ```text
-ghcr.io/terralayer/scarletx:0.4.8
-ghcr.io/terralayer/scarletx-web:0.4.8
+ghcr.io/terralayer/scarletx:0.4.9
+ghcr.io/terralayer/scarletx-web:0.4.9
 ```
 
 Runtime settings and credentials are configured by the user. ScarletX does not require development credentials to be committed to the repository.
@@ -151,11 +151,11 @@ python -m pytest -q
 
 GitHub Actions runs the test suite and source-compilation check on Python 3.11, 3.12, and 3.13.
 
-Stable releases are created with the manual `Release ScarletX` GitHub Actions workflow. The release helper enforces the `0.4.x` series and currently locks releases at `0.4.8`. Advancing to a new version requires deliberately updating that lock; published stable tags are immutable. Adding or changing the workflow does not create a release; a release occurs only when the workflow is manually dispatched with release notes.
+Stable releases are created with the manual `Release ScarletX` GitHub Actions workflow. The release helper enforces the `0.4.x` series and currently locks releases at `0.4.9`. Advancing to a new version requires deliberately updating that lock; published stable tags are immutable. Adding or changing the workflow does not create a release; a release occurs only when the workflow is manually dispatched with release notes.
 
-Current application version: **0.4.8**.
+Current application version: **0.4.9**.
 
-See [RELEASE-NOTES-0.4.8.md](RELEASE-NOTES-0.4.8.md) for the current release summary. Main-branch changes after that release are available in the matching `:main` container images.
+See [RELEASE-NOTES-0.4.9.md](RELEASE-NOTES-0.4.9.md) for the current release summary. Main-branch changes after that release are available in the matching `:main` container images.
 
 To run the browser layout checks or regenerate the screenshots with fictional fixtures:
 

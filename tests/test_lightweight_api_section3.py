@@ -7,7 +7,15 @@ from sqlalchemy.pool import StaticPool
 
 
 def _client_with_library_data():
-    from scarletx.app import app
+    from scarletx.app import app as production_app
+    from fastapi import FastAPI
+    from scarletx.http_security import install_authentication
+    from scarletx.settings_store import load_database_settings
+    from tests.test_auth_middleware import create_admin
+    app = FastAPI()
+    for route in production_app.routes:
+        if getattr(route, "path", "").startswith("/api/library/"):
+            app.add_api_route(route.path, route.endpoint, methods=list(route.methods))
     from scarletx.db import Base, get_session
     from scarletx.models import Performer, Scene, Studio
 
@@ -37,7 +45,10 @@ def _client_with_library_data():
             yield db
 
     app.dependency_overrides[get_session] = override_session
-    return TestClient(app), app
+    install_authentication(app, session_factory=factory, settings_loader=load_database_settings)
+    client = TestClient(app)
+    client.cookies.set("scarletx_session", create_admin(factory))
+    return client, app
 
 
 def test_library_page_routes_return_summary_payloads_only():

@@ -13,7 +13,7 @@ def _project_version() -> str:
 def test_release_discipline_policy_tracks_current_release_lock():
     version = _project_version()
     policy = (ROOT / "docs" / "RELEASE-DISCIPLINE.md").read_text(encoding="utf-8")
-    assert f"current shipped release lock remains `{version}`" in policy.casefold()
+    assert f"release target remains locked to `{version}`" in policy.casefold()
 
 
 def test_release_workflow_requires_explicit_manual_dispatch():

@@ -241,6 +241,28 @@ def _video_paths(root: Path):
         yield path
 
 
+def _bounded_probe_futures(pool, session_factory, media_ids, workers):
+    remaining = iter(media_ids)
+    pending = {}
+    while True:
+        while len(pending) < max(1, workers * 2):
+            media_id = next(remaining, None)
+            if media_id is None:
+                break
+            future = pool.submit(index_media_file_by_id, session_factory, media_id, generate_art=True)
+            pending[future] = media_id
+        if not pending:
+            return
+        done, _ = concurrent.futures.wait(pending, return_when=concurrent.futures.FIRST_COMPLETED)
+        for future in done:
+            yield pending.pop(future), future
+
+
+def _scoped_scan_records(db, model, prefixes):
+    from .scan_path_index import scoped_records
+    yield from scoped_records(db, model, prefixes, refresh=False)
+
+
 def scan_library(
     session_factory,
     job_id: int | None = None,
@@ -251,6 +273,8 @@ def scan_library(
     emit_status("Library Scan", "ACTIVE", "scanning configured scene roots", severity="active")
     to_index: list[int] = []
     pending_states: dict[int, tuple[Path, os.stat_result]] = {}
+    from .scan_path_index import refresh_scan_path_index
+    refresh_scan_path_index(session_factory)
     with session_factory() as db:
         job = db.get(BackgroundJob, job_id) if job_id else None
         if job:
@@ -268,12 +292,17 @@ def scan_library(
 
         def in_scope(path: str) -> bool:
             return normalized_path(path).startswith(scope_prefixes)
-        scenes = db.scalars(select(Scene).where(Scene.content_type == "scene")).all()
-        scene_match_index = build_scene_match_index(scenes)
-        probe_map = {probe.media_file_id: probe for probe in db.scalars(select(MediaProbe)).all()}
-        known = {str(Path(x.path).expanduser().resolve(strict=False)): x for x in db.scalars(select(MediaFile)).all()}
+        scene_match_index = None
+        known = {normalized_path(item.path): item for item in _scoped_scan_records(db, MediaFile, scope_prefixes)}
+        probe_map = {}
+        media_ids = [item.id for item in known.values()]
+        for offset in range(0, len(media_ids), 500):
+            probe_map.update((probe.media_file_id, probe) for probe in db.scalars(
+                select(MediaProbe).where(MediaProbe.media_file_id.in_(media_ids[offset:offset + 500]))
+            ))
         seen: set[str] = set()
-        unmatched_known = {str(Path(x.path).expanduser().resolve(strict=False)): x for x in db.scalars(select(UnmatchedMediaFile)).all()}
+        unmatched_known = {normalized_path(item.path): item for item in
+                           _scoped_scan_records(db, UnmatchedMediaFile, scope_prefixes)}
         try:
             for root in root_paths:
                 for path, stat in scandir_videos(
@@ -288,6 +317,11 @@ def scan_library(
                         continue
                     media = known.get(key)
                     if media is None:
+                        if scene_match_index is None:
+                            # Matching can require any scene, but not descriptions or ORM relationships.
+                            scene_match_index = build_scene_match_index(db.execute(
+                                select(Scene.id, Scene.title, Scene.release_date).where(Scene.content_type == "scene")
+                            ))
                         scene = match_local_scene(path, scene_match_index)
                         if scene is not None:
                             media = MediaFile(scene_id=scene.id, path=key, size_bytes=stat.st_size, quality=None, release_title=path.stem)
@@ -318,8 +352,9 @@ def scan_library(
                         record_success(db, path, stat)
                     if stats["files"] % 20 == 0:
                         db.commit()
+            failed_prefixes = tuple(normalized_path(path).rstrip(os.sep) + os.sep for path in failed_directories)
             for key, media in known.items():
-                if key in seen or not in_scope(key):
+                if key in seen or not in_scope(key) or key.startswith(failed_prefixes):
                     continue
                 probe = probe_map.get(media.id)
                 if probe is None:
@@ -331,7 +366,7 @@ def scan_library(
                     probe.scanned_at = utcnow()
                     stats["missing"] += 1
             for key, item in unmatched_known.items():
-                if in_scope(key) and key not in seen and not Path(item.path).exists():
+                if in_scope(key) and key not in seen and not key.startswith(failed_prefixes) and not Path(item.path).exists():
                     item.missing = True
             reconcile_missing(db, scan_states, seen, failed_directories)
             stats["errors"] += len(failed_directories)
@@ -341,13 +376,8 @@ def scan_library(
             if to_index:
                 workers = min(2, max(1, (os.cpu_count() or 2) // 2), len(to_index))
                 with concurrent.futures.ThreadPoolExecutor(max_workers=workers, thread_name_prefix="scarletx-media") as pool:
-                    futures = {
-                        pool.submit(index_media_file_by_id, session_factory, media_id, generate_art=True): media_id
-                        for media_id in to_index
-                    }
-                    for future in concurrent.futures.as_completed(futures):
+                    for media_id, future in _bounded_probe_futures(pool, session_factory, to_index, workers):
                         try:
-                            media_id = futures[future]
                             if future.result():
                                 stats["indexed"] += 1
                                 path, stat = pending_states[media_id]

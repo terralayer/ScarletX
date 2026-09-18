@@ -20,6 +20,7 @@ async function route(request) {
   const url = new URL(request.request().url());
   assert.equal(url.hostname, 'scarletx.test', 'No external requests in the screenshot fixture');
   const pathname = url.pathname;
+  if (pathname.startsWith('/api/operations/')) return request.fulfill({json:require('./management-fixtures.cjs')(pathname)});
   if (pathname.startsWith('/api/')) {
     let data;
     if (pathname === '/api/system/status') data = {version, performers: 24, studios: 8};

@@ -1758,14 +1758,72 @@ def _job_control(session_factory, job_id: str) -> str:
         return job.status
 
 
-async def _wait_if_paused(session_factory, job_id: str) -> None:
+async def _run_download_io(function, *args, **kwargs):
+    """Keep blocking I/O off the loop and drain writes before shutdown cleanup."""
+    task = asyncio.create_task(asyncio.to_thread(function, *args, **kwargs))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                break
+        if not task.cancelled():
+            task.exception()
+        raise
+
+
+def _read_saved_nzb(path):
+    return path.read_bytes() if path.exists() and path.stat().st_size else None
+
+
+def _save_filename_marker(path, filename, file_index):
+    if filename and not path.exists():
+        try:
+            temp = path.with_name("filename.txt.tmp")
+            temp.write_text(_safe_filename(filename, f"file-{file_index:04d}.bin"))
+            temp.replace(path)
+        except OSError:
+            pass
+
+
+def _transfer_policy(session_factory, settings=None):
+    from ..models import AppSetting
+    from ..download_schedule import DownloadSchedule, schedule_state
+    with session_factory() as db:
+        values = dict(db.execute(select(AppSetting.key, AppSetting.value).where(
+            AppSetting.key.in_(("download_schedule_json", "native_usenet_speed_limit_mb_s"))
+        )).all())
+    rule = DownloadSchedule.model_validate_json(values.get("download_schedule_json", "{}"))
+    base = float(values.get("native_usenet_speed_limit_mb_s", getattr(settings, "native_usenet_speed_limit_mb_s", 0)) or 0)
+    return schedule_state(rule, base_limit=base)
+
+
+async def _wait_if_paused(session_factory, job_id: str, settings=None) -> float:
     while True:
-        state = _job_control(session_factory, job_id)
-        if state == "cancel":
+        state = await _run_download_io(_job_control, session_factory, job_id)
+        if state in {"cancel", "cancelled", "missing"}:
             raise asyncio.CancelledError
         if state != "paused":
-            return
+            policy = await _run_download_io(_transfer_policy, session_factory, settings)
+            if not policy["paused"]:
+                return policy["speed_limit_mb_s"]
+            _set_live_progress(job_id, phase="scheduled", speed_bps=0.0, eta_seconds=None)
         await asyncio.sleep(0.5)
+
+
+async def _pace_download_bytes(session_factory, job_id, settings, size, limit):
+    # Pace each completed segment rather than averaging across quiet-hour pauses.
+    remaining = float(size)
+    while remaining > 0 and limit > 0:
+        delay = min(0.25, remaining / (limit * 1024 * 1024))
+        await asyncio.sleep(delay)
+        remaining -= delay * limit * 1024 * 1024
+        limit = await _wait_if_paused(session_factory, job_id, settings)
+    return limit
 
 
 def _set_job(session_factory, job_id: str, **values) -> None:
@@ -1799,7 +1857,7 @@ def _publish_progress(session_factory, job_id: str, *, total_bytes: int, downloa
 
 async def _fetch_nzb(url: str) -> bytes:
     try:
-        async with httpx.AsyncClient(timeout=45, follow_redirects=True, headers={"User-Agent": "ScarletX/0.4.8"}) as client:
+        async with httpx.AsyncClient(timeout=45, follow_redirects=True, headers={"User-Agent": "ScarletX/0.4.9"}) as client:
             response = await client.get(url)
             response.raise_for_status()
             payload = response.content
@@ -1813,17 +1871,20 @@ async def _fetch_nzb(url: str) -> bytes:
 async def process_job(session_factory, settings, job_id: str) -> None:
     with _CANCELLED_JOBS_LOCK:
         _CANCELLED_JOBS.discard(job_id)
-    with session_factory() as db:
-        job = db.get(NativeUsenetJob, job_id)
-        if job is None or job.status not in {"queued", "downloading", "postprocessing", "paused"}:
-            return
-        title = job.title
-        url = job.nzb_url
-        unpack_password = job.unpack_password or ""
+    def load_job():
+        with session_factory() as db:
+            job = db.get(NativeUsenetJob, job_id)
+            if job is None or job.status not in {"queued", "downloading", "postprocessing", "paused"}:
+                return None
+            return job.title, job.nzb_url, job.unpack_password or ""
+    snapshot = await _run_download_io(load_job)
+    if snapshot is None:
+        return
+    title, url, unpack_password = snapshot
 
     providers = [p for p in settings.native_usenet_providers() if p.enabled and p.host]
     if not providers:
-        _set_job(session_factory, job_id, status="failed", error="No enabled Usenet provider is configured", completed_at=utcnow(), unpack_password=None)
+        await _run_download_io(_set_job, session_factory, job_id, status="failed", error="No enabled Usenet provider is configured", completed_at=utcnow(), unpack_password=None)
         return
 
     incomplete_root = Path(settings.native_usenet_incomplete_dir).expanduser().resolve()
@@ -1831,33 +1892,40 @@ async def process_job(session_factory, settings, job_id: str) -> None:
     failed_root = incomplete_root.parent / "failed"
     work = incomplete_root / job_id
 
-    # A retry resumes from preserved work instead of starting from zero.
-    with session_factory() as db:
-        current = db.get(NativeUsenetJob, job_id)
-        prior_path = Path(current.output_path).expanduser() if current and current.output_path else None
-    if prior_path and prior_path.exists() and failed_root in prior_path.resolve().parents:
-        if work.exists():
-            shutil.rmtree(work, ignore_errors=True)
-        incomplete_root.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(prior_path), str(work))
-        _set_job(session_factory, job_id, output_path=None)
-
-    payload_dir = work / "payload"
-    state_root = work / "segments"      # tiny resume markers only in 0.3.6+
-    assembly_root = work / "assembly"   # sparse/preallocated target files
-    payload_dir.mkdir(parents=True, exist_ok=True)
-    state_root.mkdir(parents=True, exist_ok=True)
-    assembly_root.mkdir(parents=True, exist_ok=True)
-
+    prior_path = None
     try:
-        _set_job(session_factory, job_id, status="downloading", error=None, started_at=utcnow(), postprocess_note=None)
+        payload_dir = work / "payload"
+        state_root = work / "segments"
+        assembly_root = work / "assembly"
+        def prepare_workspace():
+            nonlocal prior_path
+            # A retry resumes from preserved work instead of starting from zero.
+            with session_factory() as db:
+                current = db.get(NativeUsenetJob, job_id)
+                prior_path = Path(current.output_path).expanduser() if current and current.output_path else None
+            if prior_path and prior_path.exists() and failed_root in prior_path.resolve().parents:
+                if work.exists():
+                    shutil.rmtree(work, ignore_errors=True)
+                incomplete_root.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(prior_path), str(work))
+                _set_job(session_factory, job_id, output_path=None)
+
+            payload_dir = work / "payload"
+            state_root = work / "segments"      # tiny resume markers only in 0.3.6+
+            assembly_root = work / "assembly"   # sparse/preallocated target files
+            payload_dir.mkdir(parents=True, exist_ok=True)
+            state_root.mkdir(parents=True, exist_ok=True)
+            assembly_root.mkdir(parents=True, exist_ok=True)
+
+        await _run_download_io(prepare_workspace)
+
+        await _run_download_io(_set_job, session_factory, job_id, status="downloading", error=None, started_at=utcnow(), postprocess_note=None)
         nzb_file = work / "source.nzb"
-        if nzb_file.exists() and nzb_file.stat().st_size:
-            nzb_payload = nzb_file.read_bytes()
-        else:
+        nzb_payload = await _run_download_io(_read_saved_nzb, nzb_file)
+        if nzb_payload is None:
             nzb_payload = await _fetch_nzb(url)
-            nzb_file.write_bytes(nzb_payload)
-        files = parse_nzb(nzb_payload)
+            await _run_download_io(nzb_file.write_bytes, nzb_payload)
+        files = await _run_download_io(parse_nzb, nzb_payload)
         validate_nzb_release_size(files)
 
         file_states: dict[int, dict] = {}
@@ -1865,50 +1933,53 @@ async def process_job(session_factory, settings, job_id: str) -> None:
         deferred_indices: list[int] = []
         optional_indices: list[int] = []
 
-        for file_index, item in enumerate(files, 1):
-            if nzb_file_is_ignored(item, file_index):
-                continue
-            priority, deferred = _file_download_priority(item, file_index)
-            state_dir = state_root / f"{file_index:04d}"
-            state_dir.mkdir(parents=True, exist_ok=True)
-            assembly = assembly_root / f"{file_index:04d}.part"
-            filename_marker = state_dir / "filename.txt"
+        def prepare_file_states():
+            for file_index, item in enumerate(files, 1):
+                if nzb_file_is_ignored(item, file_index):
+                    continue
+                priority, deferred = _file_download_priority(item, file_index)
+                state_dir = state_root / f"{file_index:04d}"
+                state_dir.mkdir(parents=True, exist_ok=True)
+                assembly = assembly_root / f"{file_index:04d}.part"
+                filename_marker = state_dir / "filename.txt"
 
-            # 0.3.5 compatibility: if every legacy .seg exists, assemble it once and
-            # convert to tiny .done markers. Partial legacy files are redownloaded for
-            # this NZB file because yEnc positional offsets were not persisted before.
-            legacy = sorted(state_dir.glob("*.seg"))
-            done = sorted(state_dir.glob("*.done"))
-            if legacy and not done:
-                if len(legacy) == len(item.segments) and all(x.stat().st_size > 0 for x in legacy):
-                    with assembly.open("wb", buffering=1024 * 1024) as output:
-                        offset = 1
-                        for segment, part in zip(item.segments, legacy):
-                            size = part.stat().st_size
-                            with part.open("rb") as source:
-                                shutil.copyfileobj(source, output, length=4 * 1024 * 1024)
-                            _write_done_marker(state_dir / f"{segment.number:06d}.done", size, offset, None)
-                            offset += size
-                    for part in legacy:
-                        part.unlink(missing_ok=True)
+                # 0.3.5 compatibility: if every legacy .seg exists, assemble it once and
+                # convert to tiny .done markers. Partial legacy files are redownloaded for
+                # this NZB file because yEnc positional offsets were not persisted before.
+                legacy = sorted(state_dir.glob("*.seg"))
+                done = sorted(state_dir.glob("*.done"))
+                if legacy and not done:
+                    if len(legacy) == len(item.segments) and all(x.stat().st_size > 0 for x in legacy):
+                        with assembly.open("wb", buffering=1024 * 1024) as output:
+                            offset = 1
+                            for segment, part in zip(item.segments, legacy):
+                                size = part.stat().st_size
+                                with part.open("rb") as source:
+                                    shutil.copyfileobj(source, output, length=4 * 1024 * 1024)
+                                _write_done_marker(state_dir / f"{segment.number:06d}.done", size, offset, None)
+                                offset += size
+                        for part in legacy:
+                            part.unlink(missing_ok=True)
+                    else:
+                        for part in legacy:
+                            part.unlink(missing_ok=True)
+
+                file_states[file_index] = {
+                    "item": item,
+                    "priority": priority,
+                    "deferred": deferred,
+                    "state_dir": state_dir,
+                    "assembly": assembly,
+                    "filename_marker": filename_marker,
+                }
+                if deferred:
+                    deferred_indices.append(file_index)
+                elif priority >= 70:
+                    optional_indices.append(file_index)
                 else:
-                    for part in legacy:
-                        part.unlink(missing_ok=True)
+                    primary_indices.append(file_index)
 
-            file_states[file_index] = {
-                "item": item,
-                "priority": priority,
-                "deferred": deferred,
-                "state_dir": state_dir,
-                "assembly": assembly,
-                "filename_marker": filename_marker,
-            }
-            if deferred:
-                deferred_indices.append(file_index)
-            elif priority >= 70:
-                optional_indices.append(file_index)
-            else:
-                primary_indices.append(file_index)
+        await _run_download_io(prepare_file_states)
 
         if not file_states:
             raise NativeUsenetError("Release contains only sample or image payloads")
@@ -1962,13 +2033,13 @@ async def process_job(session_factory, settings, job_id: str) -> None:
                 assembly.replace(destination)
 
         effective_total = advertised_bytes(primary_indices)
-        existing = completed_bytes(primary_indices)
+        existing = await _run_download_io(completed_bytes, primary_indices)
         downloaded = existing
         session_downloaded = 0
         transfer_started = time.monotonic()
         speed_samples = deque([(transfer_started, 0)], maxlen=256)
         last_control_check = 0.0
-        _set_job(session_factory, job_id, total_bytes=effective_total, downloaded_bytes=downloaded)
+        await _run_download_io(_set_job, session_factory, job_id, total_bytes=effective_total, downloaded_bytes=downloaded)
 
         hard_cap = min(
             max(1, int(settings.native_usenet_max_connections)),
@@ -1985,18 +2056,21 @@ async def process_job(session_factory, settings, job_id: str) -> None:
 
         async def download_indices(indices: list[int], *, recovery: bool = False) -> None:
             nonlocal downloaded, session_downloaded, effective_total, last_control_check, active_window
-            jobs: list[tuple[int, int, int, NZBSegment, Path, Path, Path]] = []
-            for idx in indices:
-                state = file_states[idx]
-                item: NZBFile = state["item"]
-                for segment in item.segments:
-                    done_marker = state["state_dir"] / f"{segment.number:06d}.done"
-                    if _read_done_marker(done_marker) > 0 and (state["assembly"].exists() or (state["filename_marker"].exists() and (payload_dir / _safe_filename(state["filename_marker"].read_text(errors="ignore"), f"file-{idx:04d}.bin")).exists())):
-                        continue
-                    jobs.append((state["priority"], idx, segment.number, segment, state["assembly"], done_marker, state["filename_marker"]))
-            jobs.sort(key=lambda row: (row[0], row[2], row[1]))
+            def collect_jobs():
+                jobs: list[tuple[int, int, int, NZBSegment, Path, Path, Path]] = []
+                for idx in indices:
+                    state = file_states[idx]
+                    item: NZBFile = state["item"]
+                    for segment in item.segments:
+                        done_marker = state["state_dir"] / f"{segment.number:06d}.done"
+                        if _read_done_marker(done_marker) > 0 and (state["assembly"].exists() or (state["filename_marker"].exists() and (payload_dir / _safe_filename(state["filename_marker"].read_text(errors="ignore"), f"file-{idx:04d}.bin")).exists())):
+                            continue
+                        jobs.append((state["priority"], idx, segment.number, segment, state["assembly"], done_marker, state["filename_marker"]))
+                jobs.sort(key=lambda row: (row[0], row[2], row[1]))
+                return jobs
+            jobs = await _run_download_io(collect_jobs)
             if not jobs:
-                finalize_files(indices)
+                await _run_download_io(finalize_files, indices)
                 return
 
             loop = asyncio.get_running_loop()
@@ -2030,13 +2104,15 @@ async def process_job(session_factory, settings, job_id: str) -> None:
                     )
                     inflight[token] = (future, idx, filename_marker)
 
+            current_limit = await _wait_if_paused(session_factory, job_id, settings)
             submit_until_window()
             while inflight:
                 now = time.monotonic()
                 if now - last_control_check >= 0.35:
-                    await _wait_if_paused(session_factory, job_id)
+                    current_limit = await _wait_if_paused(session_factory, job_id, settings)
                     last_control_check = now
 
+                completed_size = 0
                 try:
                     token, result, error = result_buffer.get_nowait()
                 except queue.Empty:
@@ -2048,13 +2124,9 @@ async def process_job(session_factory, settings, job_id: str) -> None:
                         raise error
                     downloaded += result.size
                     session_downloaded += result.size
-                    if result.filename and not filename_marker.exists():
-                        try:
-                            temp = filename_marker.with_name("filename.txt.tmp")
-                            temp.write_text(_safe_filename(result.filename, f"file-{idx:04d}.bin"))
-                            temp.replace(filename_marker)
-                        except Exception:
-                            pass
+                    completed_size = result.size
+                    if result.filename:
+                        await _run_download_io(_save_filename_marker, filename_marker, result.filename, idx)
 
                 now = time.monotonic()
                 speed_samples.append((now, session_downloaded))
@@ -2079,7 +2151,7 @@ async def process_job(session_factory, settings, job_id: str) -> None:
                     tune_speed = max(speed, tune_speed * 0.985)
                     tune_time = now
 
-                _publish_progress(
+                await _run_download_io(_publish_progress,
                     session_factory, job_id,
                     total_bytes=effective_total, downloaded_bytes=downloaded,
                     speed_bps=speed, eta_seconds=eta,
@@ -2094,22 +2166,18 @@ async def process_job(session_factory, settings, job_id: str) -> None:
                     buffered_segments=result_buffer.qsize(),
                     max_buffered_segments=result_buffer.peak_size,
                 )
-                limit = float(settings.native_usenet_speed_limit_mb_s or 0)
-                if limit > 0 and session_downloaded > 0:
-                    target_elapsed = session_downloaded / (limit * 1024 * 1024)
-                    actual_elapsed = time.monotonic() - transfer_started
-                    if target_elapsed > actual_elapsed:
-                        await asyncio.sleep(target_elapsed - actual_elapsed)
+                if completed_size and current_limit > 0:
+                    current_limit = await _pace_download_bytes(session_factory, job_id, settings, completed_size, current_limit)
 
                 submit_until_window()
 
-            finalize_files(indices)
+            await _run_download_io(finalize_files, indices)
             final_now = time.monotonic()
             first_t, first_bytes = speed_samples[0]
             final_speed = max(0.0, (session_downloaded - first_bytes) / max(0.001, final_now - first_t))
             final_eta = int(max(0, effective_total - downloaded) / final_speed) if final_speed > 0 else None
             _PROGRESS_CHECKPOINT_GATE.force(job_id)
-            _publish_progress(
+            await _run_download_io(_publish_progress,
                 session_factory, job_id,
                 total_bytes=effective_total, downloaded_bytes=downloaded,
                 speed_bps=final_speed, eta_seconds=final_eta,
@@ -2118,7 +2186,7 @@ async def process_job(session_factory, settings, job_id: str) -> None:
         try:
             await download_indices(primary_indices)
 
-            _set_job(session_factory, job_id, status="postprocessing", speed_bps=0.0, eta_seconds=0, postprocess_note="Fast-path media detection")
+            await _run_download_io(_set_job, session_factory, job_id, status="postprocessing", speed_bps=0.0, eta_seconds=0, postprocess_note="Fast-path media detection")
             notes: list[str] = []
             if optional_indices:
                 skipped_support = advertised_bytes(optional_indices)
@@ -2139,7 +2207,7 @@ async def process_job(session_factory, settings, job_id: str) -> None:
             # archive sets therefore never download gigabytes of recovery data.
             fast_error: Exception | None = None
             try:
-                fast_notes, videos = await asyncio.to_thread(
+                fast_notes, videos = await _run_download_io(
                     postprocess_payload,
                     payload_dir,
                     repair_enabled=False,
@@ -2160,17 +2228,17 @@ async def process_job(session_factory, settings, job_id: str) -> None:
                 notes.append(f"Skipped {skipped / 1024 / 1024:.1f} MB of unnecessary PAR2 recovery volumes")
             elif deferred_indices:
                 recovery_total = advertised_bytes(deferred_indices)
-                recovery_existing = completed_bytes(deferred_indices)
+                recovery_existing = await _run_download_io(completed_bytes, deferred_indices)
                 effective_total += recovery_total
                 downloaded += recovery_existing
-                _set_job(
+                await _run_download_io(_set_job,
                     session_factory, job_id, status="downloading",
                     total_bytes=effective_total, downloaded_bytes=downloaded,
                     postprocess_note="Fetching PAR2 recovery volumes only because the primary payload needs repair",
                 )
                 await download_indices(deferred_indices, recovery=True)
-                _set_job(session_factory, job_id, status="postprocessing", speed_bps=0.0, eta_seconds=0, postprocess_note="Repairing recovered payload")
-                post_notes, videos = await asyncio.to_thread(
+                await _run_download_io(_set_job, session_factory, job_id, status="postprocessing", speed_bps=0.0, eta_seconds=0, postprocess_note="Repairing recovered payload")
+                post_notes, videos = await _run_download_io(
                     postprocess_payload,
                     payload_dir,
                     repair_enabled=settings.native_usenet_repair_enabled,
@@ -2182,7 +2250,7 @@ async def process_job(session_factory, settings, job_id: str) -> None:
                 notes.extend(post_notes)
             elif not videos:
                 # No deferred volumes exist, so give the normal repair path one chance.
-                post_notes, videos = await asyncio.to_thread(
+                post_notes, videos = await _run_download_io(
                     postprocess_payload,
                     payload_dir,
                     repair_enabled=settings.native_usenet_repair_enabled,
@@ -2201,26 +2269,28 @@ async def process_job(session_factory, settings, job_id: str) -> None:
                     + (f": {names}" if names else "") + suffix
                 )
 
-            primary = videos[0]
-            notes.append(f"Primary scene: {primary.name} ({primary.stat().st_size} bytes)")
-            complete_root.mkdir(parents=True, exist_ok=True)
-            final_name = _safe_filename(title, job_id)
-            final_dir = _unique_directory(complete_root / final_name)
-            shutil.move(str(payload_dir), str(final_dir))
-            shutil.rmtree(work, ignore_errors=True)
-            _set_job(
-                session_factory,
-                job_id,
-                status="completed",
-                total_bytes=max(downloaded, effective_total),
-                downloaded_bytes=max(downloaded, effective_total),
-                speed_bps=0.0,
-                eta_seconds=0,
-                output_path=str(final_dir),
-                postprocess_note="; ".join(dict.fromkeys(notes))[:2000] if notes else "Download complete",
-                completed_at=utcnow(),
-                unpack_password=None,
-            )
+            def complete_download():
+                primary = videos[0]
+                notes.append(f"Primary scene: {primary.name} ({primary.stat().st_size} bytes)")
+                complete_root.mkdir(parents=True, exist_ok=True)
+                final_name = _safe_filename(title, job_id)
+                final_dir = _unique_directory(complete_root / final_name)
+                shutil.move(str(payload_dir), str(final_dir))
+                shutil.rmtree(work, ignore_errors=True)
+                _set_job(
+                    session_factory,
+                    job_id,
+                    status="completed",
+                    total_bytes=max(downloaded, effective_total),
+                    downloaded_bytes=max(downloaded, effective_total),
+                    speed_bps=0.0,
+                    eta_seconds=0,
+                    output_path=str(final_dir),
+                    postprocess_note="; ".join(dict.fromkeys(notes))[:2000] if notes else "Download complete",
+                    completed_at=utcnow(),
+                    unpack_password=None,
+                )
+            await _run_download_io(complete_download)
             completed_import_signal.notify()
             _clear_live_progress(job_id)
             with _CANCELLED_JOBS_LOCK:
@@ -2233,11 +2303,28 @@ async def process_job(session_factory, settings, job_id: str) -> None:
         finally:
             with _ACTIVE_FETCHERS_LOCK:
                 _ACTIVE_FETCHERS.pop(job_id, None)
-            executor.shutdown(wait=True, cancel_futures=True)
-            fetcher.close_targets_under(assembly_root)
+            try:
+                await _run_download_io(executor.shutdown, wait=True, cancel_futures=True)
+            finally:
+                await _run_download_io(fetcher.close_targets_under, assembly_root)
 
     except asyncio.CancelledError:
-        _set_job(
+        task = asyncio.current_task()
+        control = await _run_download_io(_job_control, session_factory, job_id)
+        if control == "completed":
+            completed_import_signal.notify()
+            _clear_live_progress(job_id)
+            raise
+        if task is not None and task.cancelling() and control not in {"cancel", "cancelled", "missing"}:
+            resume_status = "paused" if control == "paused" else "queued"
+            await _run_download_io(_set_job,
+                session_factory, job_id, status=resume_status, speed_bps=0.0, eta_seconds=None,
+                output_path=str(work) if work.exists() else None, error=None, completed_at=None,
+                postprocess_note="Interrupted by application shutdown; partial data preserved for resume",
+            )
+            _clear_live_progress(job_id)
+            raise
+        await _run_download_io(_set_job,
             session_factory, job_id, status="cancelled", speed_bps=0.0, eta_seconds=0,
             output_path=str(work) if work.exists() else None, error=None,
             postprocess_note="Cancelled; partial data preserved for retry",
@@ -2260,16 +2347,18 @@ async def process_job(session_factory, settings, job_id: str) -> None:
             raise
     except Exception as exc:
         message = str(exc)[:4000]
-        failed_path = None
-        try:
-            failed_root.mkdir(parents=True, exist_ok=True)
-            if work.exists():
-                failed_dir = _unique_directory(failed_root / f"{_safe_filename(title, job_id)} -- {job_id[-8:]}")
-                shutil.move(str(work), str(failed_dir))
-                failed_path = str(failed_dir)
-        except Exception:
-            failed_path = str(work) if work.exists() else None
-        _set_job(session_factory, job_id, status="failed", error=message, speed_bps=0.0, eta_seconds=0, output_path=failed_path, completed_at=utcnow(), unpack_password=None)
+        def preserve_failure():
+            failed_path = str(prior_path) if prior_path and prior_path.exists() else None
+            try:
+                failed_root.mkdir(parents=True, exist_ok=True)
+                if work.exists():
+                    failed_dir = _unique_directory(failed_root / f"{_safe_filename(title, job_id)} -- {job_id[-8:]}")
+                    shutil.move(str(work), str(failed_dir))
+                    failed_path = str(failed_dir)
+            except Exception:
+                failed_path = str(work) if work.exists() else failed_path
+            _set_job( session_factory, job_id, status="failed", error=message, speed_bps=0.0, eta_seconds=0, output_path=failed_path, completed_at=utcnow(), unpack_password=None)
+        await _run_download_io(preserve_failure)
         _clear_live_progress(job_id)
         with _CANCELLED_JOBS_LOCK:
             _CANCELLED_JOBS.discard(job_id)
@@ -2299,7 +2388,11 @@ async def native_worker_loop(session_factory, settings_loader, poll_seconds: flo
         if not job_id:
             await native_queue_signal.wait(NATIVE_QUEUE_RECOVERY_SECONDS)
             continue
-        settings = settings_loader()
+        settings = await _run_download_io(settings_loader)
+        policy = await _run_download_io(_transfer_policy, session_factory, settings)
+        if policy["paused"]:
+            await native_queue_signal.wait(5)
+            continue
         await process_job(session_factory, settings, job_id)
 
 

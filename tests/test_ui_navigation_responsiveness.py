@@ -47,7 +47,7 @@ def test_top_level_async_pages_ignore_results_after_navigation():
     calendar = section(source, "async function calendar", "let settingsTab")
     settings = section(source, "async function settings", "function val")
 
-    assert "if(view!=='wanted')return" in wanted
+    assert "if(view!=='wanted'||requestId!==wantedRequest||!body.isConnected)return" in wanted
     assert "if(view!=='activity')return" in activity
     assert "if(view!=='calendar')return" in calendar
     assert "if(view!=='settings')return" in settings

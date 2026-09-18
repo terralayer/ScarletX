@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+from contextlib import suppress
 import shutil
 import sqlite3
+from uuid import uuid4
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -47,7 +49,8 @@ def _copy_secret_key_for_backup(database_path: Path) -> Path | None:
         shutil.copy2(secret_key_path, target)
         os.chmod(target, 0o600)
     except OSError as exc:
-        target.unlink(missing_ok=True)
+        with suppress(OSError):
+            target.unlink(missing_ok=True)
         raise BackupError(f"ScarletX secret-key backup failed: {exc}") from exc
     return target
 
@@ -61,18 +64,23 @@ def create_backup(db: Session, directory: str, keep: int = 14) -> BackupRecord:
     source = Path(source_name)
     if not source.is_absolute():
         source = Path.cwd() / source
-    target_dir = _backup_dir(directory)
+    try:
+        target_dir = _backup_dir(directory)
+    except OSError as exc:
+        raise BackupError(f"ScarletX backup directory is unavailable: {exc}") from exc
     timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    target = target_dir / f"scarletx-{timestamp}.db"
+    target = target_dir / f"scarletx-{timestamp}-{uuid4().hex}.db"
     emit_status("Backup", "PROCESSING", str(target), severity="active")
     try:
         with sqlite3.connect(source) as src, sqlite3.connect(target) as dst:
             src.backup(dst)
         _copy_secret_key_for_backup(target)
-    except (sqlite3.Error, BackupError) as exc:
+    except (sqlite3.Error, OSError, BackupError) as exc:
         emit_status("Backup", "FAILED", exc.__class__.__name__, severity="error")
-        target.unlink(missing_ok=True)
-        _secret_key_backup_path(target).unlink(missing_ok=True)
+        with suppress(OSError):
+            target.unlink(missing_ok=True)
+        with suppress(OSError):
+            _secret_key_backup_path(target).unlink(missing_ok=True)
         if isinstance(exc, BackupError):
             raise
         raise BackupError(f"ScarletX database backup failed: {exc}") from exc
@@ -117,3 +125,17 @@ def list_backups(db: Session) -> list[dict]:
             }
         )
     return result
+
+
+def run_scheduled_backup(db, settings, now=None):
+    if not settings.backup_enabled:
+        return False
+    now = now or datetime.now(UTC)
+    latest = db.scalar(select(BackupRecord).order_by(BackupRecord.created_at.desc()).limit(1))
+    created = latest.created_at if latest else None
+    if created is not None and created.tzinfo is None:
+        created = created.replace(tzinfo=UTC)
+    if created is None or (now-created).total_seconds() >= settings.backup_interval_hours*3600:
+        create_backup(db, settings.backup_directory, settings.backup_keep)
+        return True
+    return False

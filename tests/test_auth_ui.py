@@ -22,7 +22,7 @@ def test_static_auth_assets_keep_optional_account_controls_hidden():
     assert 'id="authAccountButton"' in script
     assert 'id="authLogoutButton"' in script
     assert 'id="authAccountDialog"' in script
-    assert 'id="authGate" aria-live="polite" hidden' in script
+    assert 'id="authGate" aria-live="polite"' in script
     assert ".sx-auth-gate" in styles
     assert ".sx-auth-account" in styles
 
@@ -35,7 +35,7 @@ def test_static_auth_script_uses_same_origin_api_without_session_probe():
         "/api/auth/admin",
     ):
         assert endpoint in script
-    assert "/api/auth/status" not in script
+    assert "/api/auth/status" in script
     assert "credentials:'same-origin'" in script or 'credentials: "same-origin"' in script
     assert "window.authGateBoot" in script
 
@@ -45,7 +45,7 @@ def test_auth_gate_boots_application_immediately_without_session_check():
     assert "showOpenApp();" in script
     assert "Checking security" not in script
     assert "Verifying the local ScarletX administrator session." not in script
-    assert "/api/setup/admin" not in script
+    assert "/api/setup/admin" in script
 
 
 def test_security_settings_expose_ui_auth_credentials():

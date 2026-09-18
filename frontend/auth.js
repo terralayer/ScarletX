@@ -1,16 +1,21 @@
 (() => {
   document.body.insertAdjacentHTML('afterbegin', `
-<div class="sx-auth-gate" id="authGate" aria-live="polite" hidden>
+<div class="sx-auth-gate" id="authGate" aria-live="polite">
   <section class="sx-auth-card" role="dialog" aria-modal="true" aria-labelledby="authTitle">
-    <div class="sx-auth-brand">Scarlet<b>X</b></div>
+    <div class="sx-auth-brand"><img src="/scarletx-wordmark.webp?v=approved-20260915-6" alt="ScarletX"></div>
     <h1 id="authTitle">Sign in to ScarletX</h1>
-    <p id="authSubtitle">Administrator sign-in is not required for this server.</p>
+    <p id="authSubtitle">Checking your installation…</p>
     <form id="authForm" hidden>
       <div class="sx-auth-fields">
         <div class="sx-auth-field"><label for="authUsername">Username</label><input id="authUsername" name="username" autocomplete="username" maxlength="100" required></div>
         <div class="sx-auth-field"><label for="authPassword">Password</label><input id="authPassword" name="password" type="password" autocomplete="current-password" maxlength="1024" required></div>
       </div>
-      <div class="sx-auth-error" id="authError"></div>
+      <div id="authSetupFields" hidden>
+        <div class="sx-auth-field"><label for="authPasswordConfirm">Confirm password</label><input id="authPasswordConfirm" type="password" autocomplete="new-password" maxlength="1024"></div>
+        <div class="sx-auth-field"><label for="authApiKey">ScarletX API key</label><input id="authApiKey" readonly spellcheck="false" autocomplete="off"><span class="sx-auth-hint">Use this key to connect integrations to ScarletX. Your TPDB key is added separately in Settings.</span></div>
+        <div class="sx-auth-key-actions"><button id="authCopyKey" type="button">Copy key</button><button id="authRefreshKey" type="button">Regenerate key</button></div>
+      </div>
+      <div class="sx-auth-error" id="authError" role="status"></div>
       <button class="sx-auth-submit" id="authSubmit" type="submit">Continue</button>
     </form>
   </section>
@@ -34,7 +39,7 @@
   </div>
 </dialog>`);
 
-const state = {username:'', appStarted:false, appBoot:null, queueSource:null, queueFailures:0, queueRetryTimer:null, queueLastEventId:0};
+const state = {setup:false, username:'', appStarted:false, appBoot:null, queueSource:null, queueFailures:0, queueRetryTimer:null, queueLastEventId:0};
 const el = id => document.getElementById(id);
 const QUEUE_KINDS = ['snapshot','progress','transition','history','resync'];
 
@@ -112,7 +117,12 @@ function bootApp() {
 
 function showOpenApp() {
   el('authGate').hidden = true;
-  el('authAccount').hidden = true;
+  el('authAccount').hidden = false;
+  el('authAccountButton').textContent = state.username || 'Administrator';
+  window.scarletxUsername = state.username;
+  el('authPassword').value = '';
+  el('authPasswordConfirm').value = '';
+  el('authApiKey').value = '';
   bootApp();
 }
 
@@ -120,16 +130,33 @@ el('authForm').addEventListener('submit', async event => {
   event.preventDefault();
   const submit = el('authSubmit');
   submit.disabled = true;
+  el('authRefreshKey').disabled = true;
+  el('authCopyKey').disabled = true;
   el('authError').textContent = '';
   try {
     const username = el('authUsername').value.trim();
     const password = el('authPassword').value;
-    await request('/api/auth/login', {method:'POST', body:JSON.stringify({username, password})});
+    let result;
+    if (state.setup) {
+      const passwordConfirm = el('authPasswordConfirm').value;
+      if (password.length < 12) throw new Error('Use at least 12 characters for your password.');
+      if (password !== passwordConfirm) throw new Error('Passwords do not match.');
+      const apiKey = el('authApiKey').value;
+      if (!apiKey) throw new Error('Generate an API key before continuing.');
+      result = await request('/api/setup/admin', {method:'POST', body:JSON.stringify({username,password,password_confirm:passwordConfirm,api_key:apiKey})});
+      window.scarletxInitialView = 'settings';
+      state.setup = false;
+    } else {
+      result = await request('/api/auth/login', {method:'POST', body:JSON.stringify({username, password})});
+    }
+    state.username = result.username;
     showOpenApp();
   } catch (error) {
     el('authError').textContent = error.message;
   } finally {
     submit.disabled = false;
+    el('authRefreshKey').disabled = false;
+    el('authCopyKey').disabled = false;
   }
 });
 
@@ -161,6 +188,7 @@ el('authAccountForm').addEventListener('submit', async event => {
     if (password !== passwordConfirm) throw new Error('Passwords do not match.');
     const result = await request('/api/auth/admin', {method:'PATCH', body:JSON.stringify({username, password, password_confirm:passwordConfirm})});
     state.username = result.username;
+    window.scarletxUsername = state.username;
     el('authAccountButton').textContent = state.username;
     el('authAccountDialog').close();
   } catch (error) {
@@ -170,8 +198,45 @@ el('authAccountForm').addEventListener('submit', async event => {
   }
 });
 
-window.authGateBoot = function authGateBoot(appBoot) {
+async function generateKey() {
+  el('authRefreshKey').disabled = true;
+  el('authSubmit').disabled = true;
+  el('authError').textContent = '';
+  try {
+    const result = await request('/api/setup/api-key');
+    el('authApiKey').value = result.api_key;
+  } catch (error) { el('authError').textContent = error.message; }
+  finally { el('authRefreshKey').disabled = false; el('authSubmit').disabled = false; }
+}
+el('authRefreshKey').onclick = generateKey;
+el('authCopyKey').onclick = async () => {
+  try {
+    if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(el('authApiKey').value);
+    else { el('authApiKey').select(); if (!document.execCommand('copy')) throw new Error('Select the key and copy it manually.'); }
+    el('authError').textContent = 'API key copied.';
+  } catch { el('authApiKey').select(); el('authError').textContent = 'Select the key and copy it manually.'; }
+};
+window.addEventListener('scarletx:session-expired', () => location.reload());
+window.authGateBoot = async function authGateBoot(appBoot) {
   state.appBoot = appBoot;
-  showOpenApp();
+  try {
+    const status = await request('/api/auth/status');
+    if (status.authenticated) { state.username = status.username; showOpenApp(); return; }
+    state.setup = status.setup_required;
+    el('authTitle').textContent = state.setup ? 'Initial setup' : 'Sign in to ScarletX';
+    el('authTitle').classList.toggle('sx-visually-hidden', state.setup);
+    el('authSubtitle').textContent = state.setup ? 'Create your administrator account to get started. Next, we will open Settings to connect your services.' : 'Sign in with your administrator account.';
+    el('authForm').hidden = false;
+    el('authSetupFields').hidden = !state.setup;
+    el('authPasswordConfirm').required = state.setup;
+    el('authPassword').autocomplete = state.setup ? 'new-password' : 'current-password';
+    el('authPassword').minLength = state.setup ? 12 : 1;
+    el('authSubmit').textContent = state.setup ? 'Finish setup & open Settings' : 'Sign in';
+    if (state.setup) await generateKey();
+    el('authUsername').focus();
+  } catch (error) {
+    el('authSubtitle').textContent = 'Could not connect to ScarletX. Reload this page to try again.';
+    el('authError').textContent = error.message;
+  }
 };
 })();

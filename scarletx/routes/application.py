@@ -14,7 +14,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, ORJSONResponse, StreamingResponse
 from pydantic import SecretStr
 from sqlalchemy import and_, delete, func, inspect, or_, select, text, update
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import load_only, Session, selectinload
 
 from ..config import Settings
 from ..db import Base, SessionLocal, engine, get_session
@@ -78,7 +78,7 @@ from ..native_usenet import (
     test_provider as test_native_provider, tool_status as native_tool_status, reprocess_completed_job as reprocess_native_completed_job,
 )
 from ..services import repair_legacy_auto_monitored_adult_entities, sync_adult_scene_entities_to_library, upsert_performer, upsert_scene, upsert_studio
-from ..backups import BackupError, create_backup, list_backups
+from ..backups import BackupError, create_backup, list_backups, run_scheduled_backup
 from ..download_processing import process_completed_downloads as process_downloads_core
 from ..downloader_supervisor import DownloaderSupervisor
 from ..notifications import emit_webhooks
@@ -299,6 +299,12 @@ async def resume_background_jobs(settings: Settings) -> list[asyncio.Task]:
                 payload = json.loads(job.payload or "{}")
             except (TypeError, json.JSONDecodeError):
                 payload = {}
+            needs_identifier = job.kind.endswith(("_metadata_hydration", "_monitor_search"))
+            if not isinstance(payload, dict) or (needs_identifier and not str(payload.get("identifier") or "").strip()):
+                job.status = "failed"
+                job.error = "Cannot resume job: saved payload is invalid or missing its identifier"
+                job.finished_at = utcnow()
+                continue
             if job.kind in {"performer_metadata_hydration", "studio_metadata_hydration", "performer_monitor_search", "studio_monitor_search", "media_library_scan"}:
                 job.status = "queued"
                 job.error = None
@@ -386,7 +392,7 @@ async def lifespan(_: FastAPI):
         emit_status("Background Workers", "STOPPED", "shutdown complete", severity="ok")
 
 
-app = FastAPI(title="ScarletX API", version="0.4.8", lifespan=lifespan, default_response_class=ORJSONResponse)
+app = FastAPI(title="ScarletX API", version="0.4.9", lifespan=lifespan, default_response_class=ORJSONResponse)
 app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=5)
 
 
@@ -485,7 +491,7 @@ def database_settings(db: Session = Depends(get_session)):
         "automation": {"enabled": settings.automatic_search_enabled, "interval_minutes": settings.automatic_search_interval_minutes, "batch_size": settings.automatic_search_batch_size},
         "rss": {"enabled": settings.rss_sync_enabled, "interval_minutes": settings.rss_sync_interval_minutes, "max_releases_per_indexer": settings.rss_max_releases_per_indexer, "max_grabs_per_cycle": settings.rss_max_grabs_per_cycle},
         "backups": {"enabled": settings.backup_enabled, "directory": settings.backup_directory, "interval_hours": settings.backup_interval_hours, "keep": settings.backup_keep},
-        "security": {"ui_auth_enabled": settings.ui_auth_enabled, "api_key_enabled": settings.api_key_enabled, "api_key_configured": bool(settings.api_key.get_secret_value())},
+        "security": {"ui_auth_enabled": True, "api_key_enabled": settings.api_key_enabled, "api_key_configured": bool(settings.api_key.get_secret_value())},
         "scarletx_log_level": settings.scarletx_log_level,
     }
 
@@ -640,6 +646,8 @@ def update_security_settings(
     db: Session = Depends(get_session),
 ):
     current = load_database_settings(db)
+    if not payload.ui_auth_enabled or not payload.api_key_enabled:
+        raise HTTPException(422, "UI authentication and API key protection are required")
     if payload.ui_auth_enabled:
         update_admin_credentials(
             AdminCredentialsWrite(
@@ -876,7 +884,7 @@ def delete_release_profile(profile_id: int, db: Session = Depends(get_session)):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "app": "ScarletX", "version": "0.4.8", "upstream": "SceneCore 0.7.16"}
+    return {"status": "ok", "app": "ScarletX", "version": "0.4.9", "upstream": "SceneCore 0.7.16"}
 
 
 @app.get("/api/search/status")
@@ -905,7 +913,8 @@ async def test_indexer(name: str, settings: Settings = Depends(get_runtime_setti
         raise HTTPException(404, "Indexer is not configured")
     try:
         async with NewznabClient(indexer) as client:
-            await client.caps()
+            if not await client.caps():
+                raise NewznabError("Indexer did not return valid capabilities")
         return {"ok": True, "name": indexer.name}
     except NewznabError as exc:
         raise HTTPException(502, str(exc)) from exc
@@ -1079,22 +1088,19 @@ async def rss_sync_loop() -> None:
 
 
 async def backup_loop() -> None:
+    def check():
+        with SessionLocal() as db:
+            settings = load_database_settings(db)
+            run_scheduled_backup(db, settings)
     while True:
-        sleep_seconds = 3600
         try:
-            with SessionLocal() as db:
-                settings = load_database_settings(db)
-                sleep_seconds = max(3600, settings.backup_interval_hours * 3600)
-                if settings.backup_enabled:
-                    latest = db.scalar(select(BackupRecord).order_by(BackupRecord.created_at.desc()).limit(1))
-                    age = (utcnow() - latest.created_at).total_seconds() if latest else None
-                    if latest is None or age >= settings.backup_interval_hours * 3600:
-                        create_backup(db, settings.backup_directory, settings.backup_keep)
+            await asyncio.to_thread(check)
         except asyncio.CancelledError:
             raise
         except Exception:
             pass
-        await asyncio.sleep(sleep_seconds)
+        # Recheck settings and due time promptly without blocking the event loop.
+        await asyncio.sleep(60)
 
 
 @app.post("/api/downloads/process")
@@ -1997,7 +2003,12 @@ def _scene_summary_rows(db: Session, *, limit: int, offset: int = 0, q: str | No
         except Exception as exc:
             raise HTTPException(400, "Invalid scene pagination cursor") from exc
         base.append(or_(Scene.imported_at < imported, and_(Scene.imported_at == imported, Scene.id < last_id)))
-    stmt = select(Scene).where(*base).options(selectinload(Scene.studio), selectinload(Scene.performers)).order_by(Scene.imported_at.desc(), Scene.id.desc())
+    stmt = select(Scene).where(*base).options(
+        load_only(Scene.id, Scene.tpdb_id, Scene.title, Scene.release_date, Scene.poster_url,
+                  Scene.image_url, Scene.monitored, Scene.imported_at, Scene.studio_id),
+        selectinload(Scene.studio).load_only(Studio.id, Studio.name, Studio.tpdb_id),
+        selectinload(Scene.performers).load_only(Performer.id, Performer.tpdb_id, Performer.name, Performer.image_url),
+    ).order_by(Scene.imported_at.desc(), Scene.id.desc())
     if not cursor:
         stmt = stmt.offset(offset)
     fetched = db.scalars(stmt.limit(limit + 1).params(**params)).unique().all()
@@ -2248,8 +2259,8 @@ def rescan_library(db: Session = Depends(get_session)):
 
 
 @app.get("/api/wanted/missing")
-def wanted_missing(limit: int = Query(500, ge=1, le=5000), db: Session = Depends(get_session)):
-    return missing_items(db, "scene", limit)
+def wanted_missing(limit: int = Query(500, ge=1, le=5000), offset: int = Query(0, ge=0), db: Session = Depends(get_session)):
+    return missing_items(db, "scene", limit, offset=offset)
 
 
 

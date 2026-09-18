@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .activity_history import activity_history_page
 from .auth_routes import router as auth_router
+from .operations_routes import router as operations_router
 from .bulk_operations import bulk_wanted
 from .compact_studio_art import install_compact_studio_art_route
 from .db import SessionLocal, engine
@@ -98,6 +99,7 @@ def install_runtime_composition(app, legacy_application) -> None:
     install_compact_studio_art_route(app)
     remove_legacy_api_key_middleware(app)
     app.include_router(auth_router)
+    app.include_router(operations_router)
     install_authentication(
         app,
         session_factory=SessionLocal,

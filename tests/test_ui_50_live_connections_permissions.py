@@ -105,10 +105,10 @@ def test_unwritable_media_directory_reports_owner_and_mode(tmp_path, monkeypatch
     assert "mode=" in detail
 
 
-def test_truenas_media_permission_repair_is_recursive():
+def test_truenas_media_permissions_do_not_unconditionally_rewrite_dataset():
     template = (
         ROOT / "packaging" / "truenas" / "scarletx" / "templates" / "docker-compose.yaml"
     ).read_text(encoding="utf-8")
 
-    assert 'media_perms_config = {"uid": values.run_as.user, "gid": values.run_as.group, "mode": "always", "recursive": True}' in template
-    assert 'perm_container.add_or_skip_action("media", values.storage.media, media_perms_config)' in template
+    assert '"mode": "always"' not in template
+    assert 'perm_container.add_or_skip_action("media", values.storage.media, perms_config)' in template

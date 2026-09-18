@@ -343,7 +343,7 @@ class AdminCredentialsWrite(BaseModel):
 
 
 class AdminSetupWrite(AdminCredentialsWrite):
-    setup_token: str = Field(min_length=16, max_length=512)
+    api_key: str = Field(min_length=43, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
 
 
 class LoginWrite(BaseModel):

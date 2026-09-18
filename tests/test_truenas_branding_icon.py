@@ -9,12 +9,12 @@ def test_truenas_catalog_uses_exact_approved_scarletx_icon():
     truenas_icon = (ROOT / "docs" / "images" / "scarletx-icon.svg").read_bytes()
     approved_icon = (ROOT / "frontend" / "scarletx-icon.svg").read_bytes()
 
-    assert "icon: https://raw.githubusercontent.com/terralayer/ScarletX/main/docs/images/scarletx-icon.svg" in app_yaml
+    assert "icon: https://media.sys.truenas.net/apps/scarletx/icons/icon.svg" in app_yaml
     assert truenas_icon == approved_icon
 
 
 def test_truenas_catalog_package_bumps_for_branding_asset_change():
     app_yaml = (ROOT / "packaging" / "truenas" / "scarletx" / "app.yaml").read_text(encoding="utf-8")
 
-    assert "app_version: 0.4.8" in app_yaml
-    assert app_yaml.rstrip().endswith("version: 1.0.15")
+    assert "app_version: 0.4.9" in app_yaml
+    assert app_yaml.rstrip().endswith("version: 1.0.0")

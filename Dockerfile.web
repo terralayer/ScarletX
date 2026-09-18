@@ -1,6 +1,7 @@
 FROM nginx:alpine@sha256:db35bfc6b2951e7f8a72db5db120288c127ffaeeb4a6d4b95a26fead017d5913
 
-ENV SCARLETX_WEB_PORT=8690 \
+ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1 \
+    SCARLETX_WEB_PORT=8690 \
     SCARLETX_BACKEND_HOST=scarletx-backend \
     SCARLETX_BACKEND_PORT=8000
 
@@ -19,6 +20,8 @@ COPY frontend/styles.css /usr/share/nginx/html/styles.css
 COPY frontend/runtime_core.js /usr/share/nginx/html/runtime_core.js
 COPY frontend/settings_ui.js /usr/share/nginx/html/settings_ui.js
 COPY frontend/settings_ui.css /usr/share/nginx/html/settings_ui.css
+COPY frontend/management_ui.js /usr/share/nginx/html/management_ui.js
+COPY frontend/management_ui.css /usr/share/nginx/html/management_ui.css
 COPY frontend/app.js /usr/share/nginx/html/app.js
 COPY frontend/navigation_error_overrides.js /usr/share/nginx/html/navigation_error_overrides.js
 COPY frontend/ui_overrides.css /usr/share/nginx/html/ui_overrides.css

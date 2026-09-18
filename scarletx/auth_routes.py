@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
@@ -21,8 +22,8 @@ from .auth import (
 )
 from .db import get_session
 from .models import AuthUser
-from .settings_store import load_database_settings
-from .setup_security import consume_setup_token, verify_setup_token
+from .settings_store import set_setting
+from .setup_security import consume_setup_token
 from .schemas import AdminCredentialsWrite, AdminSetupWrite, LoginWrite
 
 router = APIRouter()
@@ -94,6 +95,14 @@ def setup_status(db: Session = Depends(get_session)):
     return {"setup_required": not _admin_exists(db)}
 
 
+@router.get("/api/setup/api-key")
+def setup_api_key(response: Response, db: Session = Depends(get_session)):
+    if _admin_exists(db):
+        raise HTTPException(409, "Administrator already configured")
+    response.headers["Cache-Control"] = "no-store"
+    return {"api_key": secrets.token_urlsafe(32)}
+
+
 @router.post("/api/setup/admin")
 def setup_admin(
     payload: AdminSetupWrite,
@@ -103,8 +112,6 @@ def setup_admin(
 ):
     if _admin_exists(db):
         raise HTTPException(409, "Administrator already configured")
-    if not verify_setup_token(payload.setup_token):
-        raise HTTPException(403, "Invalid or expired first-run setup token")
 
     user = AuthUser(
         id=1,
@@ -114,6 +121,9 @@ def setup_admin(
     )
     db.add(user)
     try:
+        set_setting(db, "ui_auth_enabled", "true", commit=False)
+        set_setting(db, "api_key_enabled", "true", commit=False)
+        set_setting(db, "api_key", payload.api_key, commit=False)
         db.commit()
         db.refresh(user)
     except IntegrityError as exc:
@@ -128,7 +138,7 @@ def setup_admin(
 
 @router.get("/api/auth/status")
 def auth_status(request: Request, db: Session = Depends(get_session)):
-    enabled = load_database_settings(db).ui_auth_enabled
+    enabled = True
     setup_required = not _admin_exists(db)
     user = None if setup_required else _current_user(request, db)
     return {
@@ -190,27 +200,8 @@ def update_admin_credentials(
 ):
     token = request.cookies.get(SESSION_COOKIE_NAME) or ""
     user = session_user(db, token)
-    if user is None and load_database_settings(db).ui_auth_enabled:
+    if user is None:
         raise HTTPException(401, "Authentication required")
-
-    if user is None:
-        user = db.scalar(select(AuthUser).order_by(AuthUser.id).limit(1))
-    if user is None:
-        user = AuthUser(
-            username=payload.username,
-            username_normalized=normalize_username(payload.username),
-            password_hash=hash_password(payload.password),
-        )
-        db.add(user)
-        try:
-            db.commit()
-            db.refresh(user)
-        except IntegrityError as exc:
-            db.rollback()
-            raise HTTPException(409, "Username is already in use") from exc
-        replacement = create_session(db, user.id)
-        _set_session_cookie(response, request, replacement)
-        return {"username": user.username}
 
     user.username = payload.username
     user.username_normalized = normalize_username(payload.username)

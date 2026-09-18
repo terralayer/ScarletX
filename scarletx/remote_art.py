@@ -4,6 +4,9 @@ import asyncio
 import hashlib
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
+from uuid import uuid4
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import urljoin
@@ -17,6 +20,42 @@ CACHE_ROOT = Path(os.getenv("SCARLETX_CACHE_DIR", "./cache")).expanduser() / "tp
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 MAX_REDIRECTS = 5
 _ART_CLIENT: httpx.AsyncClient | None = None
+_ART_WORKERS = ThreadPoolExecutor(max_workers=4, thread_name_prefix="scarletx-art")
+_INFLIGHT: dict[tuple, asyncio.Task] = {}
+
+
+async def run_artwork_work(function, *args, **kwargs):
+    return await asyncio.get_running_loop().run_in_executor(_ART_WORKERS, partial(function, *args, **kwargs))
+
+
+async def _shared_job(key: tuple, factory):
+    # Jobs belong to their event loop; completed jobs never become an unbounded cache.
+    flight_key = (asyncio.get_running_loop(), str(CACHE_ROOT), *key)
+    task = _INFLIGHT.get(flight_key)
+    if task is None:
+        task = asyncio.create_task(factory())
+        _INFLIGHT[flight_key] = task
+
+        def finished(done):
+            if _INFLIGHT.get(flight_key) is done:
+                _INFLIGHT.pop(flight_key, None)
+            if not done.cancelled():
+                done.exception()  # Retrieve failures even when every waiter disconnected.
+
+        task.add_done_callback(finished)
+    # One disconnected browser must not cancel work shared with another browser.
+    return await asyncio.shield(task)
+
+
+def _atomic_write(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        temp.write_bytes(payload)
+        temp.replace(path)
+    finally:
+        temp.unlink(missing_ok=True)
+
 
 
 def _art_client() -> httpx.AsyncClient:
@@ -26,7 +65,7 @@ def _art_client() -> httpx.AsyncClient:
             timeout=12,
             follow_redirects=False,
             trust_env=False,
-            headers={"User-Agent": "ScarletX/0.4.8"},
+            headers={"User-Agent": "ScarletX/0.4.9"},
             limits=httpx.Limits(max_connections=30, max_keepalive_connections=15, keepalive_expiry=45),
         )
     return _ART_CLIENT
@@ -48,8 +87,8 @@ def _paths(key: str) -> tuple[Path, Path]:
     return CACHE_ROOT / f"{digest}.bin", CACHE_ROOT / f"{digest}.json"
 
 
-def _thumb_path(key: str, size: tuple[int, int]) -> Path:
-    digest = hashlib.sha256(f"{key}:{size[0]}x{size[1]}:webp-v1".encode()).hexdigest()
+def _thumb_path(key: str, size: tuple[int, int], *, contain: bool = False) -> Path:
+    digest = hashlib.sha256(f"{key}:{size[0]}x{size[1]}:{contain}:webp-v2".encode()).hexdigest()
     return CACHE_ROOT / "thumbs" / f"{digest}.webp"
 
 
@@ -62,18 +101,8 @@ def cache_remote_image_bytes(
     """Seed a route cache key from bytes already fetched during import."""
     data_path, meta_path = _paths(key)
     try:
-        data_path.parent.mkdir(parents=True, exist_ok=True)
-        temp = data_path.with_suffix(".tmp")
-        temp.write_bytes(content)
-        temp.replace(data_path)
-        meta_path.write_text(
-            json.dumps(
-                {
-                    "content_type": content_type or "image/jpeg",
-                    "url": source_url or "",
-                }
-            )
-        )
+        _atomic_write(data_path, content)
+        _atomic_write(meta_path, json.dumps({"content_type": content_type or "image/jpeg", "url": source_url or ""}).encode())
     except OSError:
         pass
 
@@ -116,14 +145,19 @@ async def _download_public_image(client: httpx.AsyncClient, url: str) -> tuple[b
     raise RemoteArtworkError("Remote artwork exceeded the redirect limit")
 
 
-async def cached_remote_image(key: str, urls: list[str]) -> tuple[bytes, str]:
+def _read_original(key: str) -> tuple[bytes, str] | None:
     data_path, meta_path = _paths(key)
-    if data_path.exists():
-        try:
-            meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
-            return data_path.read_bytes(), str(meta.get("content_type") or "image/jpeg")
-        except (OSError, json.JSONDecodeError):
-            pass
+    try:
+        meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+        return data_path.read_bytes(), str(meta.get("content_type") or "image/jpeg")
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+async def _load_original(key: str, urls: list[str]) -> tuple[bytes, str]:
+    cached = await run_artwork_work(_read_original, key)
+    if cached is not None:
+        return cached
     last_error = None
     client = _art_client()
     for url in urls:
@@ -131,22 +165,25 @@ async def cached_remote_image(key: str, urls: list[str]) -> tuple[bytes, str]:
             continue
         try:
             content, ctype, final_url = await _download_public_image(client, str(url))
-            cache_remote_image_bytes(key, content, ctype, final_url)
+            await run_artwork_work(cache_remote_image_bytes, key, content, ctype, final_url)
             return content, ctype
         except (httpx.HTTPError, OSError, RemoteArtworkError) as exc:
             last_error = exc
     raise RemoteArtworkError("Remote artwork could not be loaded") from last_error
 
 
-async def cached_remote_thumbnail(key: str, urls: list[str], size: tuple[int, int], *, contain: bool = False) -> tuple[bytes, str]:
-    """Return a small persistent WebP variant for library cards."""
-    path = _thumb_path(key, size)
+async def cached_remote_image(key: str, urls: list[str]) -> tuple[bytes, str]:
+    return await _shared_job(("original", key), lambda: _load_original(key, urls))
+
+
+def _read_thumbnail(path: Path) -> bytes | None:
     try:
-        if path.exists():
-            return path.read_bytes(), "image/webp"
+        return path.read_bytes()
     except OSError:
-        pass
-    original, _ = await cached_remote_image(key, urls)
+        return None
+
+
+def _render_thumbnail(original: bytes, path: Path, size: tuple[int, int], contain: bool) -> bytes:
     try:
         with Image.open(BytesIO(original)) as image:
             image.load()
@@ -163,10 +200,22 @@ async def cached_remote_thumbnail(key: str, urls: list[str], size: tuple[int, in
     except Exception as exc:
         raise RemoteArtworkError("Remote artwork could not be resized") from exc
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temp = path.with_suffix(".tmp")
-        temp.write_bytes(payload)
-        temp.replace(path)
+        _atomic_write(path, payload)
     except OSError:
         pass
+    return payload
+
+
+async def _load_thumbnail(key: str, urls: list[str], size: tuple[int, int], contain: bool) -> tuple[bytes, str]:
+    path = _thumb_path(key, size, contain=contain)
+    cached = await run_artwork_work(_read_thumbnail, path)
+    if cached is not None:
+        return cached, "image/webp"
+    original, _ = await cached_remote_image(key, urls)
+    payload = await run_artwork_work(_render_thumbnail, original, path, size, contain)
     return payload, "image/webp"
+
+
+async def cached_remote_thumbnail(key: str, urls: list[str], size: tuple[int, int], *, contain: bool = False) -> tuple[bytes, str]:
+    """Share concurrent requests for the same persistent thumbnail variant."""
+    return await _shared_job(("thumbnail", key, size, contain), lambda: _load_thumbnail(key, urls, size, contain))

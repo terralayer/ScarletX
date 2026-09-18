@@ -44,12 +44,12 @@ def test_first_run_setup_requires_one_time_token(tmp_path, monkeypatch):
     assert not module.verify_setup_token(token)
 
 
-def test_setup_schema_requires_token_but_account_update_does_not():
+def test_setup_schema_requires_api_key_but_account_update_does_not():
     setup_fields = AdminSetupWrite.model_fields
     update_fields = AdminCredentialsWrite.model_fields
-    assert "setup_token" in setup_fields
-    assert setup_fields["setup_token"].is_required()
-    assert "setup_token" not in update_fields
+    assert "api_key" in setup_fields
+    assert setup_fields["api_key"].is_required()
+    assert "api_key" not in update_fields
 
 
 def test_query_string_api_keys_are_rejected():

@@ -90,6 +90,7 @@ class Scene(Base):
     __table_args__ = (
         Index("ix_scenes_type_imported", "content_type", "imported_at"),
         Index("ix_scenes_calendar", "content_type", "monitored", "release_date"),
+        Index("ix_scenes_wanted_order", "content_type", "monitored", "release_date", "title", "id"),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
     tpdb_id: Mapped[str] = mapped_column(String(100), unique=True, index=True)
@@ -196,6 +197,28 @@ class FileScanState(Base):
     scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ScanPathIndex(Base):
+    """Rebuildable path lookup; source rows remain authoritative."""
+    __tablename__ = "scan_path_index"
+    __table_args__ = (
+        Index("ix_scan_path_scope", "source_kind", "canonical_path"),
+        Index("ix_scan_path_directory", "source_kind", "directory"),
+    )
+    source_kind: Mapped[str] = mapped_column(String(80), primary_key=True)
+    source_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_path: Mapped[str] = mapped_column(String(3000))
+    directory: Mapped[str] = mapped_column(String(3000))
+    canonical_path: Mapped[str] = mapped_column(String(3000))
+    file_alias: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class ScanPathDirectory(Base):
+    __tablename__ = "scan_path_directories"
+    source_kind: Mapped[str] = mapped_column(String(80), primary_key=True)
+    path: Mapped[str] = mapped_column(String(3000), primary_key=True)
+    signature: Mapped[str] = mapped_column(Text)
+
+
 class PlaybackState(Base):
     __tablename__ = "playback_states"
     media_file_id: Mapped[int] = mapped_column(ForeignKey("media_files.id", ondelete="CASCADE"), primary_key=True)
@@ -223,6 +246,7 @@ class History(Base):
     __table_args__ = (
         Index("ix_history_created_at", "created_at"),
         Index("ix_history_event_type_created_at", "event_type", "created_at"),
+        Index("ix_history_scene_event_created", "scene_id", "event_type", "created_at"),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
     event_type: Mapped[str] = mapped_column(String(50), index=True)
@@ -250,6 +274,7 @@ class TrackedDownload(Base):
     __table_args__ = (
         Index("ix_tracked_downloads_status_created_at", "status", "created_at"),
         Index("ix_tracked_downloads_status_last_checked_at", "status", "last_checked_at"),
+        Index("ix_tracked_downloads_scene_created_id", "scene_id", "created_at", "id"),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
     nzo_id: Mapped[str] = mapped_column(String(150), unique=True, index=True)

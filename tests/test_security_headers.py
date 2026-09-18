@@ -34,7 +34,7 @@ def make_client():
         return {"private": True}
 
     settings = SimpleNamespace(ui_auth_enabled=True, api_key_enabled=False, api_key=SecretStr(""))
-    install_authentication(app, session_factory=factory, settings_loader=lambda _db: settings)
+    install_authentication(app, session_factory=factory, settings_loader=lambda _db, **_kwargs: settings)
     install_security_headers(app)
     return TestClient(app)
 
@@ -51,7 +51,7 @@ def test_security_headers_apply_to_normal_and_open_api_responses():
     root = client.get("/")
     api = client.get("/api/private")
     assert root.status_code == 200
-    assert api.status_code == 200
+    assert api.status_code == 403
     assert_security_headers(root)
     assert_security_headers(api)
 

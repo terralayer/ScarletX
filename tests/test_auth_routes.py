@@ -32,17 +32,13 @@ def make_client():
 
 
 def setup_admin(client, username="admin", password=PASSWORD):
-    from scarletx.setup_security import ensure_setup_token
-
-    setup_token = ensure_setup_token(admin_exists=False)
-    assert setup_token
     return client.post(
         "/api/setup/admin",
         json={
             "username": username,
             "password": password,
             "password_confirm": password,
-            "setup_token": setup_token,
+            "api_key": "a" * 43,
         },
     )
 
@@ -61,7 +57,7 @@ def test_first_run_setup_creates_one_admin_and_logs_in():
 
     assert client.get("/api/setup/status").json() == {"setup_required": False}
     assert client.get("/api/auth/status").json() == {
-        "enabled": False,
+        "enabled": True,
         "setup_required": False,
         "authenticated": True,
         "username": "admin",

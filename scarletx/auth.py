@@ -4,7 +4,7 @@ import hashlib
 import secrets
 import threading
 import time
-from collections import defaultdict, deque
+from collections import deque
 from datetime import UTC, datetime, timedelta
 
 from pwdlib import PasswordHash
@@ -107,27 +107,54 @@ def revoke_all_sessions(db: Session, user_id: int) -> None:
 
 
 class LoginLimiter:
-    def __init__(self, max_failures: int = 5, window_seconds: int = 300):
+    def __init__(self, max_failures: int = 5, window_seconds: int = 300, max_addresses: int = 10000):
         self.max_failures = max(1, int(max_failures))
         self.window_seconds = max(1, int(window_seconds))
+        self.max_addresses = max(1, int(max_addresses))
         self._lock = threading.Lock()
-        self._events: dict[str, deque[float]] = defaultdict(deque)
+        self._events: dict[str, deque[float]] = {}
+        self._next_cleanup = 0.0
 
-    def _prune(self, address: str, now: float) -> deque[float]:
-        events = self._events[address]
+    def _prune(self, address: str, now: float) -> deque[float] | None:
+        events = self._events.get(address)
+        if events is None:
+            return None
         cutoff = now - self.window_seconds
         while events and events[0] <= cutoff:
             events.popleft()
+        if not events:
+            self._events.pop(address, None)
+            return None
         return events
+
+    def _cleanup(self, now: float) -> None:
+        if now < self._next_cleanup:
+            return
+        for address in list(self._events):
+            self._prune(address, now)
+        self._next_cleanup = now + min(60, self.window_seconds)
 
     def is_blocked(self, address: str) -> bool:
         with self._lock:
-            return len(self._prune(address, time.monotonic())) >= self.max_failures
+            now = time.monotonic()
+            self._cleanup(now)
+            events = self._prune(address, now)
+            if events is not None:
+                return len(events) >= self.max_failures
+            # Never evict a live block to admit another address during a flood.
+            return len(self._events) >= self.max_addresses
 
     def record_failure(self, address: str) -> None:
-        now = time.monotonic()
         with self._lock:
-            self._prune(address, now).append(now)
+            now = time.monotonic()
+            self._cleanup(now)
+            events = self._prune(address, now)
+            if events is None:
+                if len(self._events) >= self.max_addresses:
+                    return
+                events = self._events[address] = deque()
+            if len(events) < self.max_failures:
+                events.append(now)
 
     def clear(self, address: str) -> None:
         with self._lock:
