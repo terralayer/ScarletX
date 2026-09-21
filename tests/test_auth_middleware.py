@@ -109,6 +109,8 @@ def test_production_bootstrap_registers_auth_routes_and_removes_legacy_api_key_m
     production_app = application.app
     assert production_app is main.app
     assert str(production_app.url_path_for("auth_status")) == "/api/auth/status"
+    assert str(production_app.url_path_for("setup_agreement_status")) == "/api/setup/agreement"
+    assert str(production_app.url_path_for("accept_setup_agreement")) == "/api/setup/agreement"
     assert str(production_app.url_path_for("setup_admin")) == "/api/setup/admin"
 
     dispatch_names = {
