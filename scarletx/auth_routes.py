@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import secrets
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
@@ -21,12 +22,39 @@ from .auth import (
     verify_password_and_update,
 )
 from .db import get_session
-from .models import AuthUser
+from .models import AppSetting, AuthUser
 from .settings_store import set_setting
 from .setup_security import consume_setup_token
-from .schemas import AdminCredentialsWrite, AdminSetupWrite, LoginWrite
+from .schemas import AdminCredentialsWrite, AdminSetupWrite, LoginWrite, SetupAgreementAcceptWrite
 
 router = APIRouter()
+
+SETUP_AGREEMENT_VERSION = "2026-09-21"
+SETUP_AGREEMENT_ACCEPTED_AT_KEY = "setup_agreement_accepted_at"
+SETUP_AGREEMENT_VERSION_KEY = "setup_agreement_version"
+SETUP_AGREEMENT_LINKS = {
+    "license": "https://github.com/terralayer/ScarletX/blob/main/LICENSE",
+    "project": "https://github.com/terralayer/ScarletX",
+}
+
+
+def _agreement_value(db: Session, key: str) -> str | None:
+    item = db.get(AppSetting, key)
+    value = (item.value or "").strip() if item is not None else ""
+    return value or None
+
+
+def _agreement_status(db: Session) -> dict:
+    accepted_at = _agreement_value(db, SETUP_AGREEMENT_ACCEPTED_AT_KEY)
+    accepted_version = _agreement_value(db, SETUP_AGREEMENT_VERSION_KEY)
+    return {
+        "required": not _admin_exists(db) and accepted_at is None,
+        "accepted": accepted_at is not None,
+        "accepted_at": accepted_at,
+        "version": accepted_version or SETUP_AGREEMENT_VERSION,
+        "current_version": SETUP_AGREEMENT_VERSION,
+        "links": SETUP_AGREEMENT_LINKS,
+    }
 
 
 def _trust_proxy_headers() -> bool:
@@ -95,6 +123,30 @@ def setup_status(db: Session = Depends(get_session)):
     return {"setup_required": not _admin_exists(db)}
 
 
+@router.get("/api/setup/agreement")
+def setup_agreement_status(db: Session = Depends(get_session)):
+    return _agreement_status(db)
+
+
+@router.post("/api/setup/agreement")
+def accept_setup_agreement(
+    payload: SetupAgreementAcceptWrite,
+    db: Session = Depends(get_session),
+):
+    if _admin_exists(db):
+        raise HTTPException(409, "Administrator already configured")
+    if payload.version != SETUP_AGREEMENT_VERSION:
+        raise HTTPException(409, "Agreement version is no longer current; reload setup and review it again")
+
+    current = _agreement_value(db, SETUP_AGREEMENT_ACCEPTED_AT_KEY)
+    if current is None:
+        accepted_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        set_setting(db, SETUP_AGREEMENT_ACCEPTED_AT_KEY, accepted_at, commit=False)
+        set_setting(db, SETUP_AGREEMENT_VERSION_KEY, SETUP_AGREEMENT_VERSION, commit=False)
+        db.commit()
+    return _agreement_status(db)
+
+
 @router.get("/api/setup/api-key")
 def setup_api_key(response: Response, db: Session = Depends(get_session)):
     if _admin_exists(db):
@@ -112,6 +164,8 @@ def setup_admin(
 ):
     if _admin_exists(db):
         raise HTTPException(409, "Administrator already configured")
+    if _agreement_value(db, SETUP_AGREEMENT_ACCEPTED_AT_KEY) is None:
+        raise HTTPException(428, "Accept the ScarletX usage agreement before creating the administrator")
 
     user = AuthUser(
         id=1,
@@ -140,10 +194,12 @@ def setup_admin(
 def auth_status(request: Request, db: Session = Depends(get_session)):
     enabled = True
     setup_required = not _admin_exists(db)
+    agreement = _agreement_status(db)
     user = None if setup_required else _current_user(request, db)
     return {
         "enabled": enabled,
         "setup_required": setup_required,
+        "agreement_required": bool(agreement["required"]),
         "authenticated": user is not None,
         "username": user.username if user else None,
     }
