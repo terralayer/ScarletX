@@ -49,8 +49,21 @@ function searchChoice(){
 }
 
 function about(){
-  $('#app').innerHTML=pageHead('About ScarletX','Your local-first media library, built to discover, monitor, and organize your collection.')+`<div class="about-layout"><section class="panel about-intro"><div class="about-mark"><img src="/scarletx-icon.webp?v=approved-20260918-1" alt="ScarletX icon"></div><div><h2>Discover. Monitor. Organize. Enjoy.</h2><p>ScarletX brings your monitored scenes, performers, studios, downloads, and library together in one focused workspace.</p></div></section><div class="about-grid"><section class="panel about-card"><h2>Local-first by design</h2><p>Your library stays on your system. ScarletX connects to the services you choose, while your collection and settings remain under your control.</p></section><section class="panel about-card"><h2>System information</h2><dl class="about-facts"><div><dt>Version</dt><dd id="aboutVersion">Loading…</dd></div><div><dt>Upstream</dt><dd id="aboutUpstream">Loading…</dd></div><div><dt>Runtime</dt><dd>Local</dd></div></dl></section></div></div>`;
-  api('/api/system/status').then(status=>{if(view!=='about')return;$('#aboutVersion').textContent=status.version||'—';$('#aboutUpstream').textContent=status.upstream||'—'}).catch(()=>{if(view!=='about')return;$('#aboutVersion').textContent='Unavailable';$('#aboutUpstream').textContent='Unavailable'});
+  $('#app').innerHTML=pageHead('About ScarletX','Your local-first media library, built to discover, monitor, and organize your collection.')+`<div class="about-layout"><section class="panel about-intro"><div class="about-mark"><img src="/scarletx-icon.webp?v=approved-20260918-1" alt="ScarletX icon"></div><div><h2>Discover. Monitor. Organize. Enjoy.</h2><p>ScarletX brings your monitored scenes, performers, studios, downloads, and library together in one focused workspace.</p></div></section><div class="about-grid"><section class="panel about-card"><h2>Local-first by design</h2><p>Your library stays on your system. ScarletX connects to the services you choose, while your collection and settings remain under your control.</p></section><section class="panel about-card"><h2>System information</h2><dl class="about-facts"><div><dt>Version</dt><dd id="aboutVersion">Loading…</dd></div><div><dt>Upstream</dt><dd id="aboutUpstream">Loading…</dd></div><div><dt>Runtime</dt><dd>Local</dd></div></dl></section><section class="panel about-card about-agreement-card"><h2>Usage agreement</h2><dl class="about-facts"><div><dt>Status</dt><dd id="aboutAgreementStatus">Loading…</dd></div><div><dt>Accepted</dt><dd id="aboutAgreementDate">Loading…</dd></div><div><dt>Version</dt><dd id="aboutAgreementVersion">Loading…</dd></div></dl><div class="about-links"><a id="aboutAgreementDocument" target="_blank" rel="noopener noreferrer">Usage agreement</a><a id="aboutAgreementLicense" target="_blank" rel="noopener noreferrer">Project license</a><a id="aboutAgreementProject" target="_blank" rel="noopener noreferrer">ScarletX source</a></div></section></div></div>`;
+  Promise.all([api('/api/system/status'),api('/api/setup/agreement')]).then(([status,agreement])=>{
+    if(view!=='about')return;
+    $('#aboutVersion').textContent=status.version||'—';
+    $('#aboutUpstream').textContent=status.upstream||'—';
+    $('#aboutAgreementStatus').textContent=agreement.accepted?'Accepted':'Not recorded';
+    if(agreement.accepted_at){const accepted=new Date(agreement.accepted_at);$('#aboutAgreementDate').textContent=Number.isNaN(accepted.getTime())?agreement.accepted_at:accepted.toLocaleString()}else $('#aboutAgreementDate').textContent='—';
+    $('#aboutAgreementVersion').textContent=agreement.version||agreement.current_version||'—';
+    $('#aboutAgreementDocument').href=agreement.links?.agreement||'https://github.com/terralayer/ScarletX/blob/main/docs/USAGE-AGREEMENT.md';
+    $('#aboutAgreementLicense').href=agreement.links?.license||'https://github.com/terralayer/ScarletX/blob/main/LICENSE';
+    $('#aboutAgreementProject').href=agreement.links?.project||'https://github.com/terralayer/ScarletX';
+  }).catch(()=>{
+    if(view!=='about')return;
+    $('#aboutVersion').textContent='Unavailable';$('#aboutUpstream').textContent='Unavailable';$('#aboutAgreementStatus').textContent='Unavailable';$('#aboutAgreementDate').textContent='—';$('#aboutAgreementVersion').textContent='—';
+  });
 }
 
 function bindDashboardStats(){

@@ -1,4 +1,4 @@
-from tests.test_auth_routes import make_client, PASSWORD
+from tests.test_auth_routes import accept_agreement, make_client, PASSWORD
 from tests.test_auth_middleware import make_app, create_admin
 from scarletx.settings_store import load_database_settings
 
@@ -11,6 +11,7 @@ def test_setup_enables_auth_and_persists_generated_key():
     assert len(key) >= 43
     assert client.get('/api/setup/api-key').json()['api_key'] != key
     payload = dict(username='admin', password=PASSWORD, password_confirm=PASSWORD, api_key=key)
+    accept_agreement(client)
     assert client.post('/api/setup/admin', json=payload).status_code == 200
     with factory() as db:
         settings = load_database_settings(db)
@@ -52,5 +53,6 @@ def test_cross_origin_mutation_rejected():
     client, factory = make_app(ui_auth_enabled=True)
     client.cookies.set('scarletx_session', create_admin(factory))
     assert client.post('/api/private', headers={'Origin':'https://evil.example'}).status_code == 403
+    assert client.post('/api/setup/agreement', json={'accepted': True, 'version': '2026-09-21'}, headers={'Origin':'null'}).status_code == 403
     assert client.post('/api/setup/admin', headers={'Origin':'null'}).status_code == 403
     assert client.post('/api/auth/login', headers={'Sec-Fetch-Site':'cross-site'}).status_code == 403
