@@ -108,6 +108,10 @@ for uid, port in [(568, 18869), (1000, 18870)]:
         health()
         assert run("exec", backend, "id", "-u") == str(uid)
         assert run("exec", web, "id", "-u") == str(uid)
+        agreement = api("/api/setup/agreement")
+        assert agreement["required"] and not agreement["accepted"]
+        accepted = api("/api/setup/agreement", {"accepted": True, "version": agreement["current_version"]}, "POST")
+        assert accepted["accepted"] and accepted["accepted_at"]
         key = api("/api/setup/api-key")["api_key"]
         password = uuid.uuid4().hex
         api("/api/setup/admin", {"username": "smoke-admin", "password": password, "password_confirm": password, "api_key": key}, "POST")
@@ -157,6 +161,7 @@ for uid, port in [(568, 18869), (1000, 18870)]:
             run("restart", backend)
         health()
         assert api("/api/settings")["general"]["app_name"] == "Persistence check"
+        assert api("/api/setup/agreement")["accepted"]
         with urllib.request.urlopen(integration_request, timeout=3) as response:
             assert response.status == 200
         index_names = json.loads(run("exec", backend, "python", "-c",
@@ -204,6 +209,7 @@ for uid, port in [(568, 18869), (1000, 18870)]:
         run("start", backend)
         health()
         assert api("/api/settings")["general"]["app_name"] == "Persistence check"
+        assert api("/api/setup/agreement")["accepted"]
         with urllib.request.urlopen(integration_request, timeout=3) as response:
             assert response.status == 200
         api("/api/auth/logout", {}, "POST")
