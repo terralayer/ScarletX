@@ -56,40 +56,5 @@
     return `<div class="tablewrap"><table class="table"><thead><tr><th>Scene</th><th>Studio</th><th>Performers</th><th>Status</th><th></th></tr></thead><tbody>${releaseDateUnderScene ? sceneRowsHtml(rows,inLibrary,true) : sceneRowsHtml(rows,inLibrary)}</tbody></table></div>`;
   };
 
-  function compactStudioSrc(src) {
-    try {
-      const url = new URL(src, window.location.origin);
-      const match = url.pathname.match(/^\/api\/artwork\/studios\/([^/]+)$/);
-      if (!match) return null;
-      return `/api/artwork/studios/${match[1]}/compact?v=v6`;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function repairCompactStudioIcons(root = document) {
-    root.querySelectorAll('.studio-logo img').forEach(img => {
-      const replacement = compactStudioSrc(img.getAttribute('src') || img.src || '');
-      if (replacement && img.getAttribute('src') !== replacement) {
-        img.setAttribute('src', replacement);
-      }
-    });
-  }
-
-  const observer = new MutationObserver(mutations => {
-    for (const mutation of mutations) {
-      for (const node of mutation.addedNodes) {
-        if (node.nodeType !== Node.ELEMENT_NODE) continue;
-        if (node.matches?.('.studio-logo, .studio-logo img')) {
-          repairCompactStudioIcons(node.parentElement || node);
-        } else {
-          repairCompactStudioIcons(node);
-        }
-      }
-    }
-  });
-
   wireApprovedSidebarShortcuts();
-  observer.observe(document.documentElement, {childList: true, subtree: true});
-  repairCompactStudioIcons();
 })();

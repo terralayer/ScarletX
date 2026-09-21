@@ -197,7 +197,7 @@ def cutoff_unmet(db, content_type=None, limit=500):
     return rows
 
 
-def calendar_items(db, start, end, limit=500):
+def calendar_items(db, start, end, limit=500, direct_only=False):
     rows = []
     monitored_performer = exists(
         select(scene_performer.c.scene_id)
@@ -207,15 +207,20 @@ def calendar_items(db, start, end, limit=500):
             Performer.monitored.is_(True),
         )
     )
+    membership = (
+        Scene.monitored.is_(True)
+        if direct_only
+        else or_(
+            Scene.monitored.is_(True),
+            Scene.studio.has(Studio.monitored.is_(True)),
+            monitored_performer,
+        )
+    )
     stmt = (
         select(Scene)
         .where(
             Scene.content_type == "scene",
-            or_(
-                Scene.monitored.is_(True),
-                Scene.studio.has(Studio.monitored.is_(True)),
-                monitored_performer,
-            ),
+            membership,
             Scene.release_date >= start,
             Scene.release_date <= end,
         )

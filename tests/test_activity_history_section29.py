@@ -112,19 +112,19 @@ def test_composed_application_registers_paged_and_legacy_history_routes_once():
     assert len(legacy) == 1
 
 
-def test_activity_history_ui_override_is_bounded_filtered_and_packaged():
-    source = (ROOT / "frontend" / "activity_history_overrides.js").read_text(encoding="utf-8")
+def test_activity_history_ui_owner_is_bounded_filtered_and_packaged():
+    source = (ROOT / "frontend" / "activity_lists.js").read_text(encoding="utf-8")
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     dockerfile = (ROOT / "Dockerfile.web").read_text(encoding="utf-8")
 
-    assert "ACTIVITY_HISTORY_PAGE_SIZE=50" in source
-    assert "activityHistoryPage=1" in source
-    assert "activityHistoryEventType=''" in source
-    assert "/api/history/page?page=${activityHistoryPage}&limit=${ACTIVITY_HISTORY_PAGE_SIZE}" in source
-    assert "activityPager('history'" in source
+    assert "history:{page:1,request:0,size:()=>15,filter:''}" in source
+    assert "/api/history/page?page=${state.page}&limit=${state.size()}" in source
+    assert "activityPager(kind,page,total,state.size())" in source
     assert "activityHistoryFilter" in source
     assert "event_counts" in source
-    assert "'/api/history?limit=200'" in source
-    assert "/activity_history_overrides.js" in index
-    assert "COPY frontend/activity_history_overrides.js /usr/share/nginx/html/activity_history_overrides.js" in dockerfile
-    assert "grep -q '/activity_history_overrides.js'" in dockerfile
+    assert "request!==state.request||requestedPage!==state.page||filter!==state.filter" in source
+    assert "window.fetch" not in source
+    assert "/activity_lists.js" in index
+    assert "/activity_history_overrides.js" not in index
+    assert "COPY frontend/activity_lists.js /usr/share/nginx/html/activity_lists.js" in dockerfile
+    assert "activity_history_overrides.js" not in dockerfile

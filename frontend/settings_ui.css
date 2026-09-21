@@ -16,3 +16,4 @@
 
 #tpdbKeyHelp a{color:#ff9aad;text-decoration:underline;text-underline-offset:3px}#tpdbKeyHelp a:hover{color:#ffd2dc}#tpdbKeyHelp a:focus-visible{outline:2px solid #ed7190;outline-offset:3px;border-radius:2px}
 .settings-fields #tpdbKeyHelp{display:block;max-width:68ch;white-space:normal;overflow-wrap:anywhere;font-size:12px;line-height:1.7}
+.system-reset-panel{margin-top:20px;padding:18px;border:1px solid #efcbd0;border-radius:10px;background:#fff8f8}.system-reset-panel h3{margin:0 0 7px;color:#9d1324;font-size:14px}.system-reset-panel p{margin:0 0 10px;color:#5e4c51;font-size:11px;line-height:1.6}.system-reset-panel ul{margin:0 0 12px;padding-left:20px;color:#5e4c51;font-size:11px;line-height:1.7}.system-reset-panel .actions{margin-top:12px}.system-reset-confirm{font-weight:650;color:#9d1324!important}

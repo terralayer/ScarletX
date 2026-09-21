@@ -20,24 +20,7 @@
     </form>
   </section>
 </div>
-<div class="sx-auth-account" id="authAccount" hidden>
-  <button id="authAccountButton" type="button">Administrator</button>
-  <button id="authLogoutButton" type="button">Sign out</button>
-</div>
-<dialog class="sx-auth-dialog" id="authAccountDialog">
-  <div class="sx-auth-dialog-inner">
-    <div class="sx-auth-dialog-head"><h2>Administrator account</h2><button class="sx-auth-dialog-close" id="authAccountClose" type="button" aria-label="Close">×</button></div>
-    <form id="authAccountForm">
-      <div class="sx-auth-fields">
-        <div class="sx-auth-field"><label for="authAccountUsername">Username</label><input id="authAccountUsername" autocomplete="username" maxlength="100" required></div>
-        <div class="sx-auth-field"><label for="authAccountPassword">New password</label><input id="authAccountPassword" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required><span class="sx-auth-hint">Use at least 12 characters.</span></div>
-        <div class="sx-auth-field"><label for="authAccountPasswordConfirm">Confirm new password</label><input id="authAccountPasswordConfirm" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required></div>
-      </div>
-      <div class="sx-auth-error" id="authAccountError"></div>
-      <button class="sx-auth-submit" id="authAccountSave" type="submit">Update account</button>
-    </form>
-  </div>
-</dialog>`);
+`);
 
 const state = {setup:false, username:'', appStarted:false, appBoot:null, queueSource:null, queueFailures:0, queueRetryTimer:null, queueLastEventId:0};
 const el = id => document.getElementById(id);
@@ -117,13 +100,12 @@ function bootApp() {
 
 function showOpenApp() {
   el('authGate').hidden = true;
-  el('authAccount').hidden = false;
-  el('authAccountButton').textContent = state.username || 'Administrator';
   window.scarletxUsername = state.username;
   el('authPassword').value = '';
   el('authPasswordConfirm').value = '';
   el('authApiKey').value = '';
   bootApp();
+  dispatchQueue('scarletx:app-open');
 }
 
 el('authForm').addEventListener('submit', async event => {
@@ -160,44 +142,6 @@ el('authForm').addEventListener('submit', async event => {
   }
 });
 
-el('authLogoutButton').addEventListener('click', async () => {
-  el('authLogoutButton').disabled = true;
-  stopQueueStream();
-  try { await request('/api/auth/logout', {method:'POST'}); } catch (error) { console.error(error); }
-  location.reload();
-});
-
-el('authAccountButton').addEventListener('click', () => {
-  el('authAccountUsername').value = state.username || '';
-  el('authAccountPassword').value = '';
-  el('authAccountPasswordConfirm').value = '';
-  el('authAccountError').textContent = '';
-  el('authAccountDialog').showModal();
-});
-el('authAccountClose').addEventListener('click', () => el('authAccountDialog').close());
-el('authAccountForm').addEventListener('submit', async event => {
-  event.preventDefault();
-  const save = el('authAccountSave');
-  save.disabled = true;
-  el('authAccountError').textContent = '';
-  try {
-    const username = el('authAccountUsername').value.trim();
-    const password = el('authAccountPassword').value;
-    const passwordConfirm = el('authAccountPasswordConfirm').value;
-    if (password.length < 12) throw new Error('Password must be at least 12 characters.');
-    if (password !== passwordConfirm) throw new Error('Passwords do not match.');
-    const result = await request('/api/auth/admin', {method:'PATCH', body:JSON.stringify({username, password, password_confirm:passwordConfirm})});
-    state.username = result.username;
-    window.scarletxUsername = state.username;
-    el('authAccountButton').textContent = state.username;
-    el('authAccountDialog').close();
-  } catch (error) {
-    el('authAccountError').textContent = error.message;
-  } finally {
-    save.disabled = false;
-  }
-});
-
 async function generateKey() {
   el('authRefreshKey').disabled = true;
   el('authSubmit').disabled = true;
@@ -216,7 +160,11 @@ el('authCopyKey').onclick = async () => {
     el('authError').textContent = 'API key copied.';
   } catch { el('authApiKey').select(); el('authError').textContent = 'Select the key and copy it manually.'; }
 };
-window.addEventListener('scarletx:session-expired', () => location.reload());
+window.addEventListener('scarletx:session-expired', () => {
+  const gate = document.getElementById('authGate');
+  if (gate && !gate.hidden) return;
+  location.reload();
+});
 window.authGateBoot = async function authGateBoot(appBoot) {
   state.appBoot = appBoot;
   try {

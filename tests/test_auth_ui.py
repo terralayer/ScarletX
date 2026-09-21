@@ -13,28 +13,25 @@ def test_static_frontend_is_outside_backend_package():
     assert not (ROOT / "scarletx/web/index.html").exists()
 
 
-def test_static_auth_assets_keep_optional_account_controls_hidden():
+def test_static_auth_assets_do_not_render_bottom_account_controls():
     script = text("frontend/auth.js")
     styles = text("frontend/auth.css")
     assert 'id="authGate"' in script
     assert 'id="authUsername"' in script
     assert 'id="authPassword"' in script
-    assert 'id="authAccountButton"' in script
-    assert 'id="authLogoutButton"' in script
-    assert 'id="authAccountDialog"' in script
+    assert 'id="authAccountButton"' not in script
+    assert 'id="authLogoutButton"' not in script
+    assert 'id="authAccountDialog"' not in script
     assert 'id="authGate" aria-live="polite"' in script
     assert ".sx-auth-gate" in styles
-    assert ".sx-auth-account" in styles
+    assert ".sx-auth-account" not in styles
 
 
-def test_static_auth_script_uses_same_origin_api_without_session_probe():
+def test_static_auth_script_uses_same_origin_login_api_without_bottom_account_actions():
     script = text("frontend/auth.js")
-    for endpoint in (
-        "/api/auth/login",
-        "/api/auth/logout",
-        "/api/auth/admin",
-    ):
-        assert endpoint in script
+    assert "/api/auth/login" in script
+    assert "/api/auth/logout" not in script
+    assert "/api/auth/admin" not in script
     assert "/api/auth/status" in script
     assert "credentials:'same-origin'" in script or 'credentials: "same-origin"' in script
     assert "window.authGateBoot" in script
@@ -46,6 +43,23 @@ def test_auth_gate_boots_application_immediately_without_session_check():
     assert "Checking security" not in script
     assert "Verifying the local ScarletX administrator session." not in script
     assert "/api/setup/admin" in script
+
+
+def test_activity_queue_refresh_waits_until_the_auth_gate_opens_the_app():
+    auth = text("frontend/auth.js")
+    overrides = text("frontend/ui_overrides.js")
+
+    assert "dispatchQueue('scarletx:app-open')" in auth
+    assert "window.addEventListener('scarletx:app-open', refreshActivityQueueTotal)" in overrides
+    assert "refreshActivityQueueTotal();\n\nfunction mediaFileRowsHtml" not in overrides
+
+
+def test_pre_auth_session_expiry_does_not_reload_the_setup_gate():
+    script = text("frontend/auth.js")
+
+    assert "const gate = document.getElementById('authGate');" in script
+    assert "if (gate && !gate.hidden) return;" in script
+    assert "window.addEventListener('scarletx:session-expired', () => location.reload());" not in script
 
 
 def test_security_settings_expose_ui_auth_credentials():

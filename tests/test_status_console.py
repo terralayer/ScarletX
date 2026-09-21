@@ -162,7 +162,7 @@ def test_startup_snapshot_reports_real_groups_counts_paths_and_never_secrets(tmp
     assert "Astraweb" in rendered
     assert "TLS :563" in rendered
     assert "1 failed" in rendered
-    assert str(media_root) in rendered
+    assert sanitize_console_text(media_root, limit=80) in rendered
     assert "tpdb-super-secret" not in rendered
     assert "indexer-super-secret" not in rendered
     assert "another-secret" not in rendered

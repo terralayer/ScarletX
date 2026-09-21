@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
+import time
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from .automation import search_and_grab_scene
 from .config import Settings
 from .db import SessionLocal
 from .library_management import ensure_library_config
 from .metadata import MetadataProviderError, metadata_client
-from .models import BackgroundJob, History, Scene, Studio, utcnow
+from .models import BackgroundJob, History, Performer, Scene, Studio, utcnow
 from .schemas import RemoteScene
 from .services import upsert_scene
 from .studio_policy import is_allowed_remote_scene
@@ -22,6 +25,7 @@ ENTITY_FETCH_ATTEMPTS = 3
 ENTITY_RETRY_DELAY_SECONDS = 1.0
 DETAIL_BATCH_SIZE = 25
 MAX_ENTITY_PAGES = 1000
+_summary_write_lock = threading.Lock()
 
 
 async def _fetch_with_retry(operation, label: str):
@@ -36,7 +40,7 @@ async def _fetch_with_retry(operation, label: str):
     raise MetadataProviderError(f"{label} failed after {ENTITY_FETCH_ATTEMPTS} attempts: {last_error}")
 
 
-async def _entity_scene_summaries(tpdb, entity_type: str, identifier: str) -> list[RemoteScene]:
+async def _entity_scene_summaries(tpdb, entity_type: str, identifier: str, on_page=None) -> list[RemoteScene]:
     """Fetch every TPDB scene credited to a performer or studio."""
     scenes: list[RemoteScene] = []
     seen: set[str] = set()
@@ -60,23 +64,48 @@ async def _entity_scene_summaries(tpdb, entity_type: str, identifier: str) -> li
     page = 1
     while page <= MAX_ENTITY_PAGES:
         result = await _fetch_with_retry(lambda page=page: fetch(page), f"TPDB scene page {page}")
+        if result.page != page or result.per_page < 1:
+            raise MetadataProviderError(f"TPDB returned invalid pagination for page {page}")
+        page_scenes = []
         for remote in result.items:
             if remote.id in seen:
                 continue
             seen.add(remote.id)
             scenes.append(remote)
+            page_scenes.append(remote)
 
-        if page * ENTITY_PAGE_SIZE >= result.total:
+        if on_page is not None:
+            await on_page(page_scenes, page, result.total)
+        if page * result.per_page >= result.total:
             return scenes
         page += 1
 
     raise MetadataProviderError(f"TPDB entity scene list exceeded {MAX_ENTITY_PAGES} pages")
 
 
-def cache_entity_scene_summaries(summaries: list[RemoteScene], monitored: bool) -> list[int]:
+def cache_entity_scene_summaries(summaries: list[RemoteScene], monitored: bool, *, entity_type: str | None = None, identifier: str | None = None) -> list[int]:
+    """Serialize overlapping catalog writes, retrying collisions with other jobs."""
+    with _summary_write_lock:
+        for attempt in range(3):
+            try:
+                return _cache_entity_scene_summaries(summaries, monitored, entity_type=entity_type, identifier=identifier)
+            except (IntegrityError, OperationalError) as exc:
+                message = str(exc.orig).lower()
+                if attempt == 2 or not any(token in message for token in ('unique constraint', 'database is locked', 'database is busy')):
+                    raise
+                time.sleep(0.1 * (2 ** attempt))
+    return []  # All attempts either return a committed page or raise.
+
+
+def _cache_entity_scene_summaries(summaries: list[RemoteScene], monitored: bool, *, entity_type: str | None = None, identifier: str | None = None) -> list[int]:
     """Persist lightweight scene/studio metadata immediately without erasing credits."""
     scene_ids: list[int] = []
     with SessionLocal() as db:
+        owner = db.scalar(select(Performer).where(Performer.tpdb_id == identifier)) if entity_type == "performer" else None
+        studio_owner = db.scalar(select(Studio).where(Studio.tpdb_id == identifier)) if entity_type == "studio" else None
+        # Read current monitoring state on every page, including mid-refresh changes.
+        if owner is not None or studio_owner is not None:
+            monitored = bool((owner or studio_owner).monitored)
         for remote in summaries:
             if not is_allowed_remote_scene(remote):
                 continue
@@ -85,13 +114,10 @@ def cache_entity_scene_summaries(summaries: list[RemoteScene], monitored: bool) 
                 scene = Scene(tpdb_id=remote.id, title=remote.title, content_type="scene", monitored=monitored)
                 db.add(scene)
             scene.title = remote.title
-            scene.description = remote.description
-            scene.release_date = remote.release_date
-            scene.duration = remote.duration
-            scene.source_url = remote.source_url
-            scene.image_url = remote.image_url
-            scene.back_image_url = remote.back_image_url
-            scene.poster_url = remote.poster_url
+            for field in ("description", "release_date", "duration", "source_url", "image_url", "back_image_url", "poster_url"):
+                value = getattr(remote, field)
+                if value is not None and value != "" and not getattr(scene, field):
+                    setattr(scene, field, value)
             if monitored:
                 scene.monitored = True
             if remote.studio is not None:
@@ -100,12 +126,27 @@ def cache_entity_scene_summaries(summaries: list[RemoteScene], monitored: bool) 
                     studio = Studio(tpdb_id=remote.studio.id, name=remote.studio.name)
                     db.add(studio)
                 studio.name = remote.studio.name
-                studio.url = remote.studio.url
-                studio.logo_url = remote.studio.logo_url
-                studio.poster_url = remote.studio.poster_url
-                studio.description = remote.studio.description
+                for field in ("url", "logo_url", "poster_url", "description"):
+                    if not getattr(studio, field) and getattr(remote.studio, field):
+                        setattr(studio, field, getattr(remote.studio, field))
                 studio.is_library = True
                 scene.studio = studio
+            credited = {p.tpdb_id for p in scene.performers}
+            for person in remote.performers:
+                if person.id in credited:
+                    continue
+                performer = db.scalar(select(Performer).where(Performer.tpdb_id == person.id))
+                if performer is None:
+                    performer = Performer(tpdb_id=person.id, name=person.name, image_url=person.image_url)
+                    db.add(performer)
+                performer.is_library = True
+                scene.performers.append(performer)
+                credited.add(person.id)
+            # A performer endpoint is itself a credit even if the summary omits it.
+            if owner is not None and owner.tpdb_id not in credited:
+                scene.performers.append(owner)
+            if (scene.studio and scene.studio.monitored) or any(p.monitored for p in scene.performers):
+                scene.monitored = True
             db.flush()
             ensure_library_config(db, scene)
             scene_ids.append(scene.id)
@@ -181,7 +222,7 @@ async def run_adult_entity_hydration(
 
         async with metadata_client(settings) as tpdb:
             summaries = await _entity_scene_summaries(tpdb, entity_type, identifier)
-            summary_ids = cache_entity_scene_summaries(summaries, effective_search_when_monitored)
+            summary_ids = await asyncio.to_thread(cache_entity_scene_summaries, summaries, effective_search_when_monitored)
             with SessionLocal() as db:
                 job = db.get(BackgroundJob, job_id)
                 if job is not None:

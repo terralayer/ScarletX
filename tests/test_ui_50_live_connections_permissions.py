@@ -10,15 +10,27 @@ from scarletx import config, library_management, status_console
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_all_main_library_pages_use_fifty_rows():
+def test_all_main_library_pages_default_to_twenty_five_rows_with_user_choices():
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
     overrides = (ROOT / "frontend" / "ui_overrides.js").read_text(encoding="utf-8")
 
-    assert "Object.assign(entityPageSize,{scenes:50,performers:50,studios:50})" in index
-    assert "const ACTIVITY_QUEUE_PAGE_SIZE=50" in app
-    assert "const ACTIVITY_QUEUE_PAGE_SIZE=50" not in overrides
+    assert "Object.assign(entityPageSize,{scenes:50,performers:50,studios:50})" not in index
+    assert "entityPageSize={scenes:25,performers:25,studios:25}" in app
+    assert 'id="entityPageSize"' in app
+    assert "let ACTIVITY_QUEUE_PAGE_SIZE=25" in app
+    assert "ACTIVITY_QUEUE_PAGE_SIZE=25" not in overrides
     assert "const MEDIA_LIBRARY_PAGE_SIZE=50" in overrides
+
+
+def test_scene_library_refresh_uses_one_controlled_batch_job():
+    app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    routes = (ROOT / "scarletx" / "routes" / "application.py").read_text(encoding="utf-8")
+
+    assert "api('/api/library/scenes/refresh',post())" in app
+    assert "let rows=await api('/api/library/scenes');for(let x of rows)" not in app
+    assert '@app.post("/api/library/scenes/refresh", status_code=202)' in routes
+    assert "metadata_refresh_batch" in routes
 
 
 def test_effective_connection_capacity_uses_provider_total_not_global_ceiling(monkeypatch):
@@ -88,6 +100,13 @@ def test_activity_pages_are_server_paged_beyond_two_hundred_rows():
     assert ".offset((page - 1) * limit).limit(limit)" in downloads
     assert "async function loadActivityQueuePage" in overrides
     assert "activityQueuePagerHtml(activityQueueTotal)" in overrides
+
+
+def test_activity_snapshot_is_not_capped_at_two_hundred_rows():
+    application = (ROOT / "scarletx" / "routes" / "application.py").read_text(encoding="utf-8")
+    queue_loader = application[application.index("def _activity_queue_data"):application.index("_ACTIVITY_CACHE_LOCK")]
+
+    assert ".limit(200)" not in queue_loader
 
 
 def test_unwritable_media_directory_reports_owner_and_mode(tmp_path, monkeypatch):

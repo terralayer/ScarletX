@@ -5,6 +5,7 @@ import asyncio
 from sqlalchemy import select, update
 
 from ..background_signals import native_queue_signal
+from ..download_pause import DOWNLOAD_CONTROL_LOCK, global_downloads_paused
 from ..models import NativeUsenetJob
 from ..resource_guard import check_disk_capacity
 from ..status_console import emit_status
@@ -54,7 +55,7 @@ def _queued_job_ids(session_factory, *, limit: int, exclude: set[str] | None = N
     with session_factory() as db:
         rows = db.scalars(
             select(NativeUsenetJob.id)
-            .where(NativeUsenetJob.status == "queued")
+            .where(NativeUsenetJob.status.in_({"queued", "postprocessing"}))
             .order_by(NativeUsenetJob.created_at.asc(), NativeUsenetJob.id.asc())
             .limit(limit + len(excluded))
         ).all()
@@ -66,8 +67,10 @@ def _resource_ready_for_job(session_factory, settings, job_id: str) -> bool:
 
     with session_factory() as db:
         job = db.get(NativeUsenetJob, job_id)
-        if job is None or job.status != "queued":
+        if job is None or job.status not in {"queued", "postprocessing"}:
             return False
+        if job.status == "postprocessing":
+            return True
         total_bytes = max(0, int(job.total_bytes or 0))
         downloaded_bytes = max(0, int(job.downloaded_bytes or 0))
 
@@ -98,6 +101,23 @@ def _consume_finished(active: dict[str, asyncio.Task]) -> None:
             emit_status("Native Downloader", "WORKER FAILED", f"{job_id}: {exc.__class__.__name__}", severity="error")
 
 
+def _recover_interrupted_jobs(session_factory) -> None:
+    """Recover restart state without putting post-processing behind a transfer hold."""
+    with DOWNLOAD_CONTROL_LOCK:
+        with session_factory() as db:
+            interrupted_status = "paused" if global_downloads_paused(db) else "queued"
+            db.execute(
+                update(NativeUsenetJob)
+                .where(NativeUsenetJob.status == "downloading")
+                .values(
+                    status=interrupted_status,
+                    speed_bps=0.0,
+                    eta_seconds=None,
+                )
+            )
+            db.commit()
+
+
 async def _wait_for_capacity_change(active: dict[str, asyncio.Task]) -> None:
     if not active:
         await native_queue_signal.wait(worker.NATIVE_QUEUE_RECOVERY_SECONDS)
@@ -121,13 +141,7 @@ async def _wait_for_capacity_change(active: dict[str, asyncio.Task]) -> None:
 async def native_worker_loop(session_factory, settings_loader, poll_seconds: float = 5.0) -> None:
     emit_status("Native Downloader", "ACTIVE", "independent download and processing capacity", severity="active")
     await native_queue_signal.bind()
-    with session_factory() as db:
-        db.execute(
-            update(NativeUsenetJob)
-            .where(NativeUsenetJob.status.in_(["downloading", "postprocessing"]))
-            .values(status="queued", speed_bps=0.0, eta_seconds=None)
-        )
-        db.commit()
+    _recover_interrupted_jobs(session_factory)
 
     active: dict[str, asyncio.Task] = {}
     try:

@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import hashlib
 import json
 import os
 import shutil
@@ -8,6 +9,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Response, Request
 from fastapi.middleware.gzip import GZipMiddleware
@@ -26,15 +28,25 @@ from ..models import (
 )
 from ..newznab import NewznabClient, NewznabError, close_shared_newznab_clients
 from ..metadata import MetadataProviderError, metadata_client, metadata_provider_status
+from ..performer_search import (
+    cache_performer_search, cache_performer_search_page, cached_performer_search_page,
+    local_performer_detail, local_performer_search,
+)
+from ..studio_search import (
+    cache_studio_search, cache_studio_search_page, cached_studio_search_page,
+    local_studio_detail, local_studio_search,
+)
 from ..tpdb import close_shared_tpdb_clients
 from ..automation import automatic_search_cycle, grab_specific_release, search_and_grab_scene
 from ..monitored_entities import monitored_entity_discovery_cycle
-from ..entity_hydration import queue_adult_entity_hydration as _queue_adult_entity_hydration, run_adult_entity_hydration
+from ..entity_hydration import cache_entity_scene_summaries, queue_adult_entity_hydration as _queue_adult_entity_hydration, run_adult_entity_hydration
+from ..scene_catalog import ensure_scene_catalog, run_scene_catalog, scene_catalog_status
 from ..library_management import (
     FileImportError, ensure_library_config, import_specific_media_file,
     preview_media_rename, recycle_media_file, rename_media_file, scan_path_for_manual_import,
     seed_quality_profiles,
 )
+from ..library_reset import reset_library
 from ..schemas import (
     AdminCredentialsWrite,
     AutomationSettingsWrite,
@@ -77,7 +89,7 @@ from ..native_usenet import (
     native_client_ready, queue_rows as native_queue_rows, request_cancel as request_native_cancel,
     test_provider as test_native_provider, tool_status as native_tool_status, reprocess_completed_job as reprocess_native_completed_job,
 )
-from ..services import repair_legacy_auto_monitored_adult_entities, sync_adult_scene_entities_to_library, upsert_performer, upsert_scene, upsert_studio
+from ..services import inherit_scene_monitoring, repair_legacy_auto_monitored_adult_entities, sync_adult_scene_entities_to_library, upsert_performer, upsert_scene, upsert_studio
 from ..backups import BackupError, create_backup, list_backups, run_scheduled_backup
 from ..download_processing import process_completed_downloads as process_downloads_core
 from ..downloader_supervisor import DownloaderSupervisor
@@ -85,13 +97,13 @@ from ..notifications import emit_webhooks
 from ..rss import rss_sync_cycle
 from ..wanted import calendar_items, cutoff_unmet, disk_space, missing_items
 from ..settings_store import load_database_settings, seed_database_settings, set_setting
-from ..studio_art import StudioArtworkError, cache_studio_artwork, cached_studio_artwork, download_and_prepare_studio_artwork
+from ..studio_art import StudioArtworkError, cache_studio_artwork, cached_studio_artwork, download_and_prepare_studio_artwork, legacy_studio_artwork, prepare_studio_artwork
 from ..media_library import (
-    MediaLibraryError, asset_for, duplicate_rows, index_media_file, index_media_file_by_id,
+    GENERATED_ROOT, MediaLibraryError, asset_for, duplicate_rows, index_media_file, index_media_file_by_id,
     ensure_browser_playback, library_stats, media_row, media_rows, media_type_for, scan_library, tool_status as media_tool_status, update_playback,
 )
 from ..media_watch import media_watch_loop
-from ..remote_art import RemoteArtworkError, cached_remote_image, cached_remote_thumbnail, close_remote_art_client
+from ..remote_art import RemoteArtworkError, cached_remote_image, cached_remote_thumbnail, close_remote_art_client, official_page_preview_image
 from ..status_console import emit_status
 from ..startup_status import emit_startup_status_snapshot
 from ..migrations import (
@@ -299,13 +311,13 @@ async def resume_background_jobs(settings: Settings) -> list[asyncio.Task]:
                 payload = json.loads(job.payload or "{}")
             except (TypeError, json.JSONDecodeError):
                 payload = {}
-            needs_identifier = job.kind.endswith(("_metadata_hydration", "_monitor_search"))
+            needs_identifier = job.kind.endswith(("_metadata_hydration", "_monitor_search", "_scene_catalog"))
             if not isinstance(payload, dict) or (needs_identifier and not str(payload.get("identifier") or "").strip()):
                 job.status = "failed"
                 job.error = "Cannot resume job: saved payload is invalid or missing its identifier"
                 job.finished_at = utcnow()
                 continue
-            if job.kind in {"performer_metadata_hydration", "studio_metadata_hydration", "performer_monitor_search", "studio_monitor_search", "media_library_scan"}:
+            if job.kind in {"performer_metadata_hydration", "studio_metadata_hydration", "performer_monitor_search", "studio_monitor_search", "performer_scene_catalog", "studio_scene_catalog", "media_library_scan"}:
                 job.status = "queued"
                 job.error = None
                 job.finished_at = None
@@ -317,6 +329,9 @@ async def resume_background_jobs(settings: Settings) -> list[asyncio.Task]:
         db.commit()
     tasks: list[asyncio.Task] = []
     for job_id, kind, payload in resumable:
+        if kind.endswith("_scene_catalog"):
+            tasks.append(asyncio.create_task(run_scene_catalog(job_id, payload['entity_type'], payload['identifier'], settings)))
+            continue
         if kind.endswith("_metadata_hydration"):
             entity_type = str(payload.get("entity_type") or kind.split("_", 1)[0])
             identifier = str(payload.get("identifier") or "")
@@ -360,6 +375,8 @@ async def lifespan(_: FastAPI):
             db.commit()
         sync_adult_scene_entities_to_library(db)
         repair_legacy_auto_monitored_adult_entities(db)
+        inherit_scene_monitoring(db)
+        db.commit()
         runtime = load_database_settings(db)
         app.title = f"{runtime.app_name} API"
     await downloader_supervisor.start()
@@ -1251,6 +1268,59 @@ def failed_downloads(limit: int = Query(20, ge=1, le=500), offset: int = Query(0
     return {"scarletx": rows, "total": int(total), "limit": limit, "offset": offset}
 
 
+def _download_staging_roots(settings: Settings) -> tuple[Path, ...]:
+    incomplete_root = Path(settings.native_usenet_incomplete_dir).expanduser().resolve()
+    complete_root = Path(settings.native_usenet_complete_dir).expanduser().resolve()
+    return incomplete_root, incomplete_root.parent / "failed", complete_root
+
+
+def _remove_download_staging_path(raw_path: str | None, roots: tuple[Path, ...]) -> None:
+    if not raw_path:
+        return
+    try:
+        resolved = Path(raw_path).expanduser().resolve()
+        if not any(resolved != root and root in resolved.parents for root in roots):
+            return
+        if resolved.is_dir():
+            shutil.rmtree(resolved, ignore_errors=True)
+        elif resolved.exists():
+            resolved.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+@app.delete("/api/downloads")
+def clear_all_downloads(db: Session = Depends(get_session), settings: Settings = Depends(get_runtime_settings)):
+    jobs = db.scalars(select(NativeUsenetJob)).all()
+    tracked = db.scalars(select(TrackedDownload)).all()
+    roots = _download_staging_roots(settings)
+    active_states = {"queued", "downloading", "paused", "postprocessing", "import_pending"}
+    cancelled = 0
+    ids = {job.id for job in jobs} | {item.nzo_id for item in tracked}
+
+    for job in jobs:
+        if job.status in active_states:
+            job.cancel_requested = True
+            request_native_cancel(job.id)
+            cancelled += 1
+        for raw_path in (
+            job.output_path,
+            str(roots[0] / job.id),
+            str(roots[1] / job.id),
+            str(roots[2] / job.id),
+        ):
+            _remove_download_staging_path(raw_path, roots)
+
+    for item in tracked:
+        _remove_download_staging_path(item.storage_path, roots)
+        db.execute(delete(TrackedDownloadMeta).where(TrackedDownloadMeta.tracked_download_id == item.id))
+        db.delete(item)
+    for job in jobs:
+        db.delete(job)
+    db.commit()
+    return {"cleared": len(ids), "cancelled": cancelled}
+
+
 @app.delete("/api/downloads/failed")
 def clear_failed_downloads(db: Session = Depends(get_session), settings: Settings = Depends(get_runtime_settings)):
     jobs = db.scalars(select(NativeUsenetJob).where(NativeUsenetJob.status == "failed")).all()
@@ -1413,9 +1483,12 @@ async def search_scenes(
 
 
 @app.get("/api/metadata/scenes/{identifier}", response_model=RemoteScene)
-async def scene_detail(identifier: str, settings: Settings = Depends(get_runtime_settings)):
+async def scene_detail(identifier: str, settings: Settings = Depends(get_runtime_settings), db: Session = Depends(get_session)):
     try:
-        async with client(settings) as tpdb: return await tpdb.get_scene(identifier)
+        async with client(settings) as tpdb:
+            remote = await tpdb.get_scene(identifier)
+        upsert_scene(db, remote, monitored=False, content_type="scene")
+        return remote
     except MetadataProviderError as exc: raise HTTPException(502, str(exc)) from exc
 
 
@@ -1428,18 +1501,39 @@ async def scene_detail(identifier: str, settings: Settings = Depends(get_runtime
 
 
 @app.get("/api/search/performers", response_model=PerformerSearchResponse)
-async def search_performers(q: str = Query(min_length=2), page: int = Query(1, ge=1), settings: Settings = Depends(get_runtime_settings)):
+async def search_performers(
+    q: str = Query(min_length=2), page: int = Query(1, ge=1),
+    settings: Settings = Depends(get_runtime_settings),
+    source: Literal['auto', 'local', 'online'] = 'auto',
+):
+    if source in {'auto', 'local'}:
+        local = await asyncio.to_thread(local_performer_search, SessionLocal, q, page)
+        if source == 'local' or local.items:
+            return local
+    _, cached = await asyncio.to_thread(cached_performer_search_page, settings, q, page)
+    if cached is not None:
+        await asyncio.to_thread(cache_performer_search, SessionLocal, cached.items)
+        return cached
     try:
-        async with client(settings) as tpdb: return await tpdb.search_performers(q, page)
+        async with client(settings) as tpdb:
+            result = await tpdb.search_performers(q, page)
+        # Persist image URLs before returning cards, so each card does not need a
+        # second provider detail lookup. Database work never blocks the event loop.
+        await asyncio.to_thread(cache_performer_search, SessionLocal, result.items)
+        await asyncio.to_thread(cache_performer_search_page, settings, q, result)
+        return result
     except MetadataProviderError as exc: raise HTTPException(502, str(exc)) from exc
 
 
 @app.get("/api/metadata/performers/{identifier}", response_model=RemotePerson)
-async def performer_detail(identifier: str, name: str | None = None, settings: Settings = Depends(get_runtime_settings)):
+async def performer_detail(identifier: str, name: str | None = None, settings: Settings = Depends(get_runtime_settings), db: Session = Depends(get_session)):
+    local = await asyncio.to_thread(local_performer_detail, SessionLocal, identifier)
+    if local is not None:
+        return local
     try:
         async with client(settings) as tpdb:
             try:
-                return await tpdb.get_performer(identifier)
+                remote = await tpdb.get_performer(identifier)
             except MetadataProviderError:
                 if not name:
                     raise
@@ -1450,8 +1544,11 @@ async def performer_detail(identifier: str, name: str | None = None, settings: S
                     None,
                 )
                 if match:
-                    return match
-                raise
+                    remote = match
+                else:
+                    raise
+        await asyncio.to_thread(cache_performer_search, SessionLocal, [remote])
+        return remote
     except MetadataProviderError as exc: raise HTTPException(502, str(exc)) from exc
 
 
@@ -1502,17 +1599,27 @@ async def performer_scenes(
         raise HTTPException(502, str(exc)) from exc
 
 
+def _profile_artwork_urls(db: Session, model, identifier: str, fields: tuple[str, ...]) -> list[str]:
+    try:
+        local = db.scalar(select(model).where(model.tpdb_id == identifier).limit(1))
+        if local is None and identifier.isdigit():
+            local = db.get(model, int(identifier))
+        return [value for field in fields if local is not None and (value := getattr(local, field))]
+    finally:
+        # Never reserve a pooled connection while awaiting an external image.
+        db.close()
+
+
 @app.get("/api/artwork/performers/{identifier}")
 async def performer_artwork(identifier: str, size: str = Query("full", pattern="^(full|card)$"), db: Session = Depends(get_session), settings: Settings = Depends(get_runtime_settings)):
     try:
-        local = db.scalar(select(Performer).where(Performer.tpdb_id == identifier).limit(1))
-        if local is None and identifier.isdigit():
-            local = db.get(Performer, int(identifier))
-        image_url = local.image_url if local else None
+        urls = await asyncio.to_thread(_profile_artwork_urls, db, Performer, identifier, ('image_url',))
+        image_url = urls[0] if urls else None
         if not image_url:
             async with client(settings) as tpdb:
                 performer = await tpdb.get_performer(identifier)
             image_url = performer.image_url
+            await asyncio.to_thread(cache_performer_search, SessionLocal, [performer])
         if not image_url:
             raise HTTPException(404, "Performer artwork not found")
         if size == "card":
@@ -1546,19 +1653,34 @@ async def scene_artwork(
             )
             if value
         ]
-        if not urls:
+        source_url = local.source_url if local else None
+        if not urls and not source_url:
             async with client(settings) as tpdb:
                 scene = await tpdb.get_scene(identifier)
             urls = [value for value in (scene.back_image_url, scene.image_url, scene.poster_url) if value]
+            source_url = scene.source_url
+        if not urls:
+            preview_url = await official_page_preview_image(source_url)
+            if preview_url:
+                urls = [preview_url]
+                if local is not None:
+                    local.image_url = preview_url
+                    local.back_image_url = preview_url
+                    local.poster_url = preview_url
+                    db.commit()
         if not urls:
             raise HTTPException(404, "Scene artwork not found")
+        # Include the selected artwork sources so an updated scene cannot reuse
+        # the image cached for a prior version of its metadata.
+        source_fingerprint = hashlib.sha256("\x1f".join(urls).encode()).hexdigest()[:16]
+        cache_key = f"scene:{identifier}:{source_fingerprint}"
         if size == "card":
             image, media_type = await cached_remote_thumbnail(
-                f"scene:{identifier}", urls, (320, 180)
+                cache_key, urls, (320, 180)
             )
             cache_control = "private, max-age=604800, immutable"
         else:
-            image, media_type = await cached_remote_image(f"scene:{identifier}", urls)
+            image, media_type = await cached_remote_image(cache_key, urls)
             cache_control = "private, max-age=86400"
         return Response(content=image, media_type=media_type, headers={"Cache-Control": cache_control})
     except MetadataProviderError as exc:
@@ -1570,23 +1692,25 @@ async def scene_artwork(
 @app.get("/api/artwork/studios/{identifier}")
 async def studio_artwork(identifier: str, size: str = Query("full", pattern="^(full|card)$"), db: Session = Depends(get_session), settings: Settings = Depends(get_runtime_settings)):
     try:
-        local = db.scalar(select(Studio).where(Studio.tpdb_id == identifier).limit(1))
-        if local is None and identifier.isdigit():
-            local = db.get(Studio, int(identifier))
-        local_urls = [value for value in ((local.logo_url if local else None), (local.poster_url if local else None)) if value]
+        local_urls = await asyncio.to_thread(_profile_artwork_urls, db, Studio, identifier, ('logo_url', 'poster_url'))
         if size == "card" and local_urls:
             image, media_type = await cached_remote_thumbnail(f"studio:{identifier}", local_urls, (400, 175), contain=True)
             return Response(content=image, media_type=media_type, headers={"Cache-Control": "public, max-age=604800, immutable"})
         image = cached_studio_artwork(identifier)
         if image is None:
-            urls = local_urls
-            if not urls:
-                async with client(settings) as tpdb:
-                    studio = await tpdb.get_studio(identifier)
-                urls = [value for value in (studio.logo_url, studio.poster_url) if value]
-            if not urls:
-                raise HTTPException(404, "Studio artwork not found")
-            image = await download_and_prepare_studio_artwork(urls)
+            legacy = legacy_studio_artwork(identifier)
+            if legacy is not None:
+                image = prepare_studio_artwork(legacy, color_seed=identifier)
+            else:
+                urls = local_urls
+                if not urls:
+                    async with client(settings) as tpdb:
+                        studio = await tpdb.get_studio(identifier)
+                    await asyncio.to_thread(cache_studio_search, SessionLocal, [studio])
+                    urls = [value for value in (studio.logo_url, studio.poster_url) if value]
+                if not urls:
+                    raise HTTPException(404, "Studio artwork not found")
+                image = await download_and_prepare_studio_artwork(urls, color_seed=identifier)
             cache_studio_artwork(identifier, image)
         return Response(
             content=image,
@@ -1600,16 +1724,40 @@ async def studio_artwork(identifier: str, size: str = Query("full", pattern="^(f
 
 
 @app.get("/api/search/studios", response_model=StudioSearchResponse)
-async def search_studios(q: str = Query(min_length=2), page: int = Query(1, ge=1), settings: Settings = Depends(get_runtime_settings)):
+async def search_studios(
+    q: str = Query(min_length=2), page: int = Query(1, ge=1),
+    settings: Settings = Depends(get_runtime_settings),
+    source: Literal['auto', 'local', 'online'] = 'auto',
+):
+    if source == 'local':
+        return await asyncio.to_thread(local_studio_search, SessionLocal, q, page)
+    known_query, cached = await asyncio.to_thread(cached_studio_search_page, settings, q, page)
+    if cached is not None:
+        await asyncio.to_thread(cache_studio_search, SessionLocal, cached.items)
+        return cached
+    if source == 'auto' and not known_query:
+        local = await asyncio.to_thread(local_studio_search, SessionLocal, q, page)
+        if local.items:
+            return local
     try:
-        async with client(settings) as tpdb: return await tpdb.search_studios(q, page)
+        async with client(settings) as tpdb:
+            result = await tpdb.search_studios(q, page)
+        await asyncio.to_thread(cache_studio_search, SessionLocal, result.items)
+        await asyncio.to_thread(cache_studio_search_page, settings, q, result)
+        return result
     except MetadataProviderError as exc: raise HTTPException(502, str(exc)) from exc
 
 
 @app.get("/api/metadata/studios/{identifier}", response_model=RemoteStudio)
-async def studio_detail(identifier: str, settings: Settings = Depends(get_runtime_settings)):
+async def studio_detail(identifier: str, settings: Settings = Depends(get_runtime_settings), db: Session = Depends(get_session)):
+    local = await asyncio.to_thread(local_studio_detail, SessionLocal, identifier)
+    if local is not None:
+        return local
     try:
-        async with client(settings) as tpdb: return await tpdb.get_studio(identifier)
+        async with client(settings) as tpdb:
+            remote = await tpdb.get_studio(identifier)
+        await asyncio.to_thread(cache_studio_search, SessionLocal, [remote])
+        return remote
     except MetadataProviderError as exc: raise HTTPException(502, str(exc)) from exc
 
 
@@ -1757,7 +1905,9 @@ async def _all_adult_entity_scenes(
                 new_items += 1
             # TPDB total includes creator/tube entries filtered by ScarletX. Keep
             # paging even if an individual page contains only blocked results.
-            if page * per_page >= response.total:
+            if response.page != page or response.per_page < 1:
+                raise MetadataProviderError(f"TPDB returned invalid pagination for page {page}")
+            if page * response.per_page >= response.total:
                 break
             page += 1
             if page > 1000:
@@ -1778,13 +1928,10 @@ async def run_adult_entity_monitor_search(job_id: int, entity_type: str, identif
         remote_scenes, metadata_warning = await _all_adult_entity_scenes(entity_type, identifier, settings)
         if not remote_scenes and metadata_warning:
             raise MetadataProviderError(metadata_warning)
-        scene_ids: list[int] = []
-        with SessionLocal() as db:
-            for remote in remote_scenes:
-                scene = upsert_scene(db, remote, True, "scene")
-                ensure_library_config(db, scene)
-                scene_ids.append(scene.id)
-            db.commit()
+        scene_ids = await asyncio.to_thread(
+            cache_entity_scene_summaries, remote_scenes, False,
+            entity_type=entity_type, identifier=identifier,
+        )
 
         results = []
         for position, scene_id in enumerate(scene_ids, start=1):
@@ -1871,6 +2018,11 @@ async def import_performer(identifier: str, request: ImportRequest, tasks: Backg
     try:
         async with client(settings) as tpdb: remote = await tpdb.get_performer(identifier)
         performer = upsert_performer(db, remote, request.monitored)
+        if request.monitored:
+            performer.monitored = True
+            db.flush()
+            inherit_scene_monitoring(db)
+            db.commit()
         job_id = _queue_adult_entity_hydration(
             db, tasks, "performer", identifier, settings,
             search_when_monitored=request.monitored,
@@ -1884,6 +2036,11 @@ async def import_studio(identifier: str, request: ImportRequest, tasks: Backgrou
     try:
         async with client(settings) as tpdb: remote = await tpdb.get_studio(identifier)
         studio = upsert_studio(db, remote, request.monitored)
+        if request.monitored:
+            studio.monitored = True
+            db.flush()
+            inherit_scene_monitoring(db)
+            db.commit()
         job_id = _queue_adult_entity_hydration(
             db, tasks, "studio", identifier, settings,
             search_when_monitored=request.monitored,
@@ -1904,10 +2061,51 @@ async def monitor_performer(
     if not item or not item.is_library:
         raise HTTPException(404, "Performer not found in library")
     item.monitored = request.monitored
+    if request.monitored:
+        db.flush()
+        inherit_scene_monitoring(db)
     db.add(History(event_type="performer_monitoring_changed", message=f"{'Monitored' if request.monitored else 'Unmonitored'} performer {item.name}"))
     db.commit()
     job_id = _queue_adult_entity_monitor_search(db, tasks, "performer", item.tpdb_id, settings) if request.monitored else None
     return {"id": item.id, "tpdb_id": item.tpdb_id, "name": item.name, "monitored": item.monitored, "job_id": job_id}
+
+
+@app.post("/api/library/performers/{item_id}/refresh", status_code=202)
+def refresh_performer(item_id: int, tasks: BackgroundTasks, db: Session = Depends(get_session), settings: Settings = Depends(get_runtime_settings)):
+    item = db.get(Performer, item_id)
+    if not item or not item.is_library:
+        raise HTTPException(404, "Performer not found in library")
+    return ensure_scene_catalog(db, tasks, "performer", item.tpdb_id, settings, force=True)
+
+
+@app.post("/api/library/studios/{item_id}/refresh", status_code=202)
+def refresh_studio(item_id: int, tasks: BackgroundTasks, db: Session = Depends(get_session), settings: Settings = Depends(get_runtime_settings)):
+    item = db.get(Studio, item_id)
+    if not item or not item.is_library:
+        raise HTTPException(404, "Studio not found in library")
+    return ensure_scene_catalog(db, tasks, "studio", item.tpdb_id, settings, force=True)
+
+
+def _catalog_entity(db, entity_type, item_id):
+    model = {"performers": Performer, "studios": Studio}.get(entity_type)
+    if model is None:
+        raise HTTPException(404, "Unknown library type")
+    item = db.get(model, item_id)
+    if item is None or not item.is_library:
+        raise HTTPException(404, "Item not found in library")
+    return item
+
+
+@app.post("/api/library/{entity_type}/{item_id}/scene-catalog", status_code=202)
+def start_profile_catalog(entity_type: str, item_id: int, tasks: BackgroundTasks, db: Session = Depends(get_session), settings: Settings = Depends(get_runtime_settings)):
+    item = _catalog_entity(db, entity_type, item_id)
+    return ensure_scene_catalog(db, tasks, entity_type[:-1], item.tpdb_id, settings)
+
+
+@app.get("/api/library/{entity_type}/{item_id}/scene-catalog")
+def profile_catalog_status(entity_type: str, item_id: int, db: Session = Depends(get_session)):
+    item = _catalog_entity(db, entity_type, item_id)
+    return scene_catalog_status(db, entity_type[:-1], item.tpdb_id)
 
 
 @app.patch("/api/library/studios/{item_id}/monitor")
@@ -1922,6 +2120,9 @@ async def monitor_studio(
     if not item or not item.is_library:
         raise HTTPException(404, "Studio not found in library")
     item.monitored = request.monitored
+    if request.monitored:
+        db.flush()
+        inherit_scene_monitoring(db)
     db.add(History(event_type="studio_monitoring_changed", message=f"{'Monitored' if request.monitored else 'Unmonitored'} studio {item.name}"))
     db.commit()
     job_id = _queue_adult_entity_monitor_search(db, tasks, "studio", item.tpdb_id, settings) if request.monitored else None
@@ -2025,8 +2226,9 @@ def _scene_summary_rows(db: Session, *, limit: int, offset: int = 0, q: str | No
 
 
 @app.get("/api/library/scenes/page")
-def library_scene_page(limit: int = Query(100, ge=1, le=250), offset: int = Query(0, ge=0), cursor: str | None = None, q: str | None = None, db: Session = Depends(get_session)):
-    return scene_summary_page(db, limit=limit, offset=offset, q=q, cursor=cursor)
+def library_scene_page(limit: int = Query(100, ge=1, le=250), offset: int = Query(0, ge=0), cursor: str | None = None, q: str | None = None, status: str | None = None, db: Session = Depends(get_session)):
+    if status not in {None, "downloaded", "monitored"}: raise HTTPException(422, "Invalid scene filter")
+    return scene_summary_page(db, limit=limit, offset=offset, q=q, cursor=cursor, status=status)
 
 
 @app.get("/api/library/scenes/{item_id}/detail")
@@ -2042,7 +2244,7 @@ def _media_library_rows_for_ids(db: Session, ids: list[int]) -> list[dict]:
     result=[]
     for item in items:
         config=ensure_library_config(db,item);root=db.get(RootFolder,config.root_folder_id) if config.root_folder_id else None;profile=db.get(QualityProfile,config.quality_profile_id) if config.quality_profile_id else None;media=db.scalars(select(MediaFile).where(MediaFile.scene_id==item.id).order_by(MediaFile.imported_at.desc())).all();user_tags=db.execute(select(UserTag).join(library_user_tag,library_user_tag.c.tag_id==UserTag.id).where(library_user_tag.c.scene_id==item.id)).scalars().all()
-        result.append({"id":item.id,"tpdb_id":item.tpdb_id,"title":item.title,"description":item.description,"duration":item.duration,"release_date":item.release_date,"image_url":item.poster_url or item.image_url,"back_image_url":item.back_image_url,"monitored":item.monitored,"studio":item.studio.name if item.studio else None,"studio_id":item.studio.tpdb_id if item.studio else None,"performers":[{"id":x.tpdb_id,"name":x.name,"image_url":x.image_url} for x in item.performers],"tags":[x.name for x in item.tags],"user_tags":[{"id":x.id,"name":x.name,"label":x.label} for x in user_tags],"root_folder":_root_folder_dict(root) if root else None,"quality_profile":_quality_profile_dict(profile) if profile else None,"search_enabled":config.search_enabled,"last_search_at":config.last_search_at,"files":[{"id":f.id,"path":f.path,"size_bytes":f.size_bytes,"quality":f.quality,"release_title":f.release_title} for f in media]})
+        result.append({"id":item.id,"tpdb_id":item.tpdb_id,"title":item.title,"description":item.description,"duration":item.duration,"release_date":item.release_date,"image_url":item.poster_url or item.image_url,"back_image_url":item.back_image_url,"monitored":item.monitored,"studio":item.studio.name if item.studio else None,"studio_id":item.studio.tpdb_id if item.studio else None,"performers":[{"id":x.tpdb_id,"name":x.name,"image_url":x.image_url} for x in item.performers],"tags":[x.name for x in item.tags],"user_tags":[{"id":x.id,"name":x.name,"label":x.label} for x in user_tags],"root_folder":_root_folder_dict(root) if root else None,"quality_profile":_quality_profile_dict(profile) if profile else None,"search_enabled":config.search_enabled,"last_search_at":config.last_search_at,"files":[{"id":f.id,"path":f.path,"size_bytes":f.size_bytes,"quality":f.quality,"release_title":f.release_title,"missing":not Path(f.path).exists()} for f in media]})
     db.commit(); return result
 
 
@@ -2138,6 +2340,8 @@ def assign_library_tags(item_id: int, request: LibraryTagsWrite, db: Session = D
 
 
 def _cached_profile_scene_page(db: Session, stmt, page: int, per_page: int) -> dict:
+    from ..studio_policy import library_scene_policy_filter
+    stmt = stmt.where(library_scene_policy_filter(db))
     total = int(db.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
     scenes = db.scalars(stmt.options(selectinload(Scene.studio), selectinload(Scene.performers)).order_by(Scene.release_date.desc(), Scene.id.desc()).offset((page-1)*per_page).limit(per_page)).unique().all()
     scene_ids = [scene.id for scene in scenes]
@@ -2279,10 +2483,10 @@ async def search_wanted(limit: int = Query(25, ge=1, le=100), db: Session = Depe
 
 
 @app.get("/api/calendar")
-def calendar(start: date | None = None, end: date | None = None, limit: int = Query(500, ge=1, le=2000), db: Session = Depends(get_session)):
+def calendar(start: date | None = None, end: date | None = None, limit: int = Query(500, ge=1, le=2000), monitored_only: bool = False, db: Session = Depends(get_session)):
     today = date.today(); start = start or today; end = end or (today + timedelta(days=30))
     if end < start: raise HTTPException(422, "Calendar end must not be before start")
-    return calendar_items(db, start, end, limit)
+    return calendar_items(db, start, end, limit, direct_only=monitored_only)
 
 
 
@@ -2293,13 +2497,14 @@ def system_diskspace(db: Session = Depends(get_session)):
 
 
 @app.get("/api/library/performers/page")
-def performers_library_page(limit: int = Query(60, ge=1, le=200), offset: int = Query(0, ge=0), cursor: str | None = None, q: str | None = None, db: Session = Depends(get_session)):
-    return performer_summary_page(db, limit=limit, offset=offset, cursor=cursor, q=q)
+def performers_library_page(limit: int = Query(60, ge=1, le=200), offset: int = Query(0, ge=0), cursor: str | None = None, q: str | None = None, gender: str | None = None, monitored_only: bool = False, db: Session = Depends(get_session)):
+    if gender not in {None, "female", "male"}: raise HTTPException(422, "Invalid performer filter")
+    return performer_summary_page(db, limit=limit, offset=offset, cursor=cursor, q=q, gender=gender, monitored_only=monitored_only)
 
 
 @app.get("/api/library/studios/page")
-def studios_library_page(limit: int = Query(60, ge=1, le=200), offset: int = Query(0, ge=0), cursor: str | None = None, q: str | None = None, db: Session = Depends(get_session)):
-    return studio_summary_page(db, limit=limit, offset=offset, cursor=cursor, q=q)
+def studios_library_page(limit: int = Query(60, ge=1, le=200), offset: int = Query(0, ge=0), cursor: str | None = None, q: str | None = None, monitored_only: bool = False, db: Session = Depends(get_session)):
+    return studio_summary_page(db, limit=limit, offset=offset, cursor=cursor, q=q, monitored_only=monitored_only)
 
 
 @app.get("/api/library/performers/{item_id}/detail")
@@ -2326,11 +2531,27 @@ def performer_library_detail(item_id: int, db: Session = Depends(get_session)):
     }
 
 
+@app.get("/api/library/performers/by-tpdb/{identifier}/detail")
+def performer_library_detail_by_tpdb(identifier: str, db: Session = Depends(get_session)):
+    performer = db.scalar(select(Performer).where(Performer.tpdb_id == identifier, Performer.is_library.is_(True)).limit(1))
+    if not performer:
+        raise HTTPException(404, "Performer not found in library")
+    return performer_library_detail(performer.id, db)
+
+
 @app.get("/api/library/studios/{item_id}/detail")
 def studio_library_detail(item_id: int, db: Session = Depends(get_session)):
     x=db.get(Studio,item_id)
     if not x or not x.is_library: raise HTTPException(404,"Studio not found in library")
     return {"id":x.id,"tpdb_id":x.tpdb_id,"name":x.name,"image_url":x.poster_url or x.logo_url,"poster_url":x.poster_url,"logo_url":x.logo_url,"url":x.url,"description":x.description,"monitored":x.monitored}
+
+
+@app.get("/api/library/studios/by-tpdb/{identifier}/detail")
+def studio_library_detail_by_tpdb(identifier: str, db: Session = Depends(get_session)):
+    studio = db.scalar(select(Studio).where(Studio.tpdb_id == identifier, Studio.is_library.is_(True)).limit(1))
+    if not studio:
+        raise HTTPException(404, "Studio not found in library")
+    return studio_library_detail(studio.id, db)
 
 
 @app.get("/api/library/performers")
@@ -2384,18 +2605,87 @@ def remove_studio(item_id: int, db: Session = Depends(get_session)):
 
 
 async def run_refresh(job_id: int, scene_id: int, settings: Settings):
+    """Refresh one scene without holding a database connection during network I/O."""
     with SessionLocal() as db:
-        job=db.get(BackgroundJob,job_id)
-        if job is None:return
-        job.status="running";db.commit()
-        try:
-            scene=db.get(Scene,scene_id)
-            if scene is None or scene.content_type != "scene":raise ValueError("Scene no longer exists")
-            async with client(settings) as metadata:remote=await metadata.get_scene(scene.tpdb_id)
-            upsert_scene(db,remote,scene.monitored,"scene");job=db.get(BackgroundJob,job_id);job.status="completed";job.finished_at=utcnow();db.commit()
-        except Exception as exc:
-            job=db.get(BackgroundJob,job_id)
-            if job:job.status="failed";job.error=str(exc)[:1000];job.finished_at=utcnow();db.commit()
+        job = db.get(BackgroundJob, job_id)
+        scene = db.get(Scene, scene_id)
+        if job is None or scene is None or scene.content_type != "scene":
+            return
+        job.status = "running"
+        db.commit()
+        identifier, monitored = scene.tpdb_id, scene.monitored
+    try:
+        async with client(settings) as metadata:
+            remote = await metadata.get_scene(identifier)
+        with SessionLocal() as db:
+            scene = db.get(Scene, scene_id)
+            if scene is None or scene.content_type != "scene":
+                raise ValueError("Scene no longer exists")
+            upsert_scene(db, remote, monitored, "scene")
+            job = db.get(BackgroundJob, job_id)
+            if job:
+                job.status = "completed"
+                job.finished_at = utcnow()
+            db.commit()
+    except Exception as exc:
+        with SessionLocal() as db:
+            job = db.get(BackgroundJob, job_id)
+            if job:
+                job.status = "failed"
+                job.error = str(exc)[:1000]
+                job.finished_at = utcnow()
+                db.commit()
+
+
+async def run_refresh_batch(job_id: int, settings: Settings):
+    """Refresh the scene library one at a time so it cannot exhaust the DB pool."""
+    with SessionLocal() as db:
+        job = db.get(BackgroundJob, job_id)
+        if job is None:
+            return
+        job.status = "running"
+        scenes = db.execute(
+            select(Scene.id, Scene.tpdb_id, Scene.monitored).where(Scene.content_type == "scene")
+        ).all()
+        job.payload = json.dumps({"total": len(scenes), "completed": 0, "failed": 0})
+        db.commit()
+
+    completed = failed = 0
+    try:
+        async with client(settings) as metadata:
+            for scene_id, identifier, monitored in scenes:
+                try:
+                    remote = await metadata.get_scene(identifier)
+                    with SessionLocal() as db:
+                        scene = db.get(Scene, scene_id)
+                        if scene is None or scene.content_type != "scene":
+                            raise ValueError("Scene no longer exists")
+                        upsert_scene(db, remote, monitored, "scene")
+                        db.commit()
+                    completed += 1
+                except Exception:
+                    failed += 1
+                if (completed + failed) % 10 == 0:
+                    with SessionLocal() as db:
+                        job = db.get(BackgroundJob, job_id)
+                        if job:
+                            job.payload = json.dumps({"total": len(scenes), "completed": completed, "failed": failed})
+                            db.commit()
+        with SessionLocal() as db:
+            job = db.get(BackgroundJob, job_id)
+            if job:
+                job.status = "completed"
+                job.payload = json.dumps({"total": len(scenes), "completed": completed, "failed": failed})
+                job.finished_at = utcnow()
+                db.commit()
+    except Exception as exc:
+        with SessionLocal() as db:
+            job = db.get(BackgroundJob, job_id)
+            if job:
+                job.status = "failed"
+                job.error = str(exc)[:1000]
+                job.finished_at = utcnow()
+                db.commit()
 
 
 
@@ -2406,6 +2696,24 @@ def refresh(scene_id: int, tasks: BackgroundTasks, db: Session = Depends(get_ses
     job = BackgroundJob(kind="metadata_refresh", payload=json.dumps({"scene_id": scene_id, "content_type": "scene"})); db.add(job); db.commit(); db.refresh(job)
     tasks.add_task(run_refresh, job.id, scene_id, settings)
     return {"job_id":job.id,"status":job.status}
+
+
+@app.post("/api/library/scenes/refresh", status_code=202)
+def refresh_library(tasks: BackgroundTasks, db: Session = Depends(get_session), settings: Settings = Depends(get_runtime_settings)):
+    running = db.scalar(
+        select(BackgroundJob).where(
+            BackgroundJob.kind == "metadata_refresh_batch",
+            BackgroundJob.status.in_(("queued", "running")),
+        ).order_by(BackgroundJob.created_at.desc()).limit(1)
+    )
+    if running is not None:
+        return {"job_id": running.id, "status": running.status, "already_running": True}
+    job = BackgroundJob(kind="metadata_refresh_batch", payload="{}")
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    tasks.add_task(run_refresh_batch, job.id, settings)
+    return {"job_id": job.id, "status": job.status, "already_running": False}
 
 
 
@@ -2500,7 +2808,7 @@ def _activity_queue_data(db: Session) -> dict:
             (TrackedDownload.status.in_(active_states)) |
             (TrackedDownload.client_status.in_(active_states)) |
             (TrackedDownload.nzo_id.in_(native_active))
-        ).order_by(TrackedDownload.created_at.asc()).limit(200)
+        ).order_by(TrackedDownload.created_at.asc())
     ).all()
     return {"tracked": _tracked_download_rows(db, items), "clients": {"scarletx": native_queue_rows(db)}}
 
@@ -2588,7 +2896,9 @@ def system_status(db: Session = Depends(get_session)):
     today = datetime.now(UTC).date()
     wanted_count = db.scalar(select(func.count(Scene.id)).where(Scene.content_type=="scene", Scene.monitored.is_(True), ~select(MediaFile.id).where(MediaFile.scene_id==Scene.id).exists())) or 0
     upcoming_count = db.scalar(select(func.count(Scene.id)).where(Scene.content_type=="scene", Scene.monitored.is_(True), Scene.release_date>=today)) or 0
-    result = {"version":app.version,"app_name":settings.app_name,"database":engine.url.get_backend_name(),"library":{"scene":db.scalar(select(func.count(Scene.id)).where(Scene.content_type=="scene")) or 0},"performers":db.scalar(select(func.count(Performer.id)).where(Performer.is_library.is_(True))) or 0,"studios":db.scalar(select(func.count(Studio.id)).where(Studio.is_library.is_(True))) or 0,"media_files":db.scalar(select(func.count(MediaFile.id))) or 0,"wanted":int(wanted_count),"upcoming":int(upcoming_count),"tracked_downloads":db.scalar(select(func.count(TrackedDownload.id))) or 0,"native_usenet_jobs":db.scalar(select(func.count(NativeUsenetJob.id))) or 0,"download_client":resolve_client(settings),"rss_seen":db.scalar(select(func.count(IndexerFeedItem.id))) or 0}
+    monitored_performers = db.scalar(select(func.count(func.distinct(Performer.id))).join(scene_performer, scene_performer.c.performer_id == Performer.id).join(Scene, Scene.id == scene_performer.c.scene_id).where(Performer.is_library.is_(True), Scene.content_type == "scene", Scene.monitored.is_(True))) or 0
+    monitored_studios = db.scalar(select(func.count(func.distinct(Studio.id))).join(Scene, Scene.studio_id == Studio.id).where(Studio.is_library.is_(True), Scene.content_type == "scene", Scene.monitored.is_(True))) or 0
+    result = {"version":app.version,"app_name":settings.app_name,"database":engine.url.get_backend_name(),"library":{"scene":db.scalar(select(func.count(Scene.id)).where(Scene.content_type=="scene")) or 0},"performers":int(monitored_performers),"studios":int(monitored_studios),"media_files":db.scalar(select(func.count(MediaFile.id))) or 0,"wanted":int(wanted_count),"upcoming":int(upcoming_count),"tracked_downloads":db.scalar(select(func.count(TrackedDownload.id))) or 0,"native_usenet_jobs":db.scalar(select(func.count(NativeUsenetJob.id))) or 0,"download_client":resolve_client(settings),"rss_seen":db.scalar(select(func.count(IndexerFeedItem.id))) or 0}
     _SYSTEM_STATUS_CACHE = (now, result)
     return result
 
@@ -2615,6 +2925,14 @@ async def system_health(db: Session = Depends(get_session), settings: Settings =
     checks.extend({"name": f"download:{state['provider']}", "status": "ok" if state.get("connected") else ("warning" if not state.get("configured") else "error"), **state} for state in selected_states)
     overall = "error" if any(x.get("status") == "error" for x in checks) else "warning" if any(x.get("status") == "warning" for x in checks) else "ok"
     return {"status": overall, "checks": checks}
+
+
+@app.post("/api/system/start-over")
+def system_start_over(db: Session = Depends(get_session)):
+    root_paths = db.scalars(
+        select(RootFolder.path).where(RootFolder.content_type == "scene")
+    ).all()
+    return reset_library(db, root_paths=root_paths, generated_root=GENERATED_ROOT)
 
 
 

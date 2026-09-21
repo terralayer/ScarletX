@@ -5,6 +5,7 @@ import re
 import os
 import shutil
 from dataclasses import dataclass
+from datetime import UTC, date, datetime, time
 from pathlib import Path
 
 from sqlalchemy import select
@@ -259,6 +260,20 @@ def _place_file(source: Path, destination: Path, mode: str) -> None:
     raise FileImportError(f"Unsupported import mode: {mode}")
 
 
+def _set_release_date_mtime(path: Path, release_date: date | None) -> None:
+    """Make file-manager sorting by Modified date follow the scene release date."""
+    if release_date is None:
+        return
+    # Noon UTC keeps the displayed calendar date stable for the common local
+    # time zones used by Finder and Windows Explorer, without re-encoding media.
+    timestamp = datetime.combine(release_date, time(12), tzinfo=UTC).timestamp()
+    try:
+        current = path.stat()
+        os.utime(path, (current.st_atime, timestamp))
+    except OSError as exc:
+        raise FileImportError(f"Could not set release date on media file: {exc}") from exc
+
+
 def _root_for_scene(db: Session, scene: Scene) -> tuple[RootFolder, Path]:
     config = ensure_library_config(db, scene)
     root = db.get(RootFolder, config.root_folder_id) if config.root_folder_id else default_root_folder(db, scene.content_type)
@@ -299,6 +314,7 @@ def import_specific_media_file(
     size = source.stat().st_size
     _check_free_space(root_path, size, settings)
     _place_file(source, final, import_mode or settings.import_mode)
+    _set_release_date_mtime(final, scene.release_date)
     final_size = final.stat().st_size if final.exists() else size
     media = db.scalar(select(MediaFile).where(MediaFile.path == str(final)))
     if media is None:

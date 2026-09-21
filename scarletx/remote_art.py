@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from uuid import uuid4
@@ -174,6 +175,33 @@ async def _load_original(key: str, urls: list[str]) -> tuple[bytes, str]:
 
 async def cached_remote_image(key: str, urls: list[str]) -> tuple[bytes, str]:
     return await _shared_job(("original", key), lambda: _load_original(key, urls))
+
+
+async def official_page_preview_image(source_url: str | None) -> str | None:
+    """Return the public Open Graph image advertised by an official scene page."""
+    if not source_url:
+        return None
+    try:
+        await asyncio.to_thread(validate_public_https_url, source_url)
+        response = await _art_client().get(source_url, headers={"Accept": "text/html"}, follow_redirects=False)
+        response.raise_for_status()
+    except (httpx.HTTPError, ValueError):
+        return None
+    if "html" not in (response.headers.get("content-type") or "").casefold():
+        return None
+    html = response.text[:1_000_000]
+    match = re.search(
+        r"<meta[^>]+(?:property|name)=[\"'](?:og:image|twitter:image)[\"'][^>]+content=[\"']([^\"']+)",
+        html,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        match = re.search(
+            r"<meta[^>]+content=[\"']([^\"']+)[^>]+(?:property|name)=[\"'](?:og:image|twitter:image)[\"']",
+            html,
+            flags=re.IGNORECASE,
+        )
+    return match.group(1).strip() if match else None
 
 
 def _read_thumbnail(path: Path) -> bytes | None:

@@ -448,7 +448,7 @@ def media_rows(db: Session, rows: list[MediaFile]) -> list[dict[str, Any]]:
             "release_date": scene.release_date if scene else None,
             "path": media.path, "filename": Path(media.path).name, "size_bytes": media.size_bytes,
             "quality": media.quality, "release_title": media.release_title, "imported_at": media.imported_at,
-            "missing": bool(probe.missing) if probe else not Path(media.path).exists(),
+            "missing": bool(probe.missing) or not Path(media.path).exists() if probe else not Path(media.path).exists(),
             "duration_seconds": probe.duration_seconds if probe else None, "width": probe.width if probe else None,
             "height": probe.height if probe else None, "video_codec": probe.video_codec if probe else None,
             "audio_codec": probe.audio_codec if probe else None, "container": probe.container if probe else None,
@@ -472,13 +472,17 @@ def media_row(db: Session, media: MediaFile) -> dict[str, Any]:
         "scene_id": media.scene_id,
         "scene_title": scene.title if scene else media.release_title or Path(media.path).stem,
         "studio": scene.studio.name if scene and scene.studio else None,
+        "description": scene.description if scene else None,
+        "release_date": scene.release_date if scene else None,
+        "performers": [{"id": performer.tpdb_id, "name": performer.name} for performer in scene.performers] if scene else [],
+        "tags": [tag.name for tag in scene.tags] if scene else [],
         "path": media.path,
         "filename": Path(media.path).name,
         "size_bytes": media.size_bytes,
         "quality": media.quality,
         "release_title": media.release_title,
         "imported_at": media.imported_at,
-        "missing": bool(probe.missing) if probe else not Path(media.path).exists(),
+        "missing": bool(probe.missing) or not Path(media.path).exists() if probe else not Path(media.path).exists(),
         "duration_seconds": probe.duration_seconds if probe else None,
         "width": probe.width if probe else None,
         "height": probe.height if probe else None,
@@ -601,12 +605,15 @@ def ensure_browser_playback(
     temporary.unlink(missing_ok=True)
     command = [
         "ffmpeg", "-y", "-v", "error", "-i", str(source),
-        "-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn",
     ]
-    if vcodec in {"h264", "avc1"}:
-        command += ["-c:v", "copy"]
+    if vcodec:
+        command += ["-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn"]
+        if vcodec in {"h264", "avc1"}:
+            command += ["-c:v", "copy"]
+        else:
+            command += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", "-threads", "2"]
     else:
-        command += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", "-threads", "2"]
+        command += ["-map", "0:a:0", "-vn", "-sn", "-dn"]
     if acodec is None:
         command += ["-an"]
     elif acodec == "aac":

@@ -25,19 +25,23 @@ def make_factory():
 
 
 def test_entity_requests_use_page_local_sequence_not_global_navigation_generation():
-    source = (ROOT / "frontend" / "navigation_error_overrides.js").read_text(encoding="utf-8")
-    compact = "".join(source.split())
-    assert "entityRequestGeneration" in source
-    assert "functionnextEntityRequest(type)" in compact
-    assert "functionentityRequestCurrent(type,generation)" in compact
-    assert "loadEntityLibrary=asyncfunction" in compact
-    assert "searchEntity=asyncfunction" in compact
-    entity_requests = compact[
-        compact.index("loadEntityLibrary=asyncfunction"):
-        compact.index("loadAllPerformerScenes=asyncfunction")
+    navigation = (ROOT / "frontend" / "navigation_error_overrides.js").read_text(encoding="utf-8")
+    search = (ROOT / "frontend" / "entity_search.js").read_text(encoding="utf-8")
+    compact_navigation = "".join(navigation.split())
+    compact_search = "".join(search.split())
+    assert "entityRequestGeneration" in navigation
+    assert "functionnextEntityRequest(type)" in compact_navigation
+    assert "functionentityRequestCurrent(type,generation)" in compact_navigation
+    assert "loadEntityLibrary=asyncfunction" in compact_navigation
+    assert "functionsearchEntity(type,query,options={})" in compact_search
+    library_request = compact_navigation[
+        compact_navigation.index("loadEntityLibrary=asyncfunction"):
+        compact_navigation.index("loadAllPerformerScenes=asyncfunction")
     ]
-    assert "entityRequestCurrent(type,generation)" in entity_requests
-    assert "navigationGenerationCurrent(generation)" not in entity_requests
+    assert "entityRequestCurrent(type,generation)" in library_request
+    assert "navigationGenerationCurrent(generation)" not in library_request
+    assert "entityRequestCurrent(type,generation)" in compact_search
+    assert "navigationGenerationCurrent(generation)" not in compact_search
 
 
 def test_top_left_brand_uses_approved_exact_logo():
@@ -45,7 +49,7 @@ def test_top_left_brand_uses_approved_exact_logo():
     assert 'class="brandmark"' not in source
     assert 'class="brandword"' not in source
     assert '<div class="header-brand"><img src="/scarletx-wordmark.webp?v=approved-20260915-6" alt="ScarletX"></div>' in source
-    assert '<link rel="icon" href="/scarletx-icon.svg?v=approved-20260916-1" type="image/svg+xml" sizes="any">' in source
+    assert '<link rel="icon" href="/scarletx-icon.webp?v=approved-20260918-1" type="image/webp" sizes="any">' in source
 
 
 def test_scene_and_library_studio_art_is_large_enough_to_read():

@@ -33,6 +33,6 @@ def test_standardized_studio_art_lives_in_core_renderers_without_stale_function_
 
     assert "studioLink=function" not in override
     assert "entityCard=function" not in override
-    assert "?v=v5" in studio_link
-    assert "?v=v5" in entity_card
+    assert "studioArtUrl(id)" not in studio_link
+    assert "studioArtUrl(id)" in entity_card
     assert "renderImg=type==='studios'||!!img" in entity_card

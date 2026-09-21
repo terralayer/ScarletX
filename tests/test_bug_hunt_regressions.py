@@ -34,6 +34,35 @@ def test_entity_cards_keep_current_add_actions_and_no_library_delete():
     assert "data-remove>Remove" not in card
 
 
+def test_library_performer_cards_include_a_monitor_toggle_at_the_bottom():
+    app = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    start = app.index("function entityCard")
+    end = app.index("function bindEntityActions")
+    card = app[start:end]
+
+    assert "data-toggle-monitor" in card
+    assert "data-monitored=\"${x.monitored?'true':'false'}\"" in card
+    assert "${x.monitored?'Unmonitor':'Monitor'}" in card
+    assert "data-entity-status" in card
+    assert "performer-card-actions" in card
+
+
+def test_system_settings_explain_and_confirm_start_over_without_touching_connections():
+    app = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    system = app[app.index("function renderSystemSettings"):app.index("async function saveSetting")]
+
+    assert 'id="startOver"' in system
+    assert 'id="confirmStartOver"' in system
+    assert "Deletes tracked media files" in system
+    assert "preserves all settings" in system
+    assert "NNTP" in system
+    assert "indexer" in system
+    assert "download staging" in system
+    assert "backups" in system
+    assert "history" in system
+    assert "/api/system/start-over" in system
+
+
 def test_frontend_formats_date_only_values_without_utc_day_shift():
     runtime = (FRONTEND / "runtime_core.js").read_text(encoding="utf-8")
     fmt = runtime[runtime.index("const fmtDate="):runtime.index("const bytes=")]
@@ -56,6 +85,10 @@ def test_profiles_use_cached_local_metadata_and_paginate_scene_lists():
     assert "if(!local){try{remote=await api" in scene
     assert "local?.monitored?'':" in performer.replace(" ", "")
     assert "local?.monitored?'':" in studio.replace(" ", "")
+    assert "hero=id?`/api/artwork/scenes/${encodeURIComponent(id)}`:''" in scene
+    assert "mediaRows.find(media=>!media.missing)" in scene
+    assert "fallbackHero=firstMedia?`/api/media-files/${firstMedia.id}/screengrab`:''" in scene
+    assert "this.onerror=null;this.src=this.dataset.fallbackHero" in scene
 
 
 class EmptyFilteredPagePerformerTPDB:

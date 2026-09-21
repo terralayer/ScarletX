@@ -1681,19 +1681,35 @@ def _apply_live_progress_on_cancel_set(job, value, oldvalue, _initiator) -> None
 
 
 def enqueue_url(session_factory, settings, url: str, title: str) -> str:
+    from ..download_pause import DOWNLOAD_CONTROL_LOCK, global_downloads_paused
+
     if not native_client_ready(settings):
         raise NativeUsenetError("ScarletX built-in Usenet has no enabled provider configured")
-    with session_factory() as db:
-        existing = db.scalar(select(NativeUsenetJob).where(
-            NativeUsenetJob.nzb_url == url,
-            NativeUsenetJob.status.in_(["queued", "downloading", "paused", "postprocessing"]),
-        ).order_by(NativeUsenetJob.created_at.desc()).limit(1))
-        if existing:
-            native_queue_signal.notify()
-            return existing.id
-        job_id = "sx-" + uuid.uuid4().hex
-        db.add(NativeUsenetJob(id=job_id, title=title, nzb_url=url, status="queued"))
-        db.commit()
+    with DOWNLOAD_CONTROL_LOCK:
+        with session_factory() as db:
+            globally_paused = global_downloads_paused(db)
+            existing = db.scalar(select(NativeUsenetJob).where(
+                NativeUsenetJob.nzb_url == url,
+                NativeUsenetJob.status.in_(["queued", "downloading", "paused", "postprocessing"]),
+            ).order_by(NativeUsenetJob.created_at.desc()).limit(1))
+            if existing:
+                if globally_paused and existing.status in {"queued", "downloading"}:
+                    existing.status = "paused"
+                    existing.speed_bps = 0.0
+                    existing.eta_seconds = None
+                    db.commit()
+                native_queue_signal.notify()
+                return existing.id
+            job_id = "sx-" + uuid.uuid4().hex
+            db.add(
+                NativeUsenetJob(
+                    id=job_id,
+                    title=title,
+                    nzb_url=url,
+                    status="paused" if globally_paused else "queued",
+                )
+            )
+            db.commit()
     native_queue_signal.notify()
     return job_id
 
@@ -1758,6 +1774,37 @@ def _job_control(session_factory, job_id: str) -> str:
         return job.status
 
 
+def _enter_transfer_state(
+    session_factory,
+    job_id: str,
+    *,
+    allowed_statuses: set[str] | frozenset[str] = frozenset({"queued", "downloading"}),
+    pause_on_block: bool = False,
+) -> bool:
+    """Atomically cross the final in-process pause boundary before transfer I/O."""
+    from ..download_pause import DOWNLOAD_CONTROL_LOCK, global_downloads_paused
+
+    with DOWNLOAD_CONTROL_LOCK:
+        with session_factory() as db:
+            job = db.get(NativeUsenetJob, job_id)
+            if job is None or job.cancel_requested or job.status not in allowed_statuses:
+                return False
+            if global_downloads_paused(db):
+                if job.status in {"queued", "downloading"} or pause_on_block:
+                    job.status = "paused"
+                    job.speed_bps = 0.0
+                    job.eta_seconds = None
+                    db.commit()
+                return False
+            if job.status != "downloading":
+                job.status = "downloading"
+                job.error = None
+                job.started_at = job.started_at or utcnow()
+                job.postprocess_note = None
+                db.commit()
+            return True
+
+
 async def _run_download_io(function, *args, **kwargs):
     """Keep blocking I/O off the loop and drain writes before shutdown cleanup."""
     task = asyncio.create_task(asyncio.to_thread(function, *args, **kwargs))
@@ -1795,11 +1842,13 @@ def _transfer_policy(session_factory, settings=None):
     from ..download_schedule import DownloadSchedule, schedule_state
     with session_factory() as db:
         values = dict(db.execute(select(AppSetting.key, AppSetting.value).where(
-            AppSetting.key.in_(("download_schedule_json", "native_usenet_speed_limit_mb_s"))
+            AppSetting.key.in_(("download_schedule_json", "native_usenet_speed_limit_mb_s", "native_downloads_paused"))
         )).all())
     rule = DownloadSchedule.model_validate_json(values.get("download_schedule_json", "{}"))
     base = float(values.get("native_usenet_speed_limit_mb_s", getattr(settings, "native_usenet_speed_limit_mb_s", 0)) or 0)
-    return schedule_state(rule, base_limit=base)
+    state = schedule_state(rule, base_limit=base)
+    state["paused"] = state["paused"] or str(values.get("native_downloads_paused", "false")).strip().casefold() == "true"
+    return state
 
 
 async def _wait_if_paused(session_factory, job_id: str, settings=None) -> float:
@@ -1810,6 +1859,10 @@ async def _wait_if_paused(session_factory, job_id: str, settings=None) -> float:
         if state != "paused":
             policy = await _run_download_io(_transfer_policy, session_factory, settings)
             if not policy["paused"]:
+                if state == "queued" and not await _run_download_io(
+                    _enter_transfer_state, session_factory, job_id
+                ):
+                    continue
                 return policy["speed_limit_mb_s"]
             _set_live_progress(job_id, phase="scheduled", speed_bps=0.0, eta_seconds=None)
         await asyncio.sleep(0.5)
@@ -1874,13 +1927,13 @@ async def process_job(session_factory, settings, job_id: str) -> None:
     def load_job():
         with session_factory() as db:
             job = db.get(NativeUsenetJob, job_id)
-            if job is None or job.status not in {"queued", "downloading", "postprocessing", "paused"}:
+            if job is None or job.status not in {"queued", "downloading", "postprocessing"}:
                 return None
-            return job.title, job.nzb_url, job.unpack_password or ""
+            return job.status, job.title, job.nzb_url, job.unpack_password or ""
     snapshot = await _run_download_io(load_job)
     if snapshot is None:
         return
-    title, url, unpack_password = snapshot
+    initial_status, title, url, unpack_password = snapshot
 
     providers = [p for p in settings.native_usenet_providers() if p.enabled and p.host]
     if not providers:
@@ -1919,7 +1972,12 @@ async def process_job(session_factory, settings, job_id: str) -> None:
 
         await _run_download_io(prepare_workspace)
 
-        await _run_download_io(_set_job, session_factory, job_id, status="downloading", error=None, started_at=utcnow(), postprocess_note=None)
+        if initial_status != "postprocessing":
+            claimed = await _run_download_io(
+                _enter_transfer_state, session_factory, job_id
+            )
+            if not claimed:
+                return
         nzb_file = work / "source.nzb"
         nzb_payload = await _run_download_io(_read_saved_nzb, nzb_file)
         if nzb_payload is None:
@@ -2231,8 +2289,16 @@ async def process_job(session_factory, settings, job_id: str) -> None:
                 recovery_existing = await _run_download_io(completed_bytes, deferred_indices)
                 effective_total += recovery_total
                 downloaded += recovery_existing
+                while not await _run_download_io(
+                    _enter_transfer_state,
+                    session_factory,
+                    job_id,
+                    allowed_statuses={"postprocessing", "queued", "downloading"},
+                    pause_on_block=True,
+                ):
+                    await _wait_if_paused(session_factory, job_id, settings)
                 await _run_download_io(_set_job,
-                    session_factory, job_id, status="downloading",
+                    session_factory, job_id,
                     total_bytes=effective_total, downloaded_bytes=downloaded,
                     postprocess_note="Fetching PAR2 recovery volumes only because the primary payload needs repair",
                 )

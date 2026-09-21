@@ -47,7 +47,7 @@ def test_approved_exact_logo_assets_are_used_in_shell():
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     assert '<div class="header-brand"><img src="/scarletx-wordmark.webp?v=approved-20260915-6"' in index
     assert '<div class="brand"><img src="/scarletx-wordmark.webp?v=approved-20260915-6"' in index
-    assert 'href="/scarletx-icon.svg?v=approved-20260916-1"' in index
+    assert 'href="/scarletx-icon.webp?v=approved-20260918-1"' in index
     assert "scarletx-wordmark.svg" not in index
 
 

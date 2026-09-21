@@ -23,28 +23,28 @@ def test_web_image_copies_ui_override_assets():
 def test_queue_override_paginates_50_rows_and_moves_eta_to_own_line():
     app = (FRONTEND / "app.js").read_text(encoding="utf-8")
     source = (FRONTEND / "ui_overrides.js").read_text(encoding="utf-8")
-    assert "const ACTIVITY_QUEUE_PAGE_SIZE=50" in app
-    assert "const ACTIVITY_QUEUE_PAGE_SIZE=50" not in source
+    assert "let ACTIVITY_QUEUE_PAGE_SIZE=25" in app
+    assert "ACTIVITY_QUEUE_PAGE_SIZE=25" not in source
     assert "/api/activity/page?page=${activityQueuePage}&limit=${ACTIVITY_QUEUE_PAGE_SIZE}" in source
     assert "activityQueuePagerHtml(activityQueueTotal)" in source
     assert 'class="live-eta-row"' in source
     assert "Speed / ETA" not in source
-    assert 'data-queue-page="first"' in source
+    assert 'data-queue-page="${n}"' in source
     assert 'data-queue-page="prev"' in source
     assert 'data-queue-page="next"' in source
 
 
-def test_library_override_paginates_50_rows_with_tpdb_art_and_studio_line():
+def test_library_override_paginates_50_rows_without_previews_and_with_studio_line():
     source = (FRONTEND / "ui_overrides.js").read_text(encoding="utf-8")
     assert "const MEDIA_LIBRARY_PAGE_SIZE=50" in source
     assert "/api/media-library/files/page?limit=${MEDIA_LIBRARY_PAGE_SIZE}" in source
     assert "cursor=${encodeURIComponent(cursor)}" in source
-    assert "/api/artwork/scenes/${encodeURIComponent(x.scene_id)}?size=card" in source
+    assert "/api/artwork/scenes/${encodeURIComponent(x.scene_id)}?size=card" not in source
     assert 'class="library-studio"' in source
     assert 'class="library-studio-meta"' in source
     assert 'class="library-release"' in source
     assert "Release: ${fmtDate(x.release_date)}" in source
-    assert 'data-library-page="first"' in source
+    assert 'data-library-page="${n}"' in source
     assert 'data-library-page="prev"' in source
     assert 'data-library-page="next"' in source
     assert "audio_codec" not in source

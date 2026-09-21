@@ -102,8 +102,12 @@ def test_calendar_membership_includes_anything_monitored():
         db.commit()
 
         items = calendar_items(db, date.today(), date.today() + timedelta(days=30), limit=500)
+        direct_items = calendar_items(
+            db, date.today(), date.today() + timedelta(days=30), limit=500, direct_only=True
+        )
 
     assert [item["title"] for item in items] == ["Direct Scene", "Performer Scene", "Studio Scene"]
+    assert [item["title"] for item in direct_items] == ["Direct Scene"]
 
 
 class DeepStudioMetadata:

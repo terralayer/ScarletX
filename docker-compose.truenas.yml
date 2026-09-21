@@ -71,10 +71,13 @@ services:
       - "${SCARLETX_PORT:-8690}:${SCARLETX_PORT:-8690}"
     networks:
       - scarletx-net
+      - scarletx-edge
 
 networks:
   scarletx-net:
     driver: bridge
     internal: true
   scarletx-egress:
+    driver: bridge
+  scarletx-edge:
     driver: bridge

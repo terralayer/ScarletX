@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from io import BytesIO
+import colorsys
+import hashlib
 import os
 from pathlib import Path
 
@@ -9,7 +11,8 @@ from PIL import Image, ImageChops, ImageFilter, ImageOps
 
 TARGET_SIZE = (800, 350)  # 16:7, matching the ScarletX studio cards/detail panel.
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
-STUDIO_ART_CACHE_VERSION = "v5"
+STUDIO_ART_CACHE_VERSION = "v7"
+LEGACY_STUDIO_ART_CACHE_VERSION = "v5"
 LIGHT_CANVAS = (244, 244, 245, 255)
 DARK_CANVAS = (24, 24, 27, 255)
 LOGO_MAX_WIDTH_RATIO = 0.64
@@ -38,6 +41,15 @@ def cached_studio_artwork(identifier: str) -> bytes | None:
     except OSError:
         pass
     return None
+
+
+def legacy_studio_artwork(identifier: str) -> bytes | None:
+    """Keep a prepared logo visible if its upstream source has since disappeared."""
+    path = _ART_CACHE_DIR / f"{LEGACY_STUDIO_ART_CACHE_VERSION}-{identifier}.png"
+    try:
+        return path.read_bytes() if path.exists() else None
+    except OSError:
+        return None
 
 
 def cache_studio_artwork(identifier: str, image: bytes) -> None:
@@ -180,8 +192,8 @@ def _contrast_ratio(foreground_luminance: float, background_luminance: float) ->
     return (lighter + 0.05) / (darker + 0.05)
 
 
-def _choose_contrast_canvas(logo: Image.Image) -> tuple[int, int, int, int]:
-    """Choose the neutral canvas that best preserves visibility of the logo's real colors."""
+def _choose_contrast_canvas(logo: Image.Image, color_seed: str | None = None) -> tuple[int, int, int, int]:
+    """Choose a logo-derived pastel canvas while preserving contrast."""
     sample = logo.convert("RGBA").copy()
     sample.thumbnail((128, 128), Image.Resampling.LANCZOS)
     pixels = sample.get_flattened_data() if hasattr(sample, "get_flattened_data") else sample.getdata()
@@ -201,7 +213,28 @@ def _choose_contrast_canvas(logo: Image.Image) -> tuple[int, int, int, int]:
 
     light_score = score(LIGHT_CANVAS)
     dark_score = score(DARK_CANVAS)
-    return LIGHT_CANVAS if light_score >= dark_score else DARK_CANVAS
+
+    # Neutral logos have no brand hue to derive from. Give them a stable accent
+    # when the caller supplies a studio identifier.
+    weight_total = sum(alpha_value / 255.0 for _, _, _, alpha_value in visible)
+    red = sum(r * (a / 255.0) for r, _, _, a in visible) / weight_total
+    green = sum(g * (a / 255.0) for _, g, _, a in visible) / weight_total
+    blue = sum(b * (a / 255.0) for _, _, b, a in visible) / weight_total
+    hue, saturation, _ = colorsys.rgb_to_hsv(red / 255.0, green / 255.0, blue / 255.0)
+    if saturation < 0.18:
+        if color_seed:
+            hue = int.from_bytes(hashlib.sha256(color_seed.encode("utf-8")).digest()[:2], "big") / 65535.0
+            pastel = colorsys.hsv_to_rgb(hue, 0.24, 0.98) if light_score >= dark_score else colorsys.hsv_to_rgb(hue, 0.44, 0.31)
+            return tuple(int(round(channel * 255)) for channel in pastel) + (255,)
+        return LIGHT_CANVAS if light_score >= dark_score else DARK_CANVAS
+
+    # Dark marks sit on a light pastel; light marks sit on a muted dark version
+    # of their hue. Both preserve the logo's contrast and avoid generic gray.
+    if light_score >= dark_score:
+        pastel = colorsys.hsv_to_rgb(hue, min(0.30, saturation * 0.42), 0.98)
+    else:
+        pastel = colorsys.hsv_to_rgb(hue, min(0.52, max(0.26, saturation * 0.60)), 0.29)
+    return tuple(int(round(channel * 255)) for channel in pastel) + (255,)
 
 
 def _add_logo_halo(rendered: Image.Image, logo_layer: Image.Image, canvas: tuple[int, int, int, int]) -> None:
@@ -216,7 +249,7 @@ def _add_logo_halo(rendered: Image.Image, logo_layer: Image.Image, canvas: tuple
     rendered.alpha_composite(halo)
 
 
-def prepare_studio_artwork(image_bytes: bytes, target_size: tuple[int, int] = TARGET_SIZE) -> bytes:
+def prepare_studio_artwork(image_bytes: bytes, target_size: tuple[int, int] = TARGET_SIZE, color_seed: str | None = None) -> bytes:
     try:
         source = Image.open(BytesIO(image_bytes))
         source.load()
@@ -239,7 +272,7 @@ def prepare_studio_artwork(image_bytes: bytes, target_size: tuple[int, int] = TA
     logo_layer = Image.new("RGBA", target_size, (0, 0, 0, 0))
     logo_layer.alpha_composite(fitted, (x, y))
 
-    canvas = _choose_contrast_canvas(fitted)
+    canvas = _choose_contrast_canvas(fitted, color_seed)
     rendered = Image.new("RGBA", target_size, canvas)
     _add_logo_halo(rendered, logo_layer, canvas)
     rendered.alpha_composite(logo_layer)
@@ -249,7 +282,7 @@ def prepare_studio_artwork(image_bytes: bytes, target_size: tuple[int, int] = TA
     return out.getvalue()
 
 
-async def download_and_prepare_studio_artwork(urls: list[str]) -> bytes:
+async def download_and_prepare_studio_artwork(urls: list[str], color_seed: str | None = None) -> bytes:
     async with httpx.AsyncClient(timeout=20, follow_redirects=True, trust_env=False) as client:
         last_error: Exception | None = None
         for url in urls:
@@ -261,7 +294,7 @@ async def download_and_prepare_studio_artwork(urls: list[str]) -> bytes:
                 content = response.content
                 if len(content) > MAX_IMAGE_BYTES:
                     raise StudioArtworkError("Studio artwork is too large")
-                return prepare_studio_artwork(content)
+                return prepare_studio_artwork(content, color_seed=color_seed)
             except (httpx.HTTPError, StudioArtworkError) as exc:
                 last_error = exc
         raise StudioArtworkError("Studio artwork could not be loaded") from last_error

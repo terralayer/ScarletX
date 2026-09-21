@@ -37,7 +37,7 @@ services:
       SCARLETX_USENET_COMPLETE_DIR: /downloads/complete
       SCARLETX_GENERATED_DIR: /config/generated
       SCARLETX_CACHE_DIR: /config/cache
-      SCARLETX_DEFAULT_MEDIA_ROOT: /tmp
+      SCARLETX_DEFAULT_MEDIA_ROOT: /media
     volumes:
       - ./docker-data/config:/config
       - ./docker-data/downloads:/downloads
@@ -74,10 +74,13 @@ services:
       - "${SCARLETX_WEB_PORT:-8690}:${SCARLETX_WEB_PORT:-8690}"
     networks:
       - scarletx-net
+      - scarletx-edge
 
 networks:
   scarletx-net:
     driver: bridge
     internal: true
   scarletx-egress:
+    driver: bridge
+  scarletx-edge:
     driver: bridge

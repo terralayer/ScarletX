@@ -158,6 +158,29 @@ def test_recent_performers_follow_latest_downloaded_release(tmp_path):
     engine.dispose()
 
 
+def test_recent_performers_ignore_downloads_from_unmonitored_scenes(tmp_path):
+    from scarletx import dashboard_data
+
+    engine, factory = _factory(tmp_path)
+    with factory() as db:
+        performer = Performer(tpdb_id="unmonitored-person", name="Unmonitored Person", is_library=True)
+        scene = Scene(
+            tpdb_id="unmonitored-scene",
+            title="Unmonitored Scene",
+            content_type="scene",
+            monitored=False,
+            studio_id=None,
+            performers=[performer],
+        )
+        db.add(scene)
+        db.flush()
+        db.add(MediaFile(scene_id=scene.id, path=str(tmp_path / "unmonitored.mp4")))
+        db.commit()
+
+        assert dashboard_data.recent_performers(db, limit=8) == []
+    engine.dispose()
+
+
 def test_dashboard_uses_approved_native_recent_and_upcoming_panels():
     source = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
     compatibility = (ROOT / "frontend" / "dashboard_settings_overrides.js").read_text(encoding="utf-8")

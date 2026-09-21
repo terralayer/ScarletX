@@ -39,5 +39,6 @@ def test_profile_scene_pagination_stops_when_navigation_is_stale():
         assert "navigationGenerationCurrent(generation)" in loader
         assert loader.count("navigationGenerationCurrent(generation)") >= 2
 
-    assert "loadAllPerformerScenes(id,resolvedLocalId,generation)" in performer_profile.replace(" ", "")
-    assert "loadAllStudioScenes(id,resolvedLocalId,generation)" in studio_profile.replace(" ", "")
+    assert "initProfileSceneCatalog('performers',id,resolvedLocalId,generation)" in performer_profile.replace(" ", "")
+    assert "initProfileSceneCatalog('studios',id,resolvedLocalId,generation)" in studio_profile.replace(" ", "")
+    assert "load(id,localId,generation)" in compact

@@ -22,7 +22,7 @@ def _shared_http_client(indexer: "NewznabIndexer") -> httpx.AsyncClient:
         client = _SHARED_HTTP_CLIENTS.get(key)
         if client is None or client.is_closed:
             client = httpx.AsyncClient(
-                base_url=indexer.url.rstrip("/"), timeout=30, trust_env=False,
+                base_url=indexer.url.rstrip("/"), timeout=30, trust_env=False, follow_redirects=True,
                 headers={"Accept": "application/xml", "User-Agent": "ScarletX/0.4.9"},
                 limits=httpx.Limits(max_connections=40, max_keepalive_connections=20, keepalive_expiry=45),
             )
@@ -116,7 +116,7 @@ class NewznabClient:
         self._owns_client = transport is not None
         if self._owns_client:
             self.client = httpx.AsyncClient(
-                base_url=indexer.url.rstrip("/"), timeout=30, transport=transport, trust_env=False,
+                base_url=indexer.url.rstrip("/"), timeout=30, transport=transport, trust_env=False, follow_redirects=True,
                 headers={"Accept": "application/xml", "User-Agent": "ScarletX/0.4.9"},
             )
         else:
@@ -132,7 +132,7 @@ class NewznabClient:
     async def _request(self, params: dict[str, str | int]) -> str:
         safe_params = {**params, "apikey": self.indexer.api_key.get_secret_value()}
         try:
-            response = await self.client.get("", params=safe_params)
+            response = await self.client.get(self.indexer.url.rstrip("/"), params=safe_params)
             response.raise_for_status()
             return response.text
         except (httpx.HTTPError, httpx.TimeoutException) as exc:

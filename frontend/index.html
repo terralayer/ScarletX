@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ScarletX</title>
-<link rel="icon" href="/scarletx-icon.svg?v=approved-20260916-1" type="image/svg+xml" sizes="any">
+<link rel="icon" href="/scarletx-icon.webp?v=approved-20260918-1" type="image/webp" sizes="any">
 <link rel="stylesheet" href="/styles.css">
 <link rel="stylesheet" href="/ui_overrides.css">
 <link rel="stylesheet" href="/locked_dashboard.css">
@@ -36,9 +36,10 @@
   <main class="main">
     <header class="topbar">
       <div class="header-brand"><img src="/scarletx-wordmark.webp?v=approved-20260915-6" alt="ScarletX"></div>
-      <form class="global-search" id="globalSearch"><span class="searchmark"><svg data-icon="top-search" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></span><input id="globalSearchInput" placeholder="Search performers, scenes, studios…"></form>
+      <form class="global-search" id="globalSearch"><span class="searchmark"><svg data-icon="top-search" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></span><input id="globalSearchInput" placeholder="Search performers or scenes…"></form>
       <div class="header-tagline">Your Adult Media Library, Automated.</div>
       <div class="top-spacer"></div>
+      <button class="sfw-toggle" id="sfwToggle" type="button" aria-pressed="false" title="Blur adult media">SFW</button>
       <button class="bell queue-pill" id="queueShortcut" type="button" title="Open download activity" aria-label="Open download activity"><span class="queue-glyph"><svg data-icon="top-bell" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg></span><span class="queue-label">Downloads</span><span class="bell-badge" id="queueBadge">0</span></button>
       <div class="status-pill"><span class="profile-glyph"><svg data-icon="top-user" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/><circle cx="12" cy="12" r="10"/></svg></span><span class="dot" id="statusDot"></span><div><b id="hostLabel">local</b><small id="onlineText">Online</small></div></div>
     </header>
@@ -49,13 +50,15 @@
 <div class="modalback" id="modal"><div class="modal"><div class="modal-head"><h2 id="modalTitle">Details</h2><button class="xbtn" id="closeModal">×</button></div><div class="modal-body" id="modalBody"></div></div></div>
 <script src="/runtime_core.js"></script>
 <script src="/settings_ui.js"></script>
+<script src="/pagination.js"></script>
 <script src="/app.js"></script>
 <script src="/navigation_error_overrides.js"></script>
-<script>Object.assign(entityPageSize,{scenes:50,performers:50,studios:50})</script>
+<script src="/entity_search.js"></script>
+<script src="/download_controls.js"></script>
 <script src="/ui_overrides.js"></script>
 <script src="/activity_studio_overrides.js"></script>
 <script src="/processing_queue_overrides.js"></script>
-<script src="/activity_history_overrides.js"></script>
+<script src="/activity_lists.js"></script>
 <script src="/wanted_bulk_overrides.js"></script>
 <script src="/studio_art_overrides.js"></script>
 <script src="/dashboard_settings_overrides.js"></script>

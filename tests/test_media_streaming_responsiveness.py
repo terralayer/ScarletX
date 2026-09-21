@@ -4,7 +4,7 @@ import asyncio
 import time
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from scarletx.config import Settings
@@ -104,11 +104,39 @@ async def test_scene_card_artwork_uses_local_tpdb_thumbnail(tmp_path, monkeypatc
         )
 
     assert response.body == b"small-webp"
-    assert calls == [
-        (
-            "scene:scene-art",
-            ["https://example.invalid/tpdb-scene.jpg"],
-            (320, 180),
-            False,
+    assert calls[0][0].startswith("scene:scene-art:")
+    assert calls[0][1:] == (["https://example.invalid/tpdb-scene.jpg"], (320, 180), False)
+
+
+@pytest.mark.asyncio
+async def test_scene_artwork_cache_key_changes_when_scene_artwork_changes(tmp_path, monkeypatch):
+    from scarletx.routes import application
+
+    _engine, Session = _media_session(tmp_path)
+    with Session() as db:
+        scene = Scene(
+            tpdb_id="scene-artwork-refresh",
+            title="Artwork Refresh",
+            image_url="https://example.invalid/original.jpg",
         )
-    ]
+        db.add(scene)
+        db.commit()
+
+    calls = []
+
+    async def image(key, urls):
+        calls.append((key, urls))
+        return b"image", "image/jpeg"
+
+    monkeypatch.setattr(application, "cached_remote_image", image)
+
+    with Session() as db:
+        await application.scene_artwork("scene-artwork-refresh", db=db, settings=Settings())
+        scene = db.scalar(select(Scene).where(Scene.tpdb_id == "scene-artwork-refresh"))
+        scene.image_url = "https://example.invalid/replacement.jpg"
+        db.commit()
+        await application.scene_artwork("scene-artwork-refresh", db=db, settings=Settings())
+
+    assert calls[0][1] == ["https://example.invalid/original.jpg"]
+    assert calls[1][1] == ["https://example.invalid/replacement.jpg"]
+    assert calls[0][0] != calls[1][0]

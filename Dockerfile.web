@@ -23,12 +23,15 @@ COPY frontend/settings_ui.css /usr/share/nginx/html/settings_ui.css
 COPY frontend/management_ui.js /usr/share/nginx/html/management_ui.js
 COPY frontend/management_ui.css /usr/share/nginx/html/management_ui.css
 COPY frontend/app.js /usr/share/nginx/html/app.js
+COPY frontend/pagination.js /usr/share/nginx/html/pagination.js
+COPY frontend/entity_search.js /usr/share/nginx/html/entity_search.js
+COPY frontend/download_controls.js /usr/share/nginx/html/download_controls.js
 COPY frontend/navigation_error_overrides.js /usr/share/nginx/html/navigation_error_overrides.js
 COPY frontend/ui_overrides.css /usr/share/nginx/html/ui_overrides.css
 COPY frontend/ui_overrides.js /usr/share/nginx/html/ui_overrides.js
 COPY frontend/activity_studio_overrides.js /usr/share/nginx/html/activity_studio_overrides.js
 COPY frontend/processing_queue_overrides.js /usr/share/nginx/html/processing_queue_overrides.js
-COPY frontend/activity_history_overrides.js /usr/share/nginx/html/activity_history_overrides.js
+COPY frontend/activity_lists.js /usr/share/nginx/html/activity_lists.js
 COPY frontend/wanted_bulk_overrides.js /usr/share/nginx/html/wanted_bulk_overrides.js
 COPY frontend/studio_art_overrides.js /usr/share/nginx/html/studio_art_overrides.js
 COPY frontend/dashboard_settings_overrides.js /usr/share/nginx/html/dashboard_settings_overrides.js
@@ -86,14 +89,14 @@ RUN set -eux; \
     grep -q '/ui_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/activity_studio_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/processing_queue_overrides.js' /usr/share/nginx/html/index.html; \
-    grep -q '/activity_history_overrides.js' /usr/share/nginx/html/index.html; \
+    grep -q '/activity_lists.js' /usr/share/nginx/html/index.html; \
     grep -q '/wanted_bulk_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/studio_art_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/dashboard_settings_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/dashboard_regression_hotfix.js' /usr/share/nginx/html/index.html; \
     grep -q '/library_health_overrides.js' /usr/share/nginx/html/index.html; \
     grep -q '/scarletx-wordmark.webp?v=approved-20260915-6' /usr/share/nginx/html/index.html; \
-    grep -q '/scarletx-icon.svg?v=approved-20260916-1' /usr/share/nginx/html/index.html; \
+    grep -q '/scarletx-icon.webp?v=approved-20260918-1' /usr/share/nginx/html/index.html; \
     grep -q 'authGateBoot(boot);' /usr/share/nginx/html/app.js
 
 EXPOSE 8690

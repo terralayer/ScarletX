@@ -28,8 +28,14 @@ def test_header_uses_approved_exact_logo_and_matching_icon():
     assert '<span class="xslash xslash-a"></span>' not in page
     assert '<span class="xslash xslash-b"></span>' not in page
     assert '<div class="header-brand"><img src="/scarletx-wordmark.webp?v=approved-20260915-6" alt="ScarletX"></div>' in page
-    assert '<link rel="icon" href="/scarletx-icon.svg?v=approved-20260916-1" type="image/svg+xml" sizes="any">' in page
+    assert '<link rel="icon" href="/scarletx-icon.webp?v=approved-20260918-1" type="image/webp" sizes="any">' in page
     assert "scarletx-wordmark.svg" not in page
+
+
+def test_download_shortcut_keeps_the_header_rounded_rectangle_shape():
+    styles = (FRONTEND / "locked_dashboard.css").read_text(encoding="utf-8")
+    assert "body[data-layout=\"approved-dashboard-v1\"] .queue-pill{width:auto;min-width:112px;height:40px" in styles
+    assert "body[data-layout=\"approved-dashboard-v1\"] .queue-pill{width:40px;height:40px;border:0;border-radius:50%" not in styles
 
 
 def test_dark_theme_covers_primary_ui_surfaces():
@@ -53,10 +59,19 @@ def test_activity_exposes_native_downloader_restart_control():
     assert "requeued" in source
 
 
+def test_activity_exposes_pause_downloads_control():
+    source = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    controls = (FRONTEND / "download_controls.js").read_text(encoding="utf-8")
+    assert 'id="pauseDownloader"' in source
+    assert "/api/downloads/native/control" in controls
+    assert "'resume-all':'pause-all'" in controls
+
+
 def test_library_media_list_and_player_omit_filename_and_audio_codec():
     source = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    rows = source[source.index("function mediaFileRowsHtml"):source.index("function mediaFilesHtml")]
-    table = source[source.index("function mediaFilesHtml"):source.index("function mediaPageUrl")]
+    overrides = (FRONTEND / "ui_overrides.js").read_text(encoding="utf-8")
+    rows = overrides[overrides.index("function mediaFileRowsHtml"):overrides.index("function mediaFilesHtml")]
+    table = overrides[overrides.index("function mediaFilesHtml"):overrides.index("function mediaLibraryPagerHtml")]
     player = source[source.index("async function playMedia"):source.index("async function wanted")]
 
     assert "x.filename" not in rows
@@ -74,16 +89,13 @@ def test_library_runtime_uses_single_authoritative_media_renderer():
     assert 'class="library-release"' in overrides
 
 
-def test_scene_rows_show_tpdb_artwork_studio_logo_and_play_control():
+def test_scene_rows_skip_previews_but_keep_studio_links_and_play_control():
     source = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    styles = STYLES.read_text(encoding="utf-8")
     rows = source[source.index("function sceneRowsHtml"):source.index("function sceneTable")]
     actions = source[source.index("function bindSceneTableActions"):source.index("async function renderEntities")]
 
-    assert "/api/artwork/scenes/" in rows
-    assert "/api/artwork/studios/" in source
-    assert "?size=card" in rows
+    assert "/api/artwork/scenes/" not in rows
+    assert "studioLink(x," in rows
+    assert "scene-thumb" not in rows
     assert 'data-play-scene' in rows
     assert "playMedia(Number(" in actions
-    assert ".scene-thumb" in styles
-    assert ".studio-logo" in styles

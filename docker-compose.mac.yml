@@ -1,0 +1,91 @@
+services:
+  scarletx-permissions:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: scarletx-permissions
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - "chown -R 568:568 /config /downloads /media /backups"
+    healthcheck:
+      disable: true
+    volumes:
+      - scarletx_config:/config
+      - scarletx_downloads:/downloads
+      - /Users/troy/ScarletXMedia:/media
+      - scarletx_backups:/backups
+
+  scarletx-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: scarletx-backend
+    restart: unless-stopped
+    depends_on:
+      scarletx-permissions:
+        condition: service_completed_successfully
+    environment:
+      TZ: America/Los_Angeles
+      SCARLETX_HOST: 0.0.0.0
+      SCARLETX_PORT: "8000"
+      SCARLETX_TRUST_PROXY_HEADERS: "1"
+      SCARLETX_DATABASE_URL: sqlite:////config/scarletx.db
+      SCARLETX_USENET_INCOMPLETE_DIR: /downloads/incomplete
+      SCARLETX_USENET_COMPLETE_DIR: /downloads/complete
+      SCARLETX_GENERATED_DIR: /config/generated
+      SCARLETX_CACHE_DIR: /config/cache
+      SCARLETX_DEFAULT_MEDIA_ROOT: /media
+    volumes:
+      - scarletx_config:/config
+      - scarletx_downloads:/downloads
+      - /Users/troy/ScarletXMedia:/media
+      - scarletx_backups:/backups
+    networks:
+      - scarletx-net
+      - scarletx-egress
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import json,urllib.request; d=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/health',timeout=3)); raise SystemExit(0 if d.get('app')=='ScarletX' else 1)"
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 6
+
+  scarletx-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: scarletx-web
+    restart: unless-stopped
+    environment:
+      SCARLETX_WEB_PORT: "8690"
+      SCARLETX_BACKEND_HOST: scarletx-backend
+      SCARLETX_BACKEND_PORT: "8000"
+    depends_on:
+      scarletx-backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8690:8690"
+    networks:
+      - scarletx-net
+      - scarletx-edge
+
+networks:
+  scarletx-net:
+    driver: bridge
+    internal: true
+  scarletx-egress:
+    driver: bridge
+  scarletx-edge:
+    driver: bridge
+
+volumes:
+  scarletx_config:
+  scarletx_downloads:
+  scarletx_media:
+  scarletx_backups:

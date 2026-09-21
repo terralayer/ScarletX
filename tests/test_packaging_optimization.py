@@ -68,6 +68,17 @@ def test_local_compose_exposes_only_web_and_uses_internal_network():
     assert "internal: true" in compose
 
 
+def test_web_gateway_has_an_edge_network_for_its_published_port():
+    for name in ("docker-compose.yml", "docker-compose.truenas.yml"):
+        compose = source(name)
+        backend = service_block(compose, "scarletx-backend")
+        web = service_block(compose, "scarletx-web")
+
+        assert "scarletx-edge" not in backend
+        assert "scarletx-edge" in web
+        assert "scarletx-edge:\n    driver: bridge" in compose
+
+
 def test_standalone_truenas_compose_exposes_only_web_and_uses_internal_network():
     compose = source("docker-compose.truenas.yml")
     backend = service_block(compose, "scarletx-backend")
@@ -102,6 +113,12 @@ def test_required_persistent_mounts_remain_on_backend_deployments():
         backend = service_block(source(path), "scarletx-backend")
         for mount in ("/config", "/downloads", "/media", "/backups"):
             assert mount in backend
+
+
+def test_docker_deployments_store_the_default_library_on_the_persistent_media_mount():
+    assert "SCARLETX_DEFAULT_MEDIA_ROOT=/media" in source("Dockerfile")
+    for path in ("docker-compose.yml", "docker-compose.mac.yml", "docker-compose.truenas.yml"):
+        assert "SCARLETX_DEFAULT_MEDIA_ROOT: /media" in source(path)
 
 
 def test_truenas_template_keeps_backend_private_on_internal_network():

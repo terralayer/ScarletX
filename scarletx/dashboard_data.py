@@ -32,7 +32,7 @@ def _release_order():
 def downloaded_scene_page(db: Session, *, limit: int = 8, offset: int = 0) -> dict:
     """Return downloaded scenes ordered by release date, newest first."""
     usable_media = _usable_media_id()
-    filters = [Scene.content_type == "scene", usable_media.is_not(None)]
+    filters = [Scene.content_type == "scene", Scene.monitored.is_(True), usable_media.is_not(None)]
     total = db.scalar(select(func.count(Scene.id)).where(*filters)) or 0
     rows = db.execute(
         select(
@@ -103,6 +103,7 @@ def recent_studios(db: Session, *, limit: int = 8) -> list[dict]:
     usable_media = _usable_media_id()
     downloaded = [
         Scene.content_type == "scene",
+        Scene.monitored.is_(True),
         Scene.studio_id.is_not(None),
         usable_media.is_not(None),
     ]
@@ -139,6 +140,7 @@ def recent_studios(db: Session, *, limit: int = 8) -> list[dict]:
         .where(
             Scene.studio_id.in_(studio_ids),
             Scene.content_type == "scene",
+            Scene.monitored.is_(True),
             _usable_media_id().is_not(None),
         )
         .order_by(
@@ -185,6 +187,7 @@ def recent_performers(db: Session, *, limit: int = 8) -> list[dict]:
         .join(Scene, Scene.id == scene_performer.c.scene_id)
         .where(
             Scene.content_type == "scene",
+            Scene.monitored.is_(True),
             usable_media.is_not(None),
         )
         .group_by(Performer.id, Performer.tpdb_id, Performer.name, Performer.image_url)
@@ -211,6 +214,7 @@ def recent_performers(db: Session, *, limit: int = 8) -> list[dict]:
         .where(
             scene_performer.c.performer_id.in_(performer_ids),
             Scene.content_type == "scene",
+            Scene.monitored.is_(True),
             _usable_media_id().is_not(None),
         )
         .order_by(

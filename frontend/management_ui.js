@@ -1,7 +1,8 @@
 /* Management tools reuse the existing settings forms and authenticated API. */
 (() => {
   const formatDate = value => value ? new Date(value).toLocaleString() : 'None yet';
-  const goSettings = tab => { view='settings'; settingsTab=tab; nav(); settings(); };
+  const connectionTargets={metadata:'#tpdbKey',indexers:'#indexers',downloads:'#nativeEnabled'};
+  const goSettings = async tab => { view='settings'; settingsTab=tab; nav(); await settings(); const target=document.querySelector(connectionTargets[tab]); if(target){target.scrollIntoView({behavior:'smooth',block:'center'});target.focus?.();} };
   const section = (body,title,description) => {
     const panel=document.createElement('section');panel.className='settings-section management-panel';
     panel.innerHTML=`<header><h3>${esc(title)}</h3><p>${esc(description)}</p></header><div class="management-body" aria-live="polite">Loading…</div>`;

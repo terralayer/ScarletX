@@ -7,7 +7,7 @@ from datetime import date
 from functools import lru_cache
 
 from fastapi import HTTPException
-from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy import and_, exists, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from .models import MediaFile, Performer, Scene, Studio, scene_performer
@@ -69,6 +69,7 @@ def scene_summary_page(
     offset: int = 0,
     cursor: str | None = None,
     q: str | None = None,
+    status: str | None = None,
 ) -> dict:
     filters = [Scene.content_type == "scene"]
     params: dict[str, object] = {}
@@ -83,6 +84,10 @@ def scene_summary_page(
         params["fts_q"] = fts
     elif q:
         filters.append(Scene.title.ilike(f"%{q.strip()}%"))
+    if status == "downloaded":
+        filters.append(select(MediaFile.id).where(MediaFile.scene_id == Scene.id).exists())
+    elif status == "monitored":
+        filters.append(Scene.monitored.is_(True))
 
     total = None
     if not cursor and offset == 0:
@@ -149,6 +154,7 @@ def scene_summary_page(
         performer_rows = db.execute(
             select(
                 scene_performer.c.scene_id,
+                Performer.id,
                 Performer.tpdb_id,
                 Performer.name,
                 Performer.image_url,
@@ -157,9 +163,9 @@ def scene_summary_page(
             .where(scene_performer.c.scene_id.in_(scene_ids))
             .order_by(scene_performer.c.scene_id, Performer.name, Performer.id)
         ).all()
-        for scene_id, tpdb_id, name, image_url in performer_rows:
+        for scene_id, performer_id, tpdb_id, name, image_url in performer_rows:
             performers_by_scene[int(scene_id)].append(
-                {"id": tpdb_id, "name": name, "image_url": image_url}
+                {"id": tpdb_id, "local_id": performer_id, "name": name, "image_url": image_url}
             )
 
     items = [
@@ -203,8 +209,22 @@ def performer_summary_page(
     offset: int = 0,
     cursor: str | None = None,
     q: str | None = None,
+    gender: str | None = None,
+    monitored_only: bool = False,
 ) -> dict:
     filters = [Performer.is_library.is_(True)]
+    if monitored_only:
+        filters.append(
+            exists(
+                select(scene_performer.c.scene_id)
+                .where(
+                    scene_performer.c.performer_id == Performer.id,
+                    scene_performer.c.scene_id == Scene.id,
+                    Scene.content_type == "scene",
+                    Scene.monitored.is_(True),
+                )
+            )
+        )
     params: dict[str, object] = {}
     fts = _fts_query(q)
     if fts and _fts_available(db, "performer_search"):
@@ -217,6 +237,8 @@ def performer_summary_page(
         params["fts_q"] = fts
     elif q:
         filters.append(Performer.name.ilike(f"%{q.strip()}%"))
+    if gender in {"female", "male"}:
+        filters.append(func.lower(Performer.gender) == gender)
 
     total = None
     if not cursor and offset == 0:
@@ -287,8 +309,22 @@ def studio_summary_page(
     offset: int = 0,
     cursor: str | None = None,
     q: str | None = None,
+    monitored_only: bool = False,
 ) -> dict:
-    filters = [Studio.is_library.is_(True)]
+    # Apply the same source policy to previously cached studios, without deleting
+    # their records or media. Filter before counting/paging, not after slicing.
+    from .studio_policy import blocked_library_studio_ids
+    filters = [Studio.is_library.is_(True), Studio.id.not_in(blocked_library_studio_ids(db))]
+    if monitored_only:
+        filters.append(
+            exists(
+                select(Scene.id).where(
+                    Scene.studio_id == Studio.id,
+                    Scene.content_type == "scene",
+                    Scene.monitored.is_(True),
+                )
+            )
+        )
     params: dict[str, object] = {}
     fts = _fts_query(q)
     if fts and _fts_available(db, "studio_search"):

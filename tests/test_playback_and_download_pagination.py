@@ -68,6 +68,31 @@ def test_incompatible_media_builds_and_reuses_cached_mp4(tmp_path, monkeypatch):
     assert "+faststart" in command
 
 
+def test_audio_only_m4a_builds_a_browser_playable_mp4_without_requesting_video(tmp_path, monkeypatch):
+    source = tmp_path / "audio.m4a"
+    source.write_bytes(b"source")
+    commands = []
+
+    def fake_run(args, *, timeout=120):
+        commands.append(args)
+        Path(args[-1]).write_bytes(b"browser-mp4")
+
+    monkeypatch.setattr("scarletx.media_library._run", fake_run)
+
+    result = ensure_browser_playback(
+        23,
+        source,
+        video_codec="",
+        audio_codec="aac",
+        generated_root=tmp_path / "generated",
+    )
+
+    assert result.name == "playback.mp4"
+    assert "0:v:0" not in commands[0]
+    assert "-vn" in commands[0]
+    assert "0:a:0" in commands[0]
+
+
 def test_existing_media_library_matching_helpers_are_preserved():
     from scarletx import media_library
 
@@ -123,27 +148,28 @@ def test_failed_rows_supports_offset_for_real_server_pagination():
     assert page[-1]["id"] == "failed-05"
 
 
-def test_activity_uses_50_active_and_20_completed_and_failed_rows_per_page():
+def test_activity_uses_25_active_and_20_completed_and_failed_rows_per_page():
     source = (ROOT / "frontend" / "app.js").read_text()
+    activity_lists = (ROOT / "frontend" / "activity_lists.js").read_text()
+    queue_owner = (ROOT / "frontend" / "ui_overrides.js").read_text()
     studio_override = (ROOT / "frontend" / "activity_studio_overrides.js").read_text()
     backend = (ROOT / "scarletx" / "routes" / "application.py").read_text()
 
-    assert "ACTIVITY_QUEUE_PAGE_SIZE=50" in source
+    assert "ACTIVITY_QUEUE_PAGE_SIZE=25" in source
     assert "ACTIVITY_COMPLETED_PAGE_SIZE=20" in source
     assert "ACTIVITY_FAILED_PAGE_SIZE=20" in source
     assert "activityQueuePage" in source
-    assert "activityCompletedPage" in source
-    assert "activityFailedPage" in source
-    assert "limit=${ACTIVITY_COMPLETED_PAGE_SIZE}&offset=${completedOffset}" in source
-    assert "limit=${ACTIVITY_FAILED_PAGE_SIZE}&offset=${failedOffset}" in source
-    assert "activityPager('completed'" in source
-    assert "activityPager('failed'" in source
-    assert "data-activity-page=\"failed\"" in source
-    assert ">First</button>" in source
+    assert 'id="activityQueuePageSize"' in source
+    assert "completed:{page:1,request:0,size:()=>ACTIVITY_COMPLETED_PAGE_SIZE}" in activity_lists
+    assert "failed:{page:1,request:0,size:()=>ACTIVITY_FAILED_PAGE_SIZE}" in activity_lists
+    assert "`/api/downloads/${kind}?limit=${state.size()}&offset=${(state.page-1)*state.size()}`" in activity_lists
+    assert "activityPager(kind,page,total,state.size())" in activity_lists
+    assert "request!==state.request||requestedPage!==state.page" in activity_lists
+    assert 'data-activity-page="${kind}"' in source
+    assert "Object.keys(activitySections)" in activity_lists
     assert ">Previous</button>" in source
     assert ">Next</button>" in source
-    assert ">Last</button>" in source
-    assert "$('#queueBadge').textContent=allRows.length" in source
+    assert "$('#queueBadge').textContent=activityQueueTotal||snapshotRows.length" in queue_owner
     assert "const start=(activityQueuePage-1)*ACTIVITY_QUEUE_PAGE_SIZE" in studio_override
     assert "activityQueuePageRows" not in studio_override
     assert "def completed_downloads(limit: int = Query(20" in backend

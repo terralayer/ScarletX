@@ -1,11 +1,11 @@
 import json
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from .models import AppSetting, BackgroundJob, History, Performer, Scene, Studio, Tag, scene_performer
 from .schemas import RemotePerson, RemoteScene, RemoteStudio
-from .studio_policy import is_allowed_remote_scene
+from .studio_policy import is_allowed_remote_scene, library_scene_policy_filter
 
 
 def _apply_performer_metadata(obj: Performer, item: RemotePerson) -> None:
@@ -69,6 +69,8 @@ def upsert_scene(
         obj = db.scalar(select(Tag).where(Tag.tpdb_id == item.id))
         if not obj: obj = Tag(tpdb_id=item.id, name=item.name); db.add(obj)
         obj.name = item.name; scene.tags.append(obj)
+    if content_type == "scene" and ((scene.studio and scene.studio.monitored) or any(p.monitored for p in scene.performers)):
+        scene.monitored = True
     db.flush()
     db.add(History(event_type="scene_imported" if created else "metadata_refreshed", scene_id=scene.id, message=f"{'Imported' if created else 'Refreshed'} {scene.title}"))
     if commit:
@@ -79,6 +81,16 @@ def upsert_scene(
         # SQLite commit/fsync per TPDB scene.
         db.flush()
     return scene
+
+
+def inherit_scene_monitoring(db: Session) -> int:
+    """Promote saved scenes credited to monitored entities; never disable a scene."""
+    result = db.execute(update(Scene).where(
+        Scene.content_type == "scene", Scene.monitored.is_(False),
+        library_scene_policy_filter(db),
+        or_(Scene.studio.has(Studio.monitored.is_(True)), Scene.performers.any(Performer.monitored.is_(True))),
+    ).values(monitored=True).execution_options(synchronize_session="fetch"))
+    return result.rowcount or 0
 
 
 def sync_adult_scene_entities_to_library(db: Session) -> dict[str, int]:
@@ -168,7 +180,8 @@ def upsert_performer(db: Session, remote: RemotePerson, monitored: bool = True) 
     if not obj:
         obj = Performer(tpdb_id=remote.id, name=remote.name); db.add(obj)
     _apply_performer_metadata(obj, remote)
-    obj.monitored, obj.is_library = monitored, True
+    # Reading fresh metadata must never silently disable an existing monitor.
+    obj.monitored, obj.is_library = monitored if created else obj.monitored, True
     db.flush(); db.add(History(event_type="performer_imported" if created else "metadata_refreshed", message=f"Imported performer {obj.name}")); db.commit(); db.refresh(obj)
     return obj
 
@@ -180,6 +193,7 @@ def upsert_studio(db: Session, remote: RemoteStudio, monitored: bool = True) -> 
         obj = Studio(tpdb_id=remote.id, name=remote.name); db.add(obj)
     obj.name, obj.url, obj.logo_url = remote.name, remote.url, remote.logo_url
     obj.poster_url, obj.description = remote.poster_url, remote.description
-    obj.monitored, obj.is_library = monitored, True
+    # Reading fresh metadata must never silently disable an existing monitor.
+    obj.monitored, obj.is_library = monitored if created else obj.monitored, True
     db.flush(); db.add(History(event_type="studio_imported" if created else "metadata_refreshed", message=f"Imported studio {obj.name}")); db.commit(); db.refresh(obj)
     return obj

@@ -6,9 +6,9 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_activity_pagination_has_single_state_owner():
     app = (ROOT / "frontend" / "app.js").read_text()
     overrides = (ROOT / "frontend" / "ui_overrides.js").read_text()
-    assert "const ACTIVITY_QUEUE_PAGE_SIZE=50" in app
+    assert "let ACTIVITY_QUEUE_PAGE_SIZE=25" in app
     assert "let activityQueuePage=1" in app
-    assert "const ACTIVITY_QUEUE_PAGE_SIZE=50" not in overrides
+    assert "ACTIVITY_QUEUE_PAGE_SIZE=25" not in overrides
     assert "let activityQueuePage=1" not in overrides
 
 
@@ -21,14 +21,15 @@ def test_entity_add_actions_are_add_or_add_and_monitor_without_delete():
     assert "data-remove" not in card
 
 
-def test_studio_add_and_monitor_stays_pinned_to_search_results():
+def test_adding_a_performer_opens_the_refreshed_performer_library():
     app = (ROOT / "frontend" / "app.js").read_text()
     actions = app[app.index("function bindEntityActions"):app.index("async function performerProfile")]
-    assert "data-add-only" in actions
-    assert "data-add-monitor" in actions
+    performer_add = actions[actions.index("if(type==='performers')"):actions.index("entityMode[type]='search'")]
+    assert "entityMode[type]='library'" in performer_add
+    assert "entityLibraryCache[type]=null" in performer_add
+    assert "view=type" in performer_add
+    assert "return renderEntities(type)" in performer_add
     assert "entityMode[type]='search'" in actions
-    assert "entityMode[type]='library'" not in actions
-    assert "renderEntities(type)" not in actions
 
 
 def test_dashboard_tiles_are_real_clickable_controls_with_direct_binding():

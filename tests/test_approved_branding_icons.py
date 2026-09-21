@@ -9,7 +9,7 @@ ICON_SHA256 = "30f7d52a474ed83d7f6f83d8da8ec9ca3488b6936bced0072dccdf762c10e768"
 def test_shell_keeps_approved_wordmark_source_and_emblem_favicon_available():
     index = (FRONTEND / "index.html").read_text(encoding="utf-8")
     assert '<div class="header-brand"><img src="/scarletx-wordmark.webp?v=approved-20260915-6" alt="ScarletX"></div>' in index
-    assert '<link rel="icon" href="/scarletx-icon.svg?v=approved-20260916-1" type="image/svg+xml" sizes="any">' in index
+    assert '<link rel="icon" href="/scarletx-icon.webp?v=approved-20260918-1" type="image/webp" sizes="any">' in index
     assert "scarletx-wordmark.svg" not in index
 
 

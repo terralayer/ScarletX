@@ -17,7 +17,7 @@ BLOCKED_PLATFORM_TOKENS = {
     "xhamster", "x hamster", "xvideos", "x videos", "youporn", "you porn",
     "redtube", "red tube", "spankbang", "eporner", "motherless",
     "mydirtyhobby", "my dirty hobby", "frisk", "unlockd", "patreon", "gumroad",
-    "analvids", "anal vids", "anal vids network",
+    "analvids", "anal vids", "anal vids network", "yourvids", "your vids",
 }
 
 BLOCKED_PLATFORM_DOMAINS = {
@@ -29,7 +29,7 @@ BLOCKED_PLATFORM_DOMAINS = {
     "livejasmin.com", "flirt4free.com", "xhamster.com", "xvideos.com",
     "youporn.com", "redtube.com", "spankbang.com", "eporner.com",
     "motherless.com", "mydirtyhobby.com", "frisk.chat", "unlockd.me",
-    "patreon.com", "gumroad.com",
+    "patreon.com", "gumroad.com", "yourvids.com",
 }
 
 def _text(value: Any) -> str:
@@ -101,3 +101,22 @@ def is_allowed_remote_scene(scene: Any) -> bool:
     if not name or _text(name) in {"unknown", "n/a", "none"}:
         return False
     return not (_blocked_text(name) or _blocked_url(url) or _blocked_url(source_url) or _blocked_text(source_url))
+
+
+def blocked_library_studio_ids(db) -> list[int]:
+    """Evaluate cached sites with the same policy as newly fetched metadata."""
+    from sqlalchemy import select
+    from .models import Studio
+    return [row.id for row in db.execute(select(Studio.id, Studio.tpdb_id, Studio.name, Studio.url))
+            if not is_allowed_tpdb_site_raw({'uuid': row.tpdb_id, 'name': row.name, 'url': row.url})]
+
+
+def library_scene_policy_filter(db):
+    """Exclude known blocked legacy credits/sources without deleting saved media."""
+    from sqlalchemy import and_, func, or_
+    from .models import Scene
+    source = func.lower(func.coalesce(Scene.source_url, ''))
+    return and_(
+        or_(Scene.studio_id.is_(None), Scene.studio_id.not_in(blocked_library_studio_ids(db))),
+        ~or_(*(source.contains(token) for token in sorted(BLOCKED_PLATFORM_TOKENS | BLOCKED_PLATFORM_DOMAINS))),
+    )

@@ -242,8 +242,9 @@ def normalize_studio(raw: dict[str, Any]) -> RemoteStudio:
 
 
 class ThePornDBClient:
-    def __init__(self, api_key: str, base_url: str = "https://api.theporndb.net", transport: httpx.AsyncBaseTransport | None = None, max_retries: int = 3):
+    def __init__(self, api_key: str, base_url: str = "https://api.theporndb.net", transport: httpx.AsyncBaseTransport | None = None, max_retries: int = 3, *, fresh: bool = False):
         self.max_retries = max_retries
+        self.fresh = fresh
         self._owns_client = transport is not None
         if self._owns_client:
             headers = {"Accept": "application/json", "User-Agent": "ScarletX/0.4.9"}
@@ -263,14 +264,14 @@ class ThePornDBClient:
         cache_path = _cache_key(path, params)
         ttl = 300 if params else 86400
         now = time.time()
-        memory_cached = await _TPDB_MEMORY_CACHE.get(cache_path, now)
+        memory_cached = None if self.fresh else await _TPDB_MEMORY_CACHE.get(cache_path, now)
         if memory_cached is not None:
             _record_tpdb(0.0, success=True, cache="memory")
             return memory_cached
 
         async def load() -> dict:
             load_now = time.time()
-            cached = _read_cache(cache_path, ttl)
+            cached = None if self.fresh else _read_cache(cache_path, ttl)
             if cached is not None:
                 await _TPDB_MEMORY_CACHE.put(
                     cache_path,
@@ -280,7 +281,7 @@ class ThePornDBClient:
                 _record_tpdb(0.0, success=True, cache="disk")
                 return cached
 
-            stale = _read_cache(cache_path, None)
+            stale = None if self.fresh else _read_cache(cache_path, None)
             last_error = None
             for attempt in range(min(self.max_retries, 2)):
                 network_started = time.perf_counter()
@@ -320,7 +321,10 @@ class ThePornDBClient:
                 return stale
             raise ThePornDBError("ThePornDB is unavailable") from last_error
 
-        return await _TPDB_MEMORY_CACHE.get_or_create(cache_path, load)
+        # A strict scan must not join a normal request that may fall back to stale
+        # data. Successful fresh responses still populate the ordinary cache.
+        request_key = (cache_path, "fresh") if self.fresh else cache_path
+        return await _TPDB_MEMORY_CACHE.get_or_create(request_key, load)
 
     async def search_scenes(
         self,

@@ -36,6 +36,11 @@
     return `${remainder}s`;
   }
 
+  function speedMbps(value) {
+    const bits = Math.max(0, Number(value) || 0) * 8;
+    return `${(bits / 1000 / 1000).toFixed(1)} Mbps`;
+  }
+
   function stageText(row, state) {
     const native = nativeRow(row);
     return row?.stage || native.stage || row?.phase || native.phase ||
@@ -58,18 +63,17 @@
 
   activityQueueHtml = function(rows) {
     if (!rows.length) return empty('No active downloads.');
-    return `<div class="tablewrap" style="border:0;border-radius:0"><table class="table"><thead><tr><th>Scene</th><th>Stage</th><th>Progress</th><th>Speed</th><th>Attempts</th><th>Elapsed</th><th>Error</th><th></th></tr></thead><tbody>${rows.map(x => {
+    return `<div class="tablewrap" style="border:0;border-radius:0"><table class="table"><thead><tr><th>Scene</th><th>Stage</th><th>Progress</th><th>Attempts</th><th>Elapsed</th><th>Error</th><th></th></tr></thead><tbody>${rows.map(x => {
       const native = nativeRow(x);
       const state = x.client_status || x.status || native.status || 'queued';
       const pct = x.progress == null ? '—' : `${Number(x.progress).toFixed(1)}%`;
-      const speed = x.speed_bps ? `${bytes(x.speed_bps)}/s` : '—';
+      const speed = x.speed_bps ? speedMbps(x.speed_bps) : '—';
       const eta = x.eta_seconds != null ? `${Math.floor(x.eta_seconds / 60)}m ${x.eta_seconds % 60}s` : '—';
       const done = x.downloaded_bytes != null ? bytes(x.downloaded_bytes) : '—';
       const total = x.total_bytes ? bytes(x.total_bytes) : '—';
-      const provider = x.provider ? `Best: ${esc(x.provider)}${x.active_connections ? ` • ${x.active_connections}/${x.connection_cap || x.active_connections} conns` : ''}` : (x.active_connections ? `${x.active_connections}/${x.connection_cap || x.active_connections} conns` : '');
       const error = x.error || native.error || '';
       const studio = x.studio || '';
-      return `<tr data-live-job="${esc(x.external_id || x.id || '')}"><td><b class="live-title">${esc(x.scene_title || x.release_title || x.title || 'Download')}</b><small class="live-studio" style="display:block;margin-top:2px">${esc(studio)}</small></td><td><span class="state warn live-status">${esc(state)}</span><small class="live-stage live-stage-detail">${esc(stageText(x, state))}</small></td><td><b class="live-pct">${pct}</b><small class="live-bytes">${done} / ${total}</small><div class="mini-progress" ${x.progress == null ? 'style="display:none"' : ''}><i class="live-bar" style="width:${Math.min(100, Number(x.progress || 0))}%"></i></div></td><td><b class="live-speed">${speed}</b><small class="live-eta">${eta !== '—' ? `ETA ${eta}` : ''}</small><small class="live-provider">${provider}</small></td><td><b class="live-attempts">${attemptCount(x)}</b></td><td><b class="live-elapsed">${formatElapsed(elapsedSeconds(x))}</b></td><td><small class="live-error">${error ? esc(error) : '—'}</small></td><td><div class="actions live-actions">${actionButtons(x, state)}</div></td></tr>`;
+      return `<tr data-live-job="${esc(x.external_id || x.id || '')}"><td><b class="live-title">${esc(x.scene_title || x.release_title || x.title || 'Download')}</b><small class="live-studio" style="display:block;margin-top:2px">${esc(studio)}</small></td><td><span class="state warn live-status">${esc(state)}</span></td><td><b class="live-pct">${pct}</b><small class="live-speed">${speed}</small><small class="live-bytes">${done} / ${total}</small><small class="live-eta">${eta !== '—' ? `ETA ${eta}` : ''}</small><div class="mini-progress" ${x.progress == null ? 'style="display:none"' : ''}><i class="live-bar" style="width:${Math.min(100, Number(x.progress || 0))}%"></i></div></td><td><b class="live-attempts">${attemptCount(x)}</b></td><td><b class="live-elapsed">${formatElapsed(elapsedSeconds(x))}</b></td><td><small class="live-error">${error ? esc(error) : '—'}</small></td><td><div class="actions live-actions">${actionButtons(x, state)}</div></td></tr>`;
     }).join('')}</tbody></table></div>`;
   };
 
@@ -84,10 +88,12 @@
       const elapsed = row.querySelector('.live-elapsed');
       const error = row.querySelector('.live-error');
       const stage = row.querySelector('.live-stage-detail');
+      const speed = row.querySelector('.live-speed');
       if (attempts) attempts.textContent = String(attemptCount(item));
       if (elapsed) elapsed.textContent = formatElapsed(elapsedSeconds(item));
       if (error) error.textContent = item.error || native.error || '—';
       if (stage) stage.textContent = stageText(item, state);
+      if (speed) speed.textContent = item.speed_bps ? speedMbps(item.speed_bps) : '—';
     });
   }
 
@@ -96,5 +102,6 @@
     const allRows = q?.tracked || [];
     const start = (activityQueuePage - 1) * ACTIVITY_QUEUE_PAGE_SIZE;
     syncOperationalFields(allRows.slice(start, start + ACTIVITY_QUEUE_PAGE_SIZE));
+    syncDownloadPauseControl(q);
   };
 })();

@@ -41,9 +41,7 @@ def test_dashboard_scene_table_restores_performers_column():
     assert "sceneRowsHtml(rows,inLibrary)" in source
 
 
-def test_small_studio_icons_use_transparent_compact_artwork():
-    source = (ROOT / "frontend" / "dashboard_regression_hotfix.js").read_text(encoding="utf-8")
-    assert "/compact?v=v6" in source
+def test_compact_studio_artwork_route_remains_available():
     backend = (ROOT / "scarletx" / "compact_studio_art.py").read_text(encoding="utf-8")
     assert "prepare_compact_studio_artwork" in backend
     assert 'Image.new("RGBA", target_size, (0, 0, 0, 0))' in backend
