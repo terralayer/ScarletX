@@ -346,6 +346,11 @@ class AdminSetupWrite(AdminCredentialsWrite):
     api_key: str = Field(min_length=43, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
 
 
+class SetupAgreementAcceptWrite(BaseModel):
+    accepted: Literal[True]
+    version: str = Field(min_length=1, max_length=50)
+
+
 class LoginWrite(BaseModel):
     username: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=1, max_length=1024)
