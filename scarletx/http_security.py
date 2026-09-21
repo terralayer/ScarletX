@@ -72,7 +72,7 @@ def install_authentication(
     async def scarletx_authentication(request: Request, call_next):
         path = request.url.path
         protected = path.startswith("/api/") or path in {"/docs", "/redoc", "/openapi.json"}
-        public = {"/api/health", "/api/auth/status", "/api/auth/login", "/api/auth/logout", "/api/setup/status", "/api/setup/admin", "/api/setup/api-key"}
+        public = {"/api/health", "/api/auth/status", "/api/auth/login", "/api/auth/logout", "/api/setup/status", "/api/setup/agreement", "/api/setup/admin", "/api/setup/api-key"}
         if protected and request.method not in {"GET", "HEAD", "OPTIONS"}:
             origin = request.headers.get("origin")
             if origin and (origin == "null" or urlsplit(origin).netloc != request.url.netloc):
