@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from scarletx.models import AuthSession, AuthUser
-from scarletx.schemas import AdminSetupWrite, LoginWrite
+from scarletx.schemas import AdminSetupWrite, LoginWrite, SetupAgreementAcceptWrite
 
 
 def test_admin_setup_requires_12_character_password():
@@ -19,6 +19,14 @@ def test_admin_setup_requires_matching_confirmation():
             password="correct-horse-1",
             password_confirm="correct-horse-2",
         )
+
+
+def test_setup_agreement_schema_requires_explicit_acceptance():
+    request = SetupAgreementAcceptWrite(accepted=True, version="2026-09-21")
+    assert request.accepted is True
+    with pytest.raises(ValidationError):
+        SetupAgreementAcceptWrite(accepted=False, version="2026-09-21")
+
 
 
 def test_login_schema_accepts_existing_credentials():
