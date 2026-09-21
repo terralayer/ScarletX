@@ -20,6 +20,7 @@ def test_about_is_available_from_navigation_and_rendered_as_a_native_view():
     assert 'id="aboutAgreementStatus"' in app
     assert 'id="aboutAgreementDate"' in app
     assert 'id="aboutAgreementVersion"' in app
+    assert 'id="aboutAgreementDocument"' in app
     assert 'class="about-mark"><img src="/scarletx-icon.webp' in app
 
 
@@ -35,6 +36,7 @@ def test_about_describes_local_first_behavior_without_exposing_configuration_det
     assert "your library stays on your system" in about.lower()
     assert "/api/system/status" in about
     assert "/api/setup/agreement" in about
+    assert "Usage agreement" in about
     assert "Project license" in about
     assert "ScarletX source" in about
     assert 'class="about-mark">X</div>' not in about
