@@ -33,6 +33,7 @@ SETUP_AGREEMENT_VERSION = "2026-09-21"
 SETUP_AGREEMENT_ACCEPTED_AT_KEY = "setup_agreement_accepted_at"
 SETUP_AGREEMENT_VERSION_KEY = "setup_agreement_version"
 SETUP_AGREEMENT_LINKS = {
+    "agreement": "https://github.com/terralayer/ScarletX/blob/main/docs/USAGE-AGREEMENT.md",
     "license": "https://github.com/terralayer/ScarletX/blob/main/LICENSE",
     "project": "https://github.com/terralayer/ScarletX",
 }
