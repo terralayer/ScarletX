@@ -43,6 +43,11 @@ def test_auth_gate_boots_application_immediately_without_session_check():
     assert "Checking security" not in script
     assert "Verifying the local ScarletX administrator session." not in script
     assert "/api/setup/admin" in script
+    assert "/api/setup/agreement" in script
+    assert 'id="authAgreementScroll"' in script
+    assert 'id="authAgreementAccept"' in script
+    assert 'id="authAgreementContinue"' in script
+    assert "Scroll to the bottom to enable acceptance." in script
 
 
 def test_activity_queue_refresh_waits_until_the_auth_gate_opens_the_app():
