@@ -57,7 +57,15 @@ def test_start_over_deletes_library_and_media_but_preserves_configuration_and_hi
         scene.tags.append(tag)
         root = RootFolder(name="Scenes", content_type="scene", path=str(media_root), is_default=True)
         profile = QualityProfile(name="HD", is_default=True)
-        db.add_all([scene, root, profile, user_tag, AppSetting(key="keep", value="yes")])
+        db.add_all([
+            scene,
+            root,
+            profile,
+            user_tag,
+            AppSetting(key="keep", value="yes"),
+            AppSetting(key="setup_agreement_accepted_at", value="2026-09-21T18:00:00Z"),
+            AppSetting(key="setup_agreement_version", value="2026-09-21"),
+        ])
         db.flush()
         db.execute(library_user_tag.insert().values(scene_id=scene.id, tag_id=user_tag.id))
         media = MediaFile(scene_id=scene.id, path=str(media_path), size_bytes=5)
@@ -99,6 +107,8 @@ def test_start_over_deletes_library_and_media_but_preserves_configuration_and_hi
         assert db.scalars(select(UserTag)).all() == []
         assert db.scalars(select(LibraryItemConfig)).all() == []
         assert db.scalar(select(AppSetting.value).where(AppSetting.key == "keep")) == "yes"
+        assert db.scalar(select(AppSetting.value).where(AppSetting.key == "setup_agreement_accepted_at")) == "2026-09-21T18:00:00Z"
+        assert db.scalar(select(AppSetting.value).where(AppSetting.key == "setup_agreement_version")) == "2026-09-21"
         assert db.get(RootFolder, root.id) is not None
         assert db.get(QualityProfile, profile.id) is not None
         assert db.scalar(select(History.scene_id)) is None
