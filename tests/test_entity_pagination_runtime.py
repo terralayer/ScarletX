@@ -146,6 +146,29 @@ assert.match(grid.appended,/data-entity-page="next"/);
     )
 
 
+def test_entity_pages_render_pagination_above_and_below_results():
+    run_node(
+        r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const source=fs.readFileSync(process.argv[1],'utf8');
+const section=source.slice(source.indexOf('function entityPager'),source.indexOf('function entityPageUrl'));
+const top={innerHTML:'',querySelectorAll:()=>[]};
+const grid={appended:'',querySelector:()=>null,querySelectorAll:()=>[],insertAdjacentHTML(position,html){this.appended+=html}};
+const ctx={
+  entityPage:{performers:1},entityPageSize:{performers:25},entityPageCursors:{performers:[null]},
+  entityLibraryCache:{performers:null},entityCursors:{performers:null},entityTotals:{performers:null},
+  $:selector=>selector==='#entityPaginationTop'?top:selector==='#entityGrid'?grid:null,
+  entityCard:(type,row)=>`<article>${row.id}</article>`,bindEntityActions(){},
+};
+vm.createContext(ctx);vm.runInContext(section,ctx);
+ctx.paintEntityLibrary('performers',{items:[{id:'one'}],total:26,has_more:true,next_cursor:'cursor-one'});
+assert.match(top.innerHTML,/data-entity-page="next"/,'top pagination should be rendered');
+assert.match(grid.appended,/data-entity-page="next"/,'bottom pagination should remain rendered');
+""",
+        APP,
+    )
+
+
 def test_pager_is_available_when_cursor_response_has_no_total():
     run_node(
         r"""

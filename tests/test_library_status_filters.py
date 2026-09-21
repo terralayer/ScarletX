@@ -37,14 +37,15 @@ def test_performer_gender_filter_returns_only_the_selected_gender():
     assert page["total"] == 1
 
 
-def test_performer_library_only_includes_performers_from_monitored_scenes():
+def test_performer_library_only_includes_explicitly_monitored_performers():
     db = _session()
-    included = Performer(tpdb_id="included", name="Included", is_library=True)
-    excluded = Performer(tpdb_id="excluded", name="Excluded", is_library=True)
+    included = Performer(tpdb_id="included", name="Included", is_library=True, monitored=True)
+    excluded = Performer(tpdb_id="excluded", name="Excluded", is_library=True, monitored=False)
     monitored_scene = Scene(tpdb_id="monitored-scene", title="Monitored", content_type="scene", monitored=True)
     unmonitored_scene = Scene(tpdb_id="unmonitored-scene", title="Unmonitored", content_type="scene", monitored=False)
     monitored_scene.performers.append(included)
-    unmonitored_scene.performers.append(excluded)
+    monitored_scene.performers.append(excluded)
+    unmonitored_scene.performers.append(included)
     db.add_all([monitored_scene, unmonitored_scene])
     db.commit()
 
@@ -53,13 +54,14 @@ def test_performer_library_only_includes_performers_from_monitored_scenes():
     assert [item["tpdb_id"] for item in page["items"]] == ["included"]
 
 
-def test_studio_library_only_includes_studios_with_monitored_scenes():
+def test_studio_library_only_includes_explicitly_monitored_studios():
     db = _session()
-    included = Studio(tpdb_id="included-studio", name="Included Studio", is_library=True)
-    excluded = Studio(tpdb_id="excluded-studio", name="Excluded Studio", is_library=True)
+    included = Studio(tpdb_id="included-studio", name="Included Studio", is_library=True, monitored=True)
+    excluded = Studio(tpdb_id="excluded-studio", name="Excluded Studio", is_library=True, monitored=False)
     monitored_scene = Scene(tpdb_id="studio-monitored", title="Monitored", content_type="scene", monitored=True, studio=included)
-    unmonitored_scene = Scene(tpdb_id="studio-unmonitored", title="Unmonitored", content_type="scene", monitored=False, studio=excluded)
-    db.add_all([monitored_scene, unmonitored_scene])
+    monitored_scene_with_unmonitored_studio = Scene(tpdb_id="studio-monitored-unmonitored", title="Monitored", content_type="scene", monitored=True, studio=excluded)
+    unmonitored_scene = Scene(tpdb_id="studio-unmonitored", title="Unmonitored", content_type="scene", monitored=False, studio=included)
+    db.add_all([monitored_scene, monitored_scene_with_unmonitored_studio, unmonitored_scene])
     db.commit()
 
     page = studio_summary_page(db, limit=10, monitored_only=True)

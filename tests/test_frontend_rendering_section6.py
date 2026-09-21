@@ -6,6 +6,9 @@ def test_entity_rendering_stays_bounded_lazy_and_navigation_safe():
 
     assert "entityPageSize={scenes:25,performers:25,studios:25}" in source
     assert 'id="entityPageSize"' in source
+    assert 'class="entity-page-size"' in source
+    assert '<span>Show</span>' in source
+    assert '<span>rows</span>' in source
     assert "[25,50,100].map(size" in source
     assert "entityPageSize[type]=Number(b.value)" in source
     assert "pageHead(names[type],'',pageSizePicker)" in source

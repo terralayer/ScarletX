@@ -6,7 +6,7 @@ ScarletX roadmap work is intentionally separated from release-version work.
 
 - Each numbered roadmap section is delivered in its own pull request.
 - Roadmap pull requests must not change the shipped ScarletX version, release notes, TrueNAS app version, container release tags, or other release metadata unless the pull request is itself the dedicated release-discipline/release change.
-- The active release target remains locked to `0.4.9`. Troy has conditionally authorized moving to `0.5.0` after actual TrueNAS lifecycle and real-throughput tests pass, then locking at `0.5.0`. Until both gates pass, feature work and all shipped metadata must retain `0.4.9`. See `RELEASE-GATE-0.5.0.md` for evidence requirements.
+- The active release target remains locked to `0.5.0`. Feature work and all shipped metadata must retain `0.5.0` until a new dedicated release change is authorized.
 - Feature, reliability, performance, and refactor pull requests must preserve backward compatibility unless their roadmap section explicitly changes behavior.
 - A section is mergeable only after its section-specific regression tests pass and applicable repository gates have been checked. Known failures already present on the base branch must be documented rather than hidden.
 

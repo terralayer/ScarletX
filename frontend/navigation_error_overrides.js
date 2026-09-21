@@ -160,7 +160,9 @@ performerProfile=async function(id,localId=null){
     if(!navigationGenerationCurrent(generation))return;
     let resolvedLocalId=localId||local?.id||null;
     let x=local?localPerformerProfile(local):await api(`/api/metadata/performers/${encodeURIComponent(id)}`);
-    if(!local){local=await api(`/api/library/performers/by-tpdb/${encodeURIComponent(id)}/detail`);resolvedLocalId=local.id}
+    // A remote search result is valid even when it is not in the local library.
+    // Do not perform a second local-only lookup here: a 404 would leave the
+    // profile stuck on its loading state after metadata already loaded.
     if(!navigationGenerationCurrent(generation))return;
     // The profile itself should be usable immediately.  Populate the potentially
     // large scene list afterward instead of blocking the entire page on it.
@@ -184,7 +186,8 @@ studioProfile=async function(id,localId=null){
     if(!navigationGenerationCurrent(generation))return;
     let resolvedLocalId=localId||local?.id||null;
     let x=local?{...local,id:local.tpdb_id}:await api(`/api/metadata/studios/${encodeURIComponent(id)}`);
-    if(!local){local=await api(`/api/library/studios/by-tpdb/${encodeURIComponent(id)}/detail`);resolvedLocalId=local.id}
+    // A remote search result is valid even when it is not in the local library.
+    // Do not perform a second local-only lookup after remote metadata loads.
     if(!navigationGenerationCurrent(generation))return;
     let scenes={items:[]};
     if(!navigationGenerationCurrent(generation))return;

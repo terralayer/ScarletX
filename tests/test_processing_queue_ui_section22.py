@@ -24,14 +24,22 @@ def test_processing_queue_renders_compact_progress_column_and_controls():
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     activity = base[base.index("async function activity()") : base.index("async function calendar")]
 
-    for heading in ("Scene", "Stage", "Progress", "Attempts", "Elapsed", "Error"):
+    for heading in ("Download", "Progress", "Status", "Speed / ETA"):
         assert f"<th>{heading}</th>" in source
-    assert "<th>Speed</th>" not in source
+    assert "<th>Stage</th>" not in source
+    assert "<th>Attempts</th>" not in source
     assert 'class="live-pct"' in source
     assert 'class="live-speed"' in source
+    assert 'class="live-eta"' in source
+    assert "function syncQueueActions" in source
     assert source.index('class="live-pct"') < source.index('class="live-speed"')
     assert 'class="live-provider"' not in source
     assert 'class="live-stage live-stage-detail"' not in source
+    assert 'data-download-summary' in activity
+    for summary_id in ("downloadActiveCount", "downloadQueuedCount", "downloadSpeed", "downloadRemaining"):
+        assert f'id="{summary_id}"' in activity
+    assert "Queue speed" in activity
+    assert "Connections" in activity
     for action in ("pause", "resume", "cancel"):
         assert f'data-native-act="{action}"' in source
     assert "Retry" in activity_lists
@@ -47,13 +55,13 @@ def test_processing_queue_places_speed_on_its_own_line_below_percentage():
     assert ".live-eta{display:block" in styles
 
 
-def test_processing_queue_labels_download_rate_in_megabits_per_second():
+def test_processing_queue_labels_download_rate_in_bytes_per_second():
     source = (ROOT / "frontend" / "processing_queue_overrides.js").read_text(encoding="utf-8")
 
-    assert "function speedMbps(value)" in source
-    assert "return `${(bits / 1000 / 1000).toFixed(1)} Mbps`;" in source
-    assert "speedMbps(x.speed_bps)" in source
-    assert "speed.textContent = item.speed_bps ? speedMbps(item.speed_bps) : '—';" in source
+    assert "function speedText(value)" in source
+    assert "return value ? `${bytes(value)}/s` : '—';" in source
+    assert "speedText(x.speed_bps)" in source
+    assert "if (speed) speed.textContent = speedText(item.speed_bps);" in source
 
 
 def test_entity_libraries_use_page_navigation_instead_of_load_more():

@@ -11,9 +11,10 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
+import orjson
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Response, Request
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, ORJSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import SecretStr
 from sqlalchemy import and_, delete, func, inspect, or_, select, text, update
 from sqlalchemy.orm import load_only, Session, selectinload
@@ -114,6 +115,13 @@ from ..migrations import (
 from ..list_queries import performer_summary_page, scene_summary_page, studio_summary_page
 from ..event_stream import QueueEvent, format_sse, queue_event_broker, queue_event_pump
 from ..background_signals import completed_import_signal
+
+
+class ScarletJSONResponse(Response):
+    media_type = "application/json"
+
+    def render(self, content: object) -> bytes:
+        return orjson.dumps(content, option=orjson.OPT_NON_STR_KEYS | orjson.OPT_SERIALIZE_NUMPY)
 
 
 def _encode_cursor(*parts) -> str:
@@ -409,7 +417,7 @@ async def lifespan(_: FastAPI):
         emit_status("Background Workers", "STOPPED", "shutdown complete", severity="ok")
 
 
-app = FastAPI(title="ScarletX API", version="0.4.9", lifespan=lifespan, default_response_class=ORJSONResponse)
+app = FastAPI(title="ScarletX API", version="0.5.0", lifespan=lifespan, default_response_class=ScarletJSONResponse)
 app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=5)
 
 
@@ -901,7 +909,7 @@ def delete_release_profile(profile_id: int, db: Session = Depends(get_session)):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "app": "ScarletX", "version": "0.4.9", "upstream": "SceneCore 0.7.16"}
+    return {"status": "ok", "app": "ScarletX", "version": "0.5.0", "upstream": "SceneCore 0.7.16"}
 
 
 @app.get("/api/search/status")
@@ -2896,8 +2904,8 @@ def system_status(db: Session = Depends(get_session)):
     today = datetime.now(UTC).date()
     wanted_count = db.scalar(select(func.count(Scene.id)).where(Scene.content_type=="scene", Scene.monitored.is_(True), ~select(MediaFile.id).where(MediaFile.scene_id==Scene.id).exists())) or 0
     upcoming_count = db.scalar(select(func.count(Scene.id)).where(Scene.content_type=="scene", Scene.monitored.is_(True), Scene.release_date>=today)) or 0
-    monitored_performers = db.scalar(select(func.count(func.distinct(Performer.id))).join(scene_performer, scene_performer.c.performer_id == Performer.id).join(Scene, Scene.id == scene_performer.c.scene_id).where(Performer.is_library.is_(True), Scene.content_type == "scene", Scene.monitored.is_(True))) or 0
-    monitored_studios = db.scalar(select(func.count(func.distinct(Studio.id))).join(Scene, Scene.studio_id == Studio.id).where(Studio.is_library.is_(True), Scene.content_type == "scene", Scene.monitored.is_(True))) or 0
+    monitored_performers = db.scalar(select(func.count(Performer.id)).where(Performer.is_library.is_(True), Performer.monitored.is_(True))) or 0
+    monitored_studios = db.scalar(select(func.count(Studio.id)).where(Studio.is_library.is_(True), Studio.monitored.is_(True))) or 0
     result = {"version":app.version,"app_name":settings.app_name,"database":engine.url.get_backend_name(),"library":{"scene":db.scalar(select(func.count(Scene.id)).where(Scene.content_type=="scene")) or 0},"performers":int(monitored_performers),"studios":int(monitored_studios),"media_files":db.scalar(select(func.count(MediaFile.id))) or 0,"wanted":int(wanted_count),"upcoming":int(upcoming_count),"tracked_downloads":db.scalar(select(func.count(TrackedDownload.id))) or 0,"native_usenet_jobs":db.scalar(select(func.count(NativeUsenetJob.id))) or 0,"download_client":resolve_client(settings),"rss_seen":db.scalar(select(func.count(IndexerFeedItem.id))) or 0}
     _SYSTEM_STATUS_CACHE = (now, result)
     return result
@@ -2992,30 +3000,61 @@ def start_media_library_scan(tasks: BackgroundTasks, db: Session = Depends(get_s
 def media_library_files(limit: int = Query(200, ge=1, le=1000), offset: int = Query(0, ge=0), db: Session = Depends(get_session)):
     # Legacy offset endpoint retained for API compatibility. The UI uses the
     # cursor endpoint below so deep pages remain O(page-size), not O(offset).
-    rows = db.scalars(select(MediaFile).order_by(MediaFile.imported_at.desc(), MediaFile.id.desc()).offset(offset).limit(limit)).all()
+    rows = db.scalars(_media_library_files_stmt().offset(offset).limit(limit)).all()
     return media_rows(db, rows)
+
+
+def _media_library_files_stmt():
+    # The library is presented by scene release date, with import time and ID
+    # providing stable ordering when release dates match or are unavailable.
+    return (
+        select(MediaFile)
+        .outerjoin(Scene, Scene.id == MediaFile.scene_id)
+        .order_by(
+            Scene.release_date.is_(None).asc(),
+            Scene.release_date.desc(),
+            MediaFile.imported_at.desc(),
+            MediaFile.id.desc(),
+        )
+    )
 
 
 @app.get("/api/media-library/files/page")
 def media_library_files_page(limit: int = Query(200, ge=1, le=1000), cursor: str | None = Query(None), db: Session = Depends(get_session)):
-    stmt = select(MediaFile).order_by(MediaFile.imported_at.desc(), MediaFile.id.desc())
+    stmt = _media_library_files_stmt()
     if cursor:
         parts = _decode_cursor(cursor)
-        if len(parts) != 2:
+        if len(parts) != 3:
             raise HTTPException(400, "Invalid media cursor")
         try:
-            imported_at = datetime.fromisoformat(parts[0])
-            media_id = int(parts[1])
+            release_date = date.fromisoformat(parts[0]) if parts[0] else None
+            imported_at = datetime.fromisoformat(parts[1])
+            media_id = int(parts[2])
         except (TypeError, ValueError) as exc:
             raise HTTPException(400, "Invalid media cursor") from exc
-        stmt = stmt.where(or_(
+        tie_breaker = or_(
             MediaFile.imported_at < imported_at,
             and_(MediaFile.imported_at == imported_at, MediaFile.id < media_id),
-        ))
+        )
+        if release_date is None:
+            stmt = stmt.where(and_(Scene.release_date.is_(None), tie_breaker))
+        else:
+            stmt = stmt.where(or_(
+                Scene.release_date.is_(None),
+                Scene.release_date < release_date,
+                and_(Scene.release_date == release_date, tie_breaker),
+            ))
     rows = db.scalars(stmt.limit(limit + 1)).all()
     has_more = len(rows) > limit
     rows = rows[:limit]
-    next_cursor = _encode_cursor(rows[-1].imported_at.isoformat(), rows[-1].id) if has_more and rows else None
+    last_release_date = None
+    if has_more and rows:
+        last_release_date = db.scalar(select(Scene.release_date).where(Scene.id == rows[-1].scene_id))
+    next_cursor = _encode_cursor(
+        last_release_date.isoformat() if last_release_date else None,
+        rows[-1].imported_at.isoformat(),
+        rows[-1].id,
+    ) if has_more and rows else None
     return {"items": media_rows(db, rows), "has_more": has_more, "next_cursor": next_cursor}
 
 

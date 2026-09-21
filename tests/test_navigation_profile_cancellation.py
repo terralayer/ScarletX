@@ -42,3 +42,25 @@ def test_profile_scene_pagination_stops_when_navigation_is_stale():
     assert "initProfileSceneCatalog('performers',id,resolvedLocalId,generation)" in performer_profile.replace(" ", "")
     assert "initProfileSceneCatalog('studios',id,resolvedLocalId,generation)" in studio_profile.replace(" ", "")
     assert "load(id,localId,generation)" in compact
+
+
+def test_remote_performer_profile_does_not_require_a_second_local_lookup():
+    source = NAVIGATION.read_text(encoding="utf-8")
+    profile = _section(
+        source,
+        "performerProfile=async function",
+        "studioProfile=async function",
+    )
+
+    assert profile.count("/api/library/performers/by-tpdb/") == 1
+    assert "await api(`/api/metadata/performers/${encodeURIComponent(id)}`)" in profile
+    assert "Do not perform a second local-only lookup here" in profile
+
+
+def test_remote_studio_profile_does_not_require_a_second_local_lookup():
+    source = NAVIGATION.read_text(encoding="utf-8")
+    profile = source[source.index("studioProfile=async function") :]
+
+    assert profile.count("/api/library/studios/by-tpdb/") == 1
+    assert "await api(`/api/metadata/studios/${encodeURIComponent(id)}`)" in profile
+    assert "Do not perform a second local-only lookup after remote metadata loads" in profile

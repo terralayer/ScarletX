@@ -6,9 +6,9 @@ import tomllib
 from pathlib import Path
 
 EXPECTED_MAJOR = 0
-EXPECTED_MINOR = 4
-EXPECTED_SERIES = "0.4"
-LOCKED_RELEASE_VERSION = "0.4.9"
+EXPECTED_MINOR = 5
+EXPECTED_SERIES = "0.5"
+LOCKED_RELEASE_VERSION = "0.5.0"
 CATALOG_METADATA_PATH = "packaging/truenas/scarletx/app.yaml"
 
 VERSIONED_FILES = (
@@ -130,7 +130,7 @@ def apply_release(root: Path, notes: str) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="ScarletX patch-only release helper")
+    parser = argparse.ArgumentParser(description="ScarletX locked release helper")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     next_parser = subparsers.add_parser("next", help="Print the next ScarletX stable release version")

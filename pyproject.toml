@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "scarletx"
-version = "0.4.9"
+version = "0.5.0"
 description = "Self-hosted adult scene management and automation"
 license = "AGPL-3.0-only"
 requires-python = ">=3.11"
@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<9", "pytest-asyncio>=0.24,<1", "ruff>=0.8,<1"]
+dev = ["pytest>=8,<9", "pytest-asyncio>=0.24,<1", "ruff>=0.8,<1", "httpx2>=2.13,<3"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["scarletx"]
@@ -30,6 +30,9 @@ packages = ["scarletx"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+filterwarnings = [
+  "ignore:The anyio\\.abc\\.BlockingPortal alias is deprecated:DeprecationWarning:starlette\\.testclient",
+]
 
 [tool.ruff]
 line-length = 110

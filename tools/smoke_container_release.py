@@ -16,8 +16,8 @@ from pathlib import Path
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--runtime", choices=["podman"], default="podman")
-parser.add_argument("--backend", default="localhost/scarletx:0.4.9-candidate")
-parser.add_argument("--web", default="localhost/scarletx-web:0.4.9-candidate")
+parser.add_argument("--backend", default="localhost/scarletx:0.5.0-candidate")
+parser.add_argument("--web", default="localhost/scarletx-web:0.5.0-candidate")
 parser.add_argument("--upgrade-from", help="Previous local backend image; replace it using the same volumes")
 parser.add_argument("--output", type=Path, required=True)
 args = parser.parse_args()

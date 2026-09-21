@@ -160,6 +160,9 @@ def test_activity_uses_25_active_and_20_completed_and_failed_rows_per_page():
     assert "ACTIVITY_FAILED_PAGE_SIZE=20" in source
     assert "activityQueuePage" in source
     assert 'id="activityQueuePageSize"' in source
+    assert 'class="download-queue-size"' in source
+    assert '<span>Show</span>' in source
+    assert '<span>rows</span>' in source
     assert "completed:{page:1,request:0,size:()=>ACTIVITY_COMPLETED_PAGE_SIZE}" in activity_lists
     assert "failed:{page:1,request:0,size:()=>ACTIVITY_FAILED_PAGE_SIZE}" in activity_lists
     assert "`/api/downloads/${kind}?limit=${state.size()}&offset=${(state.page-1)*state.size()}`" in activity_lists

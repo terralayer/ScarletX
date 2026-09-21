@@ -7,19 +7,20 @@ function entitySearchPager(result){
   return `<div class="pagination-bar entity-pagination"><button class="btn small" data-search-page="${page-1}" ${page<=1?'disabled':''}>Previous</button>${numbers.map(n=>`<button class="btn small" data-search-page="${n}" ${n===page?'disabled':''}>${n}</button>`).join('')}<button class="btn small" data-search-page="${page+1}" ${page>=pages?'disabled':''}>Next</button></div>`;
 }
 function bindEntitySearch(type,state){
-  const grid=$('#entityGrid'),notice=$('#entityNotice');
-  grid?.querySelectorAll('[data-search-page]').forEach(button=>button.onclick=()=>{
+  const grid=$('#entityGrid'),top=$('#entityPaginationTop'),notice=$('#entityNotice');
+  const buttons=[...(top?.querySelectorAll('[data-search-page]')||[]),...(grid?.querySelectorAll('[data-search-page]')||[])];
+  buttons.forEach(button=>button.onclick=()=>{
     if(!button.disabled)return searchEntity(type,state.query,{source:state.source,page:Number(button.dataset.searchPage)});
   });
   const more=notice?.querySelector('[data-search-online]');
   if(more)more.onclick=()=>searchEntity(type,state.query,{source:'online',page:1});
 }
 async function searchEntity(type,query,options={}){
-  const grid=$('#entityGrid'),notice=$('#entityNotice');
+  const grid=$('#entityGrid'),top=$('#entityPaginationTop'),notice=$('#entityNotice');
   if(!grid)return false;
   const source=options.source||'local',page=options.page||1,generation=nextEntityRequest(type),prior=entitySearchState[type];
   const current=()=>view===type&&entityRequestCurrent(type,generation)&&$('#entityGrid')===grid;
-  const oldNotice=notice?.innerHTML||'',buttons=[...grid.querySelectorAll('[data-search-page]')],disabled=buttons.map(button=>button.disabled);
+  const oldNotice=notice?.innerHTML||'',oldTop=top?.innerHTML||'',buttons=[...(top?.querySelectorAll('[data-search-page]')||[]),...grid.querySelectorAll('[data-search-page]')],disabled=buttons.map(button=>button.disabled);
   buttons.forEach(b=>b.disabled=true);
   if(!prior||prior.query!==query||!options.source)grid.innerHTML=empty('Searching saved library…');
   if(notice)notice.innerHTML=`<div class="notice info" role="status">${source==='online'?'Checking saved provider results and finding more online…':'Searching saved library…'}</div>`;
@@ -32,7 +33,9 @@ async function searchEntity(type,query,options={}){
     const rows=result.items||[],state={query,source,page:result.page||page};
     if(type==='scenes'){grid.innerHTML=sceneTable(rows,false);bindSceneTableActions(grid,false)}
     else{grid.innerHTML=rows.length?rows.map(row=>entityCard(type,row,false)).join(''):empty(source==='local'?'No saved matches. Use Find more online to discover more.':'No provider results found.');bindEntityActions(type,false)}
-    grid.insertAdjacentHTML('beforeend',entitySearchPager({...result,page:state.page,per_page:result.per_page||24}));
+    const pager=entitySearchPager({...result,page:state.page,per_page:result.per_page||24});
+    if(top)top.innerHTML=pager;
+    grid.insertAdjacentHTML('beforeend',pager);
     entitySearchState[type]=state;
     if(notice)notice.innerHTML=`<div class="search-summary" role="status"><span>${Number(result.total||0).toLocaleString()} ${source==='online'?'provider':'saved'} results${source==='online'?' · fetched results saved locally':''}</span>${type!=='scenes'&&source==='local'?'<button class="btn small" data-search-online>Find more online</button>':''}</div>`;
     bindEntitySearch(type,state);
@@ -40,6 +43,7 @@ async function searchEntity(type,query,options={}){
     return true;
   }catch(error){
     if(!current())return false;
+    if(top)top.innerHTML=oldTop;
     if(notice)notice.innerHTML=oldNotice||'<button class="btn small" data-search-online>Find more online</button>';
     if(!prior||prior.query!==query)grid.innerHTML=empty('Search could not load. Try again.');
     if(prior&&prior.query===query)buttons.forEach((button,index)=>button.disabled=disabled[index]);

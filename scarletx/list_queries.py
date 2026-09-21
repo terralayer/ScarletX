@@ -7,7 +7,7 @@ from datetime import date
 from functools import lru_cache
 
 from fastapi import HTTPException
-from sqlalchemy import and_, exists, func, or_, select, text
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from .models import MediaFile, Performer, Scene, Studio, scene_performer
@@ -214,17 +214,7 @@ def performer_summary_page(
 ) -> dict:
     filters = [Performer.is_library.is_(True)]
     if monitored_only:
-        filters.append(
-            exists(
-                select(scene_performer.c.scene_id)
-                .where(
-                    scene_performer.c.performer_id == Performer.id,
-                    scene_performer.c.scene_id == Scene.id,
-                    Scene.content_type == "scene",
-                    Scene.monitored.is_(True),
-                )
-            )
-        )
+        filters.append(Performer.monitored.is_(True))
     params: dict[str, object] = {}
     fts = _fts_query(q)
     if fts and _fts_available(db, "performer_search"):
@@ -316,15 +306,7 @@ def studio_summary_page(
     from .studio_policy import blocked_library_studio_ids
     filters = [Studio.is_library.is_(True), Studio.id.not_in(blocked_library_studio_ids(db))]
     if monitored_only:
-        filters.append(
-            exists(
-                select(Scene.id).where(
-                    Scene.studio_id == Studio.id,
-                    Scene.content_type == "scene",
-                    Scene.monitored.is_(True),
-                )
-            )
-        )
+        filters.append(Studio.monitored.is_(True))
     params: dict[str, object] = {}
     fts = _fts_query(q)
     if fts and _fts_available(db, "studio_search"):

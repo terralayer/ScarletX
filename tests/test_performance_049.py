@@ -73,9 +73,9 @@ async def test_slow_auth_database_does_not_stall_health():
         started.set()
         time.sleep(.15)
 
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', cookies={'scarletx_session':token}) as client:
         start = time.monotonic()
-        task = asyncio.create_task(client.get('/api/private', cookies={'scarletx_session':token}))
+        task = asyncio.create_task(client.get('/api/private'))
         while not started.is_set():
             await asyncio.sleep(.001)
         response = await client.get('/api/health')
