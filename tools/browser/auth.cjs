@@ -9,10 +9,14 @@ const root = path.resolve(__dirname, '../..');
  try {
   for (const width of [390, 1440]) {
    const page = await browser.newPage({viewport:{width,height:900}});
-   let complete=false, signedIn=false, generation=0, submitted, fail=false;
+   let complete=false, agreement=false, signedIn=false, generation=0, submitted, fail=false;
    await page.route('http://scarletx.test/**', async route => {
     const p=new URL(route.request().url()).pathname;
-    if(p==='/api/auth/status')return route.fulfill({json:{setup_required:!complete,authenticated:signedIn,username:signedIn?'troy':null}});
+    if(p==='/api/auth/status')return route.fulfill({json:{setup_required:!complete,agreement_required:!complete&&!agreement,authenticated:signedIn,username:signedIn?'troy':null}});
+    if(p==='/api/setup/agreement'){
+     if(route.request().method()==='GET')return route.fulfill({json:{required:!complete&&!agreement,accepted:agreement,accepted_at:agreement?'2026-09-21T18:00:00Z':null,version:'2026-09-21',current_version:'2026-09-21',links:{license:'https://github.com/terralayer/ScarletX/blob/main/LICENSE',project:'https://github.com/terralayer/ScarletX'}}});
+     agreement=true;return route.fulfill({json:{required:false,accepted:true,accepted_at:'2026-09-21T18:00:00Z',version:'2026-09-21',current_version:'2026-09-21',links:{license:'https://github.com/terralayer/ScarletX/blob/main/LICENSE',project:'https://github.com/terralayer/ScarletX'}}});
+    }
     if(p==='/api/setup/api-key')return route.fulfill({json:{api_key:(++generation).toString().padStart(43,'x')}});
     if(p==='/api/setup/admin'){
      submitted=route.request().postDataJSON();
@@ -34,6 +38,16 @@ const root = path.resolve(__dirname, '../..');
     return route.fulfill({body:fs.readFileSync(path.join(root,'frontend',p)),contentType:p.endsWith('.js')?'text/javascript':'text/css'});
    });
    await page.goto('http://scarletx.test/');
+   await page.locator('#authAgreement').waitFor();
+   assert.equal(await page.locator('#authForm').isVisible(),false);
+   assert.equal(await page.locator('#authAgreementAccept').isDisabled(),true);
+   assert.equal(await page.locator('#authAgreementContinue').isDisabled(),true);
+   await page.locator('#authAgreementScroll').evaluate(el=>{el.scrollTop=el.scrollHeight;el.dispatchEvent(new Event('scroll'))});
+   await page.waitForFunction(()=>!document.getElementById('authAgreementAccept').disabled);
+   assert.equal(await page.locator('#authAgreementContinue').isDisabled(),true);
+   await page.check('#authAgreementAccept');
+   assert.equal(await page.locator('#authAgreementContinue').isDisabled(),false);
+   await page.click('#authAgreementContinue');
    await page.locator('#authApiKey').waitFor();
    await page.waitForFunction(()=>document.getElementById('authApiKey').value.length===43);
    const first=await page.locator('#authApiKey').inputValue();
@@ -58,6 +72,6 @@ const root = path.resolve(__dirname, '../..');
    await page.fill('#authPassword','correct-horse-battery');await page.click('#authSubmit');await page.waitForFunction(()=>document.getElementById('content').textContent==='Dashboard');
    await page.close();
   }
-  console.log('PASS: first-run setup, regenerate, validation, save retry, Settings redirect, logout/login, desktop/mobile');
+  console.log('PASS: agreement scroll gate, first-run setup, regenerate, validation, save retry, Settings redirect, logout/login, desktop/mobile');
  } finally {await browser.close();}
 })().catch(error=>{console.error(error);process.exit(1)});
