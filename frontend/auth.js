@@ -17,7 +17,7 @@
         <p>ScarletX is designed to run on systems you control. You are responsible for securing the host, backups, storage permissions, network exposure, and administrator credentials for your installation.</p>
         <h3>Software terms</h3>
         <p>The software is provided under the project license and without a guarantee that every external service, file, or item of metadata is accurate, available, safe, or lawful for your use.</p>
-        <p class="sx-agreement-links">Review the <a href="https://github.com/terralayer/ScarletX/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">project license</a> and <a href="https://github.com/terralayer/ScarletX" target="_blank" rel="noopener noreferrer">ScarletX source</a>.</p>
+        <p class="sx-agreement-links">Review the <a href="https://github.com/terralayer/ScarletX/blob/main/docs/USAGE-AGREEMENT.md" target="_blank" rel="noopener noreferrer">full usage agreement</a>, <a href="https://github.com/terralayer/ScarletX/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">project license</a>, and <a href="https://github.com/terralayer/ScarletX" target="_blank" rel="noopener noreferrer">ScarletX source</a>.</p>
         <p><strong>Agreement version:</strong> 2026-09-21</p>
       </div>
       <p class="sx-agreement-instruction" id="authAgreementInstruction">Scroll to the bottom to enable acceptance.</p>
