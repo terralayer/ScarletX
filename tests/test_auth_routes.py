@@ -5,9 +5,13 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from scarletx.auth import SESSION_COOKIE_NAME, login_limiter, session_user
-from scarletx.auth_routes import router
+from scarletx.auth_routes import (
+    SETUP_AGREEMENT_ACCEPTED_AT_KEY,
+    SETUP_AGREEMENT_VERSION_KEY,
+    router,
+)
 from scarletx.db import Base, get_session
-from scarletx.models import AuthSession, AuthUser
+from scarletx.models import AppSetting, AuthSession, AuthUser
 
 PASSWORD = "correct-horse-battery"
 
@@ -31,7 +35,21 @@ def make_client():
     return TestClient(app), factory
 
 
-def setup_admin(client, username="admin", password=PASSWORD):
+def accept_agreement(client):
+    status = client.get("/api/setup/agreement").json()
+    if status["required"]:
+        response = client.post(
+            "/api/setup/agreement",
+            json={"accepted": True, "version": status["current_version"]},
+        )
+        assert response.status_code == 200
+        return response.json()
+    return status
+
+
+def setup_admin(client, username="admin", password=PASSWORD, *, accept_agreement_first=True):
+    if accept_agreement_first:
+        accept_agreement(client)
     return client.post(
         "/api/setup/admin",
         json={
@@ -46,6 +64,9 @@ def setup_admin(client, username="admin", password=PASSWORD):
 def test_first_run_setup_creates_one_admin_and_logs_in():
     client, factory = make_client()
     assert client.get("/api/setup/status").json() == {"setup_required": True}
+    agreement = client.get("/api/setup/agreement").json()
+    assert agreement["required"] is True
+    assert agreement["accepted"] is False
 
     response = setup_admin(client)
     assert response.status_code == 200
@@ -59,6 +80,7 @@ def test_first_run_setup_creates_one_admin_and_logs_in():
     assert client.get("/api/auth/status").json() == {
         "enabled": True,
         "setup_required": False,
+        "agreement_required": False,
         "authenticated": True,
         "username": "admin",
     }
@@ -70,6 +92,42 @@ def test_first_run_setup_creates_one_admin_and_logs_in():
         raw = client.cookies.get(SESSION_COOKIE_NAME)
         assert raw != stored_session.token_digest
         assert session_user(db, raw).username == "admin"
+
+
+def test_admin_setup_is_blocked_until_usage_agreement_is_recorded():
+    client, factory = make_client()
+
+    response = setup_admin(client, accept_agreement_first=False)
+    assert response.status_code == 428
+    assert "agreement" in response.json()["detail"].lower()
+    with factory() as db:
+        assert db.scalar(select(AuthUser.id)) is None
+
+    before = client.get("/api/setup/agreement").json()
+    assert before["required"] is True
+    assert before["accepted_at"] is None
+    accepted = client.post(
+        "/api/setup/agreement",
+        json={"accepted": True, "version": before["current_version"]},
+    )
+    assert accepted.status_code == 200
+    saved = accepted.json()
+    assert saved["required"] is False
+    assert saved["accepted"] is True
+    assert saved["accepted_at"].endswith("Z")
+
+    repeated = client.post(
+        "/api/setup/agreement",
+        json={"accepted": True, "version": before["current_version"]},
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["accepted_at"] == saved["accepted_at"]
+
+    with factory() as db:
+        assert db.get(AppSetting, SETUP_AGREEMENT_ACCEPTED_AT_KEY).value == saved["accepted_at"]
+        assert db.get(AppSetting, SETUP_AGREEMENT_VERSION_KEY).value == saved["version"]
+
+    assert setup_admin(client, accept_agreement_first=False).status_code == 200
 
 
 def test_second_admin_creation_is_rejected():
