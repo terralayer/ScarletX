@@ -5,7 +5,7 @@ let entityLibraryFilter={scenes:'monitored',performers:'all',studios:'all'};
 let searchChoiceQuery='';
 let mediaLibraryRows=[],mediaLibraryCursor=null,mediaLibraryHasMore=false;
 let liveQueueFallback=false,liveQueueTimer=null,liveQueueBusy=false,liveQueueSnapshot={tracked:[],clients:{}};
-let ACTIVITY_QUEUE_PAGE_SIZE=25;const ACTIVITY_COMPLETED_PAGE_SIZE=20,ACTIVITY_FAILED_PAGE_SIZE=20;
+let ACTIVITY_QUEUE_PAGE_SIZE=25;const ACTIVITY_COMPLETED_PAGE_SIZE=10,ACTIVITY_FAILED_PAGE_SIZE=10;
 let activityQueuePage=1;
 function nav(){$$('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===view))}
 function sceneImage(x){return x.image_url||x.back_image_url||x.poster_url||x.tpdb_id||x.id||''}
