@@ -7,6 +7,7 @@ let mediaLibraryRows=[],mediaLibraryCursor=null,mediaLibraryHasMore=false;
 let liveQueueFallback=false,liveQueueTimer=null,liveQueueBusy=false,liveQueueSnapshot={tracked:[],clients:{}};
 let ACTIVITY_QUEUE_PAGE_SIZE=25;const ACTIVITY_COMPLETED_PAGE_SIZE=20,ACTIVITY_FAILED_PAGE_SIZE=20;
 let activityQueuePage=1;
+const SCARLETX_DEV_BUILD=1;
 function nav(){$$('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===view))}
 function sceneImage(x){return x.image_url||x.back_image_url||x.poster_url||x.tpdb_id||x.id||''}
 $('#closeModal').onclick=()=>$('#modal').classList.remove('open');$('#modal').onclick=e=>{if(e.target===$('#modal'))$('#modal').classList.remove('open')};
@@ -28,7 +29,7 @@ async function boot(){
   $('#nav').onclick=e=>{let b=e.target.closest('button[data-view]');if(!b)return;view=b.dataset.view;nav();render()};
   $('#queueShortcut').onclick=()=>{view='activity';nav();render()};
   $('#globalSearch').onsubmit=e=>{e.preventDefault();let q=$('#globalSearchInput').value.trim();if(q.length<2)return;searchChoiceQuery=q;view='search-choice';nav();render()};
-  try{let s=await api('/api/system/status');$('#versionSide').textContent=`v${s.version} · Local`}catch(e){$('#onlineText').textContent='Offline';$('#statusDot').style.background='#b91c2b'}
+  try{let s=await api('/api/system/status');$('#versionSide').textContent=`v${s.version}-dev-${SCARLETX_DEV_BUILD} · Local`}catch(e){$('#onlineText').textContent='Offline';$('#statusDot').style.background='#b91c2b'}
   await updateChrome();render();
 }
 async function updateChrome(){
