@@ -33,6 +33,17 @@ def test_entity_cards_keep_current_add_actions_and_no_library_delete():
     assert "data-add>Add & Monitor All" not in card
     assert "data-remove>Remove" not in card
 
+def test_monitored_studio_search_card_uses_existing_local_state():
+    app = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    start = app.index("function entityCard")
+    end = app.index("function bindEntityActions")
+    card = app[start:end]
+
+    assert "existingMonitoredStudio" in card
+    assert "!!x.local_id&&x.monitored===true" in card
+    assert "existingMonitoredStudio?`<button class=\"btn small\" data-detail>Details</button>`" in card
+    assert "data-local-id=\"${localId?esc(localId):''}\"" in card
+
 
 def test_library_performer_cards_include_a_monitor_toggle_at_the_bottom():
     app = (FRONTEND / "app.js").read_text(encoding="utf-8")
