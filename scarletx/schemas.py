@@ -46,6 +46,8 @@ class RemoteStudio(BaseModel):
     logo_url: str | None = None
     poster_url: str | None = None
     description: str | None = None
+    local_id: int | None = None
+    monitored: bool | None = None
 
 
 class RemoteTag(BaseModel):
