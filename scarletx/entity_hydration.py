@@ -25,6 +25,8 @@ ENTITY_FETCH_ATTEMPTS = 3
 ENTITY_RETRY_DELAY_SECONDS = 1.0
 DETAIL_BATCH_SIZE = 25
 MAX_ENTITY_PAGES = 1000
+ENTITY_HYDRATION_CONCURRENCY = 1
+_entity_hydration_slots = asyncio.Semaphore(ENTITY_HYDRATION_CONCURRENCY)
 _summary_write_lock = threading.Lock()
 
 
@@ -198,6 +200,24 @@ def _job_search_requested(job_id: int, initial: bool) -> bool:
 
 
 async def run_adult_entity_hydration(
+    job_id: int,
+    entity_type: str,
+    identifier: str,
+    settings: Settings,
+    search_when_monitored: bool,
+) -> None:
+    """Run one heavy entity hydration at a time so normal API reads stay responsive."""
+    async with _entity_hydration_slots:
+        await _run_adult_entity_hydration(
+            job_id,
+            entity_type,
+            identifier,
+            settings,
+            search_when_monitored,
+        )
+
+
+async def _run_adult_entity_hydration(
     job_id: int,
     entity_type: str,
     identifier: str,
