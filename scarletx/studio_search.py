@@ -77,10 +77,15 @@ def cache_studio_search_page(settings, query: str, result: StudioSearchResponse)
 
 
 def _remote_studio(row: Studio) -> RemoteStudio:
-    return RemoteStudio(id=row.tpdb_id, **{
-        field: getattr(row, field) for field in RemoteStudio.model_fields
-        if field not in {'id', 'search_id'}
-    })
+    return RemoteStudio(
+        id=row.tpdb_id,
+        local_id=row.id,
+        monitored=bool(row.monitored),
+        **{
+            field: getattr(row, field) for field in RemoteStudio.model_fields
+            if field not in {'id', 'search_id', 'local_id', 'monitored'}
+        },
+    )
 
 
 def local_studio_detail(session_factory, identifier: str) -> RemoteStudio | None:
@@ -125,10 +130,13 @@ def cache_studio_search(session_factory, studios: list[RemoteStudio]) -> None:
                     if row is None:
                         row = Studio(tpdb_id=studio.id, name=studio.name, monitored=False)
                         db.add(row)
-                    for field, value in studio.model_dump(exclude={'id', 'search_id'}).items():
+                    for field, value in studio.model_dump(exclude={'id', 'search_id', 'local_id', 'monitored'}).items():
                         if getattr(row, field) in (None, '') and value is not None:
                             setattr(row, field, value)
                     row.is_library = True
+                    db.flush()
+                    studio.local_id = row.id
+                    studio.monitored = bool(row.monitored)
                 db.commit()
             return
         except (IntegrityError, OperationalError) as exc:
