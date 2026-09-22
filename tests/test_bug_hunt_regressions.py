@@ -227,5 +227,5 @@ def test_startup_recovery_resumes_supported_background_jobs():
 def test_footer_shows_incrementing_dev_build_suffix():
     app = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
-    assert "const SCARLETX_DEV_BUILD=1;" in app
+    assert "const SCARLETX_DEV_BUILD=2;" in app
     assert "v${s.version}-dev-${SCARLETX_DEV_BUILD} · Local" in app
