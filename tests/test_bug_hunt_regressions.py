@@ -222,3 +222,10 @@ def test_startup_recovery_resumes_supported_background_jobs():
 
     assert "resume_background_jobs" in lifespan
     assert "Interrupted by application restart" not in lifespan
+
+
+def test_footer_shows_incrementing_dev_build_suffix():
+    app = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert "const SCARLETX_DEV_BUILD=1;" in app
+    assert "v${s.version}-dev-${SCARLETX_DEV_BUILD} · Local" in app
