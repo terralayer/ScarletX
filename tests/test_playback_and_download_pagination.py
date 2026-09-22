@@ -148,7 +148,7 @@ def test_failed_rows_supports_offset_for_real_server_pagination():
     assert page[-1]["id"] == "failed-05"
 
 
-def test_activity_uses_25_active_and_20_completed_and_failed_rows_per_page():
+def test_activity_uses_25_active_and_10_completed_and_failed_rows_per_page():
     source = (ROOT / "frontend" / "app.js").read_text()
     activity_lists = (ROOT / "frontend" / "activity_lists.js").read_text()
     queue_owner = (ROOT / "frontend" / "ui_overrides.js").read_text()
@@ -156,8 +156,8 @@ def test_activity_uses_25_active_and_20_completed_and_failed_rows_per_page():
     backend = (ROOT / "scarletx" / "routes" / "application.py").read_text()
 
     assert "ACTIVITY_QUEUE_PAGE_SIZE=25" in source
-    assert "ACTIVITY_COMPLETED_PAGE_SIZE=20" in source
-    assert "ACTIVITY_FAILED_PAGE_SIZE=20" in source
+    assert "ACTIVITY_COMPLETED_PAGE_SIZE=10" in source
+    assert "ACTIVITY_FAILED_PAGE_SIZE=10" in source
     assert "activityQueuePage" in source
     assert 'id="activityQueuePageSize"' in source
     assert 'class="download-queue-size"' in source
