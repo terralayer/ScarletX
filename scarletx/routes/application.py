@@ -307,6 +307,8 @@ def _runtime_settings_loader():
 
 COMPLETED_IMPORT_RECOVERY_SECONDS = 120
 MONITORED_ENTITY_DISCOVERY_INTERVAL_SECONDS = 3600
+ENTITY_MONITOR_SEARCH_CONCURRENCY = 1
+_entity_monitor_search_slots = asyncio.Semaphore(ENTITY_MONITOR_SEARCH_CONCURRENCY)
 
 
 async def resume_background_jobs(settings: Settings) -> list[asyncio.Task]:
@@ -1924,6 +1926,12 @@ async def _all_adult_entity_scenes(
 
 
 async def run_adult_entity_monitor_search(job_id: int, entity_type: str, identifier: str, settings: Settings):
+    """Run one monitor-all crawl at a time so page/API work is not starved."""
+    async with _entity_monitor_search_slots:
+        await _run_adult_entity_monitor_search(job_id, entity_type, identifier, settings)
+
+
+async def _run_adult_entity_monitor_search(job_id: int, entity_type: str, identifier: str, settings: Settings):
     """Import all entity scenes, search every enabled indexer, and queue the best NZBs through the selected download client."""
     with SessionLocal() as db:
         job = db.get(BackgroundJob, job_id)

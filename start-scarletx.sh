@@ -145,7 +145,7 @@ fi
 
 URL="http://$HOST:$PORT"
 echo ""
-echo "ScarletX 0.5.0"
+echo "ScarletX 0.5.0-dev-2"
 echo "Root folder: ${SCARLETX_DEFAULT_MEDIA_ROOT}"
 echo "Opening: $URL"
 echo "Press Ctrl+C to stop ScarletX."
@@ -168,4 +168,4 @@ if [[ "${SCARLETX_NO_BROWSER:-0}" != "1" ]]; then
   ) &
 fi
 
-exec python -m uvicorn scarletx.main:app --host "$HOST" --port "$PORT"
+exec python -m uvicorn scarletx.local_dev:app --host "$HOST" --port "$PORT"

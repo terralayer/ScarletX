@@ -38,3 +38,12 @@ def test_monitored_add_searches_after_hydration_without_second_tpdb_crawl():
     assert "search_when_monitored" in source
     assert "search_and_grab_scene" in source
     assert "scene_ids" in source
+
+
+def test_heavy_entity_hydration_is_serialized_to_preserve_api_capacity():
+    source = (ROOT / "scarletx" / "entity_hydration.py").read_text()
+
+    assert "ENTITY_HYDRATION_CONCURRENCY = 1" in source
+    assert "_entity_hydration_slots = asyncio.Semaphore(ENTITY_HYDRATION_CONCURRENCY)" in source
+    wrapper = source[source.index("async def run_adult_entity_hydration("):source.index("async def _run_adult_entity_hydration(")]
+    assert "async with _entity_hydration_slots" in wrapper

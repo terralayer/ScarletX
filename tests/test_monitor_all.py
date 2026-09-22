@@ -58,3 +58,13 @@ def test_monitor_all_reuses_an_active_job(monkeypatch):
     assert first == second
     assert len(jobs) == 1
     assert len(tasks.calls) == 1
+
+
+def test_monitor_all_background_work_is_serialized():
+    from pathlib import Path
+    from scarletx.routes import application
+
+    source = Path(application.__file__).read_text()
+    assert "ENTITY_MONITOR_SEARCH_CONCURRENCY = 1" in source
+    wrapper = source[source.index("async def run_adult_entity_monitor_search("):source.index("async def _run_adult_entity_monitor_search(")]
+    assert "async with _entity_monitor_search_slots" in wrapper

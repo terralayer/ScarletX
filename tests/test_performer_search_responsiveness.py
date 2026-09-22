@@ -440,7 +440,9 @@ async def test_studio_search_summaries_preserve_richer_metadata_and_monitoring(f
                       url='https://example.test', monitored=True, is_library=True))
         db.commit()
     monkeypatch.setattr(application, 'client', lambda _: SearchProvider())
-    await application.search_studios('alternate search', page=1, settings=Settings())
+    result = await application.search_studios('alternate search', page=1, settings=Settings())
+    assert result.items[0].local_id is not None
+    assert result.items[0].monitored is True
     with factory() as db:
         row = db.scalar(select(Studio))
         assert row.description == 'Full description'

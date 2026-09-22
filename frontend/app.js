@@ -7,6 +7,7 @@ let mediaLibraryRows=[],mediaLibraryCursor=null,mediaLibraryHasMore=false;
 let liveQueueFallback=false,liveQueueTimer=null,liveQueueBusy=false,liveQueueSnapshot={tracked:[],clients:{}};
 let ACTIVITY_QUEUE_PAGE_SIZE=25;const ACTIVITY_COMPLETED_PAGE_SIZE=10,ACTIVITY_FAILED_PAGE_SIZE=10;
 let activityQueuePage=1;
+const SCARLETX_DEV_BUILD=2;
 function nav(){$$('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===view))}
 function sceneImage(x){return x.image_url||x.back_image_url||x.poster_url||x.tpdb_id||x.id||''}
 $('#closeModal').onclick=()=>$('#modal').classList.remove('open');$('#modal').onclick=e=>{if(e.target===$('#modal'))$('#modal').classList.remove('open')};
@@ -28,7 +29,7 @@ async function boot(){
   $('#nav').onclick=e=>{let b=e.target.closest('button[data-view]');if(!b)return;view=b.dataset.view;nav();render()};
   $('#queueShortcut').onclick=()=>{view='activity';nav();render()};
   $('#globalSearch').onsubmit=e=>{e.preventDefault();let q=$('#globalSearchInput').value.trim();if(q.length<2)return;searchChoiceQuery=q;view='search-choice';nav();render()};
-  try{let s=await api('/api/system/status');$('#versionSide').textContent=`v${s.version} · Local`}catch(e){$('#onlineText').textContent='Offline';$('#statusDot').style.background='#b91c2b'}
+  try{let s=await api('/api/system/status');$('#versionSide').textContent=`v${s.version}-dev-${SCARLETX_DEV_BUILD} · Local`}catch(e){$('#onlineText').textContent='Offline';$('#statusDot').style.background='#b91c2b'}
   await updateChrome();render();
 }
 async function updateChrome(){
@@ -282,13 +283,15 @@ async function loadEntityLibrary(type,cursor=null,append=false,q=null){
 // Entity search is owned by entity_search.js.
 function entityCard(type,x,inLibrary){
   let id=x.tpdb_id||x.id, img=x.image_url||x.poster_url||x.logo_url||'', title=x.title||x.name||'Untitled',sub=x.aliases||x.description||'';
+  let existingMonitoredStudio=!inLibrary&&type==='studios'&&!!x.local_id&&x.monitored===true;
+  let localId=inLibrary?x.id:(existingMonitoredStudio?x.local_id:'');
   let posterClass=type==='performers'?'media-poster performer-poster':'media-poster';
   let cachedImg=type==='performers'?`/api/artwork/performers/${encodeURIComponent(id)}?size=card`:type==='studios'?studioArtUrl(id):img;
   let renderImg=type==='studios'||!!img;
-  let actions=inLibrary?`${type==='performers'?`<button class="btn small ${x.monitored?'':'primary'}" data-toggle-monitor data-monitored="${x.monitored?'true':'false'}">${x.monitored?'Unmonitor':'Monitor'}</button>`:''}<button class="btn small" data-detail>Details</button>`:`<button class="btn small" data-add-only>Add</button><button class="btn small primary" data-add-monitor>Add & Monitor</button><button class="btn small" data-remote-detail>Details</button>`;
+  let actions=inLibrary?`${type==='performers'?`<button class="btn small ${x.monitored?'':'primary'}" data-toggle-monitor data-monitored="${x.monitored?'true':'false'}">${x.monitored?'Unmonitor':'Monitor'}</button>`:''}<button class="btn small" data-detail>Details</button>`:existingMonitoredStudio?`<button class="btn small" data-detail>Details</button>`:`<button class="btn small" data-add-only>Add</button><button class="btn small primary" data-add-monitor>Add & Monitor</button><button class="btn small" data-remote-detail>Details</button>`;
   let actionClass=type==='performers'?'actions performer-card-actions':'actions';
   let footer=type==='studios'&&inLibrary?`<div class="studio-card-footer"><div class="actions">${actions}</div><span class="studio-scene-count" title="Downloaded / total scenes">${Number(x.downloaded_scene_count||0)} / ${Number(x.scene_count||0)} scenes</span></div>`:`<div class="${actionClass}">${actions}</div>`;
-  return `<article class="media-card ${type==='performers'?'performer-card':type==='studios'?'studio-card':''}" data-id="${esc(id)}" data-local-id="${inLibrary?esc(x.id):''}"><div class="${posterClass}">${renderImg?`<img src="${esc(cachedImg)}" loading="lazy" ${type==='performers'?'data-performer-image title="Open performer profile"':''} onerror="this.remove()">`:''}</div><div class="media-body"><h3>${esc(title)}</h3>${inLibrary?`<small class="state ${x.monitored?'good':'warn'}" data-entity-status>Status: ${x.monitored?'Monitored':'Not monitored'}</small>`:''}<p>${esc(typeof sub==='string'?sub:'')}</p>${footer}</div></article>`
+  return `<article class="media-card ${type==='performers'?'performer-card':type==='studios'?'studio-card':''}" data-id="${esc(id)}" data-local-id="${localId?esc(localId):''}"><div class="${posterClass}">${renderImg?`<img src="${esc(cachedImg)}" loading="lazy" ${type==='performers'?'data-performer-image title="Open performer profile"':''} onerror="this.remove()">`:''}</div><div class="media-body"><h3>${esc(title)}</h3>${(inLibrary||existingMonitoredStudio)?`<small class="state ${x.monitored?'good':'warn'}" data-entity-status>Status: ${x.monitored?'Monitored':'Not monitored'}</small>`:''}<p>${esc(typeof sub==='string'?sub:'')}</p>${footer}</div></article>`
 }
 function bindEntityActions(type,inLibrary){
   $('#entityGrid').onclick=async e=>{let c=e.target.closest('.media-card');if(!c)return;let b=e.target.closest('button'),id=c.dataset.id,local=c.dataset.localId;
